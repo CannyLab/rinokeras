@@ -68,7 +68,7 @@ class DQN(object):
 
         self.curr_val = curr_val
         self.target_val = target_val
-        self.tderr = target_val - curr_val
+        self.tderr = tf.reduce_mean(tf.abs(target_val - curr_val))
 
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, **dict(epsilon=1e-4))
         self.update_op = minimize_and_clip(optimizer, self.error, var_list=self.model_vars, clip_val=10)
