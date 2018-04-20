@@ -5,7 +5,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
 class DQN(object):
-    def __init__(self, obs_shape, num_actions, scope):
+    def __init__(self, obs_shape, num_actions, scope='agent'):
         self._train_setup = False
         self._obs_shape = obs_shape
         self._num_actions = num_actions
@@ -32,8 +32,9 @@ class DQN(object):
                 (64, (3, 3), 1)
             ]
 
-        with tf.variable_scope('embedding'):
-            return slim.stack(img_in, slim.conv2d, network_architecture)
+        with tf.variable_scope('embedding', reuse=reuse):
+            embedding = slim.stack(img_in, slim.conv2d, network_architecture)
+            return tf.contrib.layers.flatten(embedding)
 
     def _q_network(self, embedding, network_architecture=None, reuse=False):
         if network_architecture is None:
@@ -41,39 +42,46 @@ class DQN(object):
                         (512, tf.nn.relu)
                     ]
 
-        with tf.variable_scope('qvals'):
+        with tf.variable_scope('qvals', reuse=reuse):
             hidden = slim.stack(embedding, slim.fully_connected, network_architecture)
             qvals = slim.fully_connected(hidden, self._num_actions, activation_fn=None)
             return qvals, hidden
 
-    def setup_for_training(self):
+    def _setup_training_placeholders(self):
+        self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
+        self.sy_rew = tf.placeholder(tf.float32, [None], name='rew_placeholder')
+        self.sy_obs_tp1 = tf.placeholder(tf.uint8, [None] + list(self._obs_shape), name='obs_tp1_placeholder')
+        self.sy_done = tf.placeholder(tf.float32, [None], name='done_mask_placeholder')
+        self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
+
+    def _setup_loss(self, gamma, target_qval):
+        batch_size = tf.shape(self.sy_act)[0]
+        indices = tf.stack((tf.range(batch_size), self.sy_act), axis=1)
+
+        # curr_val = Q(s_t, a_t)
+        curr_val = tf.gather_nd(self._qval, indices)
+
+        # Q(s_t, a_t) = r_t + max_a Q(s_{t+1}, a)
+        target_val = self.sy_rew + gamma * tf.reduce_max(target_qval, axis=1) * (1 - self.sy_done)
+        loss = tf.losses.mean_squared_error(labels=target_val, predictions=curr_val)
+        tderr = tf.reduce_mean(tf.abs(curr_val - target_val)) # tderr is l1 loss
+
+        return loss, tderr
+
+    def setup_for_training(self, gamma):
         self._train_setup = True
         with tf.variable_scope(self._scope):
-            self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
-            self.sy_rew = tf.placeholder(tf.float32, [None], name='rew_placeholder')
-            self.sy_obs_tp1 = tf.placeholder(tf.uint8, [None] + list(input_shape), name='obs_tp1_placeholder')
-            self.sy_done = tf.placeholder(tf.float32, [None], name='done_mask_placeholder')
-            self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
-
+            self._setup_training_placeholders()
             _, target_qval, _, target_scope = self._setup_agent(self.sy_obs_tp1, 'target_policy')
 
             with tf.variable_scope('training'):
-                batch_size = tf.shape(self.sy_act)[0]
-                indices = tf.stack((tf.range(batch_size), self.sy_act), axis=1)
-
-                # curr_val = Q(s_t, a_t)
-                curr_val = tf.gather_nd(self._q_val, indices)
-
-                # Q(s_t, a_t) = r_t + max_a Q(s_{t+1}, a)
-                target_val = self.sy_rew + gamma * tf.reduce_max(self.target_q_val, axis=1) * (1 - self.sy_done)
-                error = tf.losses.mean_squared_error(labels=target_val, predictions=curr_val)
-                tderr = tf.reduce_mean(tf.abs(curr_val - target_val)) # tderr is l1 loss
+                loss, tderr = self._setup_loss(gamma, target_qval)
 
                 optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, **dict(epsilon=1e-4))
-                update_op = optimizer.minimize(error, var_list=self._model_vars)
+                update_op = optimizer.minimize(loss, var_list=self._model_vars)
                 update_target_fn = [vt.assign(v) for v, vt in zip(self._model_vars, target_scope.global_variables())]
 
-                self._error = error
+                self._loss = loss
                 self._update_op = update_op
                 self._update_target_fn = tf.group(*update_target_fn)
 
@@ -96,13 +104,13 @@ class DQN(object):
             self.sy_act : batch['act'],
             self.sy_rew : batch['rew'],
             self.sy_obs_tp1 : batch['obs_tp1'],
-            self.sy_done : batch['done']
+            self.sy_done : batch['done'],
             self.learning_rate : learning_rate
         }
 
         sess = self._get_session()
-        _, err = sess.run([self._update_op, self._error], feed_dict=feed_dict)
-        return err
+        _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        return loss
 
     def update_target_network(self):
         sess = self._get_session()
