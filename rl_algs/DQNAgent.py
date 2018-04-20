@@ -4,11 +4,12 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
-class DQN(object):
+from .Policy import Policy
+
+class DQNAgent(Policy):
     def __init__(self, obs_shape, num_actions, scope='agent'):
+        super().__init__(obs_shape, num_actions)
         self._train_setup = False
-        self._obs_shape = obs_shape
-        self._num_actions = num_actions
 
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
@@ -93,8 +94,9 @@ class DQN(object):
 
     def predict(self, obs, return_activations=False):
         sess = self._get_session()
-        to_return = [self._qval] if not return_activations else [self._qval, self._activ]
-        return sess.run(to_return, feed_dict={self.sy_obs : obs})
+        to_return = self._action if not return_activations else [self._action, self._qval, self._activ]
+        to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
+        return to_return[0] if not return_activations else to_return
 
     def train(self, batch, learning_rate=1e-4):
         if not self._train_setup:
@@ -127,14 +129,6 @@ class DQN(object):
         saver.restore(sess, filename)
         if self._train_setup:
             self.update_target_network()
-
-    @property
-    def num_actions(self):
-        return self._num_actions
-
-    @property
-    def obs_shape(self):
-        return self._obs_shape
 
     @property
     def scope(self):
