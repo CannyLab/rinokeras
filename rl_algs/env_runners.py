@@ -8,7 +8,7 @@ import tensorflow as tf
 import gym
 import gym_gridworld
 
-from rl_algs.Policy import Policy
+from policies.Policy import Policy
 
 # https://stackoverflow.com/questions/12201577/how-can-i-convert-an-rgb-image-into-grayscale-in-python
 def rgb2gray(rgb):
@@ -90,14 +90,13 @@ class EnvironmentRunner(object):
 
         return self._done
 
+    def _summary_str(self):
+        return ''
+
     def reset(self):
         if self._done:
             if self._verbose:
-                printstr = ''
-                printstr += '\tReward: {:>5}'.format(self._episode_rew)
-                printstr += ', NSTEPS: {:>5}'.format(self._num_steps)
-                printstr += ', PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps)
-                logging.info(printstr)
+                logging.info(self._summary_str())
             self._episode_num += 1
 
         obs = self._env.reset()
@@ -126,7 +125,7 @@ class EnvironmentRunner(object):
         return self._episode_num
 
 class DQNEnvironmentRunner(EnvironmentRunner):
-    def __init__(self, env, agent, replay_buffer, modifyobs=False, modifyreward=None, verbose=False):
+    def __init__(self, env, agent, replay_buffer, modifyobs=None, modifyreward=None, verbose=False):
         self._replay_buffer = replay_buffer
         super().__init__(env, agent, modifyobs, modifyreward, verbose)
 
@@ -138,7 +137,71 @@ class DQNEnvironmentRunner(EnvironmentRunner):
         self._replay_buffer.store_effect(idx, self._act, self._rew, self._done)
         return self._done
 
-# PGEnvironmentRunner -> should return values, advantages
+    def _summary_str(self):
+        printstr = ''
+        printstr += '\tREWARD: {:>5}'.format(self._episode_rew)
+        printstr += ', NSTEPS: {:>5}'.format(self._num_steps)
+        printstr += ', PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps)
+        return printstr
+
+class PGEnvironmentRunner(EnvironmentRunner):
+    def __init__(self, env, agent, gamma, modifyobs=None, modifyreward=None, verbose=False):
+        self._gamma = gamma
+        super().__init__(env, agent, modifyobs, modifyreward, verbose)
+
+    def get_rollout(self):
+        rollout = defaultdict(lambda : [])
+
+        while not self._done:
+            rollout['obs'].append(self._obs)
+            super().step(obs, False)
+            rollout['act'].append(self._act)
+            rollout['rew'].append(self._rew)
+            rollout['baseline'].append(self._val)
+
+        rollout['val'].append(self._val)
+        for t in reversed(range(self._num_steps - 1)):
+            rollout['val'].append(rollout['rew'][t] + self._gamma * rollout['val'][-1])
+
+        rollout['val'].reverse()
+
+        for key in rollout:
+            rollout[key] = np.array(rollout[key])
+
+        rollout['adv'] = rollout['val'] - rollout['baseline']
+        rollout['adv'] = (rollout['adv'] - rollout['adv'].mean()) / rollout['adv'].std()
+
+        return rollout
+
+    def step(self):
+        if self._done:
+            raise RuntimeError("Cannot step environment which is done. Call reset first.")
+        obs = self._obs
+
+        action, val = self._agent.predict(obs)
+
+        # Step the environment
+        obs, rew, done, _ = self._env.step(action)
+        self._obs = self._modifyobs(obs)
+        self._rew = self._modifyreward(rew)
+        self._val = val
+        self._done = done
+        self._act = action
+        self._num_steps += 1
+
+        self._episode_rew += self._rew
+
+        return self._done
+
+    def _summary_str(self):
+        printstr = ''
+        printstr += '\tReward: {:>5}'.format(self._episode_rew)
+        printstr += ', NSTEPS: {:>5}'.format(self._num_steps)
+        return printstr
+
+    def reset(self):
+        self._val = None
+        super().reset()
 
 # ActivationEnvironmentRunner -> should return agent activations
 

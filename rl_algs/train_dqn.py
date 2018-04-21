@@ -7,7 +7,7 @@ import tensorflow as tf
 import gym
 
 from env_runners import DQNEnvironmentRunner
-from rl_algs import DQNAgent
+from policies.DQN import DQNAgent
 from utils import ReplayBuffer, PiecewiseSchedule
 
 BATCH_SIZE = 64
