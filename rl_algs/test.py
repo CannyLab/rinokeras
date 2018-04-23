@@ -1,4 +1,4 @@
-from dqn import train_dqn
+from train_dqn import train_dqn
 import gym
 import gym_gridworld
 
@@ -6,5 +6,5 @@ import gym_gridworld
 # It's just an example to show all you should need to do to run the training
 
 env = gym.make('gridworld-v0')
-env.load('../pong-teacher/worlds/simple.npy')
+env.load('/home/rmrao/projects/pong-teacher/worlds/simple.npy')
 train_dqn(env, 'test')
