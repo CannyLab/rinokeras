@@ -29,6 +29,7 @@ class DQNAgent(Policy):
 
         if network_architecture is None:
             network_architecture = [
+                # (32, (8, 8), 4),
                 (32, (3, 3), 2),
                 (64, (3, 3), 1)
             ]
@@ -40,7 +41,8 @@ class DQNAgent(Policy):
     def _q_network(self, embedding, network_architecture=None, reuse=False):
         if network_architecture is None:
             network_architecture = [
-                        (512, tf.nn.relu)
+                        (256, tf.nn.relu),
+                        (256, tf.nn.relu)
                     ]
 
         with tf.variable_scope('qvals', reuse=reuse):

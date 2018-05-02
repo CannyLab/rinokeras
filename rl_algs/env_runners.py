@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 import gym
 import gym_gridworld
+import scipy.signal
 
 from .policies.Policy import Policy
 
@@ -52,22 +53,16 @@ class EnvironmentRunner(object):
     def get_rollout(self):
         if self._done:
             self.reset()
-        rollout = defaultdict(lambda : [])
 
         while not self._done:
-            rollout['obs'].append(self._obs)
             self.step()
-            rollout['act'].append(self._act)
-            rollout['rew'].append(self._rew)
-            if self._return_activations:
-                rollout['qval'].append(self._qval)
-                rollout['activs'].append(self._activs)
 
-        return rollout
+        return self._rollout
 
     def step(self, obs=None, random=False):
         if self._done:
             raise RuntimeError("Cannot step environment which is done. Call reset first.")
+        self._rollout['obs'].append(self._obs)
         if obs is None:
             obs = self._obs
 
@@ -88,10 +83,14 @@ class EnvironmentRunner(object):
         self._rew = self._modifyreward(rew)
         self._done = done
         self._act = action
-        if self._return_activations:
-            self._qval = qval
-            self._activs = activs
         self._num_steps += 1
+        self._rollout['act'].append(self._act)
+        self._rollout['rew'].append(self._rew)
+        if self._return_activations:
+            self._qval = None if random else qval
+            self._activs = None if random else activs
+            self._rollout['qval'].append(self._qval)
+            self._rollout['activs'].append(self._activs)
 
         self._episode_rew += self._rew
 
@@ -111,6 +110,7 @@ class EnvironmentRunner(object):
         self._num_steps = 0
         self._num_agent_actions = 0
         self._episode_rew = 0
+        self._rollout = defaultdict(lambda : [])
 
     @property
     def episode_rew(self):
@@ -130,7 +130,12 @@ class EnvironmentRunner(object):
 
     @property
     def summary(self):
-        return ''
+        printstr = []
+        printstr.append('EPISODE: {:>7}'.format(self._episode_num))
+        printstr.append('REWARD: {:>5}'.format(self._episode_rew))
+        printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
+        printstr.append('PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps))
+        return '\t' + ', '.join(printstr)
 
 class DQNEnvironmentRunner(EnvironmentRunner):
     def __init__(self, env, agent, replay_buffer, **kwargs):
@@ -160,44 +165,76 @@ class PGEnvironmentRunner(EnvironmentRunner):
         super().__init__(env, agent, **kwargs)
 
     def get_rollout(self):
-        rollout = defaultdict(lambda : [])
-
         while not self._done:
-            rollout['obs'].append(self._obs)
-            super().step(obs, False)
-            rollout['act'].append(self._act)
-            rollout['rew'].append(self._rew)
-            rollout['baseline'].append(self._val)
+            self.step(self._obs[None])
 
-        rollout['val'].append(self._val)
-        for t in reversed(range(self._num_steps - 1)):
-            rollout['val'].append(rollout['rew'][t] + self._gamma * rollout['val'][-1])
+        # self._rollout['val'].append(self._rew)
+        # for t in reversed(range(self._num_steps - 1)):
+            # self._rollout['val'].append(self._rollout['rew'][t] + self._gamma * self._rollout['val'][-1])
 
-        rollout['val'].reverse()
+        # self._rollout['val'].reverse()
 
-        for key in rollout:
-            rollout[key] = np.array(rollout[key])
+        for key in self._rollout:
+            dtype = np.float64
+            if key == 'obs':
+                dtype = np.uint8
+            elif key == 'act':
+                dtype = np.int32
 
-        rollout['adv'] = rollout['val'] - rollout['baseline']
-        rollout['adv'] = (rollout['adv'] - rollout['adv'].mean()) / rollout['adv'].std()
+            self._rollout[key] = np.squeeze(np.array(self._rollout[key], dtype=dtype))
+            if self._num_steps == 1:
+                self._rollout[key] = np.expand_dims(self._rollout[key], 0)
+        # compute values
+        self._rollout['val'] = scipy.signal.lfilter([1], [1, -self._gamma], self._rollout['rew'][::-1], axis=0)[::-1]
 
-        return rollout
+        if self._return_activations:
+            # normalize baseline to vals
+            self._rollout['baseline'] -= self._rollout['baseline'].mean()
+            self._rollout['baseline'] /= self._rollout['baseline'].std() + 1e-10 # deal with zero std
+            self._rollout['baseline'] *= self._rollout['val'].std() + 1e-10 # deal with zero std
+            self._rollout['baseline'] += self._rollout['val'].mean()
 
-    def step(self):
+            # compute and normalize advantages
+            self._rollout['adv'] = self._rollout['val'] - self._rollout['baseline']
+            self._rollout['adv'] -= self._rollout['adv'].mean()
+            self._rollout['adv'] /= self._rollout['adv'].std() + 1e-10
+
+            # normalize vals to 0/1
+            self._rollout['val'] -= self._rollout['val'].mean()
+            self._rollout['val'] /= self._rollout['val'].std() + 1e-10
+
+        return dict(self._rollout) # cast to dict so keys will error
+
+    def step(self, obs=None):
         if self._done:
             raise RuntimeError("Cannot step environment which is done. Call reset first.")
-        obs = self._obs
+        if obs is None:
+            obs = self._obs
+        self._rollout['obs'].append(obs)
 
-        action, val = self._agent.predict(obs)
+        # Get action
+        pred = self._agent.predict(obs, return_activations=self._return_activations)
+        if self._return_activations:
+            action, val, probs, activs = pred
+        else:
+            action = pred
 
         # Step the environment
         obs, rew, done, _ = self._env.step(action)
         self._obs = self._modifyobs(obs)
         self._rew = self._modifyreward(rew)
-        self._val = val
         self._done = done
         self._act = action
         self._num_steps += 1
+        self._rollout['act'].append(self._act)
+        self._rollout['rew'].append(self._rew)
+        if self._return_activations:
+            self._val = val
+            self._probs = probs
+            self._activs = activs
+            self._rollout['baseline'].append(self._val)
+            self._rollout['probs'].append(self._probs)
+            self._rollout['activs'].append(self._activs)
 
         self._episode_rew += self._rew
 
@@ -205,10 +242,11 @@ class PGEnvironmentRunner(EnvironmentRunner):
 
     @property
     def summary(self):
-        printstr = ''
-        printstr += '\tReward: {:>5}'.format(self._episode_rew)
-        printstr += ', NSTEPS: {:>5}'.format(self._num_steps)
-        return printstr
+        printstr = []
+        printstr.append('EPISODE: {:>7}'.format(self._episode_num))
+        printstr.append('REWARD: {:>5}'.format(self._episode_rew))
+        printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
+        return '\t' + ', '.join(printstr)
 
     def reset(self):
         self._val = None
