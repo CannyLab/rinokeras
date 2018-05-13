@@ -1,7 +1,12 @@
 class Policy(object):
-	def __init__(self, obs_shape, num_actions):
+	def __init__(self, obs_shape, ac_shape, discrete=True):
+		if np.isscalar(obs_shape):
+			obs_shape = (obs_shape,)
 		self._obs_shape = obs_shape
-		self._num_actions = num_actions
+		self._ac_shape = ac_shape
+		self._discrete = discrete
+		if discrete and not np.isscalar(ac_shape):
+			raise ValueError("ac_shape must be scalar if mode is discrete")
 
 	def setup_for_training(self):
 		return NotImplemented
@@ -23,8 +28,8 @@ class Policy(object):
 		return NotImplemented
 
 	@property
-	def num_actions(self):
-		return self._num_actions
+	def ac_shape(self):
+		return self._ac_shape
 
 	@property
 	def obs_shape(self):
