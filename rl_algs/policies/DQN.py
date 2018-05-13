@@ -14,18 +14,20 @@ class DQNAgent(Policy):
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
             self.sy_obs = tf.placeholder(tf.uint8, [None] + list(obs_shape), name='obs_placeholder')
-            self._action, self._qval, self._activ, self._policy_scope = self._setup_agent(self.sy_obs, 'policy')
+            self._action, self._qval, self._layers, self._policy_scope = self._setup_agent(self.sy_obs, 'policy')
             self._model_vars = self._policy_scope.global_variables()
 
     def _setup_agent(self, img_in, scope):
         with tf.variable_scope(scope):
-            embedding = self._embedding_network(img_in)
-            qval, activ = self._q_network(embedding)
+            embedding, layers = self._embedding_network(img_in)
+            qval, layers = self._q_network(embedding, layers=layers)
             action = tf.argmax(qval, 1)
-            return action, qval, activ, tf.get_variable_scope()
+            return action, qval, layers, tf.get_variable_scope()
 
-    def _embedding_network(self, img_in, network_architecture=None, reuse=False):
+    def _embedding_network(self, img_in, network_architecture=None, reuse=False, layers=None):
         img_in = tf.cast(img_in, tf.float32) / 255.0
+        if layers is None:
+            layers = []
 
         if network_architecture is None:
             network_architecture = [
@@ -35,20 +37,29 @@ class DQNAgent(Policy):
             ]
 
         with tf.variable_scope('embedding', reuse=reuse):
-            embedding = slim.stack(img_in, slim.conv2d, network_architecture)
-            return tf.contrib.layers.flatten(embedding)
+            out = img_in
+            for i, layer in enumerate(network_architecture):
+                out = slim.conv2d(out, *layer)
+                layers.append(tf.contrib.layers.flatten(out))
+            return layers[-1], layers 
 
-    def _q_network(self, embedding, network_architecture=None, reuse=False):
+    def _q_network(self, embedding, network_architecture=None, reuse=False, layers=None):
         if network_architecture is None:
             network_architecture = [
                         (256, tf.nn.relu),
                         (256, tf.nn.relu)
                     ]
+        if layers is None:
+            layers = []
 
         with tf.variable_scope('qvals', reuse=reuse):
-            hidden = slim.stack(embedding, slim.fully_connected, network_architecture)
-            qvals = slim.fully_connected(hidden, self._num_actions, activation_fn=None)
-            return qvals, hidden
+            out = embedding
+            for layer in network_architecture:
+                out = slim.fully_connected(out, *layer)
+                layers.append(out)
+            qvals = slim.fully_connected(out, self._num_actions, activation_fn=None)
+            layers.append(qvals)
+            return qvals, layers
 
     def _setup_training_placeholders(self):
         self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
@@ -96,7 +107,7 @@ class DQNAgent(Policy):
 
     def predict(self, obs, return_activations=False):
         sess = self._get_session()
-        to_return = self._action if not return_activations else [self._action, self._qval, self._activ]
+        to_return = self._action if not return_activations else [self._action, self._qval, self._layers[-2]]
         to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return[0] if not return_activations else to_return
 

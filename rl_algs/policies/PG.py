@@ -6,18 +6,21 @@ from .Policy import Policy
 
 class PGAgent(Policy):
     def __init__(self, obs_shape, num_actions, scope='agent'):
+        if np.isscalar(obs_shape):
+            obs_shape = (obs_shape,)
         super().__init__(obs_shape, num_actions)
         self._train_setup = False
 
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
-            self.sy_obs = tf.placeholder(tf.uint8, [None] + list(obs_shape), name='obs_placeholder')
+            self.sy_obs = tf.placeholder(tf.float32, (None,) + tuple(obs_shape), name='obs_placeholder')
             self._action, self._logprobs, self._activ, self._value, self._policy_scope = self._setup_agent(self.sy_obs, 'policy')
             self._model_vars = self._policy_scope.global_variables()
 
     def _setup_agent(self, img_in, scope):
         with tf.variable_scope(scope):
-            embedding = self._embedding_network(img_in)
+            # embedding = self._embedding_network(img_in)
+            embedding = img_in
             logprobs, activ = self._action_network(embedding)
             action = tf.squeeze(tf.multinomial(logprobs, 1)) # remove extraneous dimension
             val = self._value_network(embedding)
@@ -33,14 +36,14 @@ class PGAgent(Policy):
             ]
 
         with tf.variable_scope('embedding', reuse=reuse):
-            embedding = slim.stack(img_in, slim.conv2d, network_architecture)
+            # embedding = slim.stack(img_in, slim.conv2d, network_architecture)
             return tf.contrib.layers.flatten(embedding)
 
     def _action_network(self, embedding, network_architecture=None, reuse=False):
         if network_architecture is None:
             network_architecture = [
-                        (256, tf.nn.relu),
-                        (256, tf.nn.relu)
+                        (64, tf.nn.relu),
+                        (64, tf.nn.relu)
                     ]
 
             with tf.variable_scope('action', reuse=reuse):
@@ -51,8 +54,8 @@ class PGAgent(Policy):
     def _value_network(self, embedding, network_architecture=None, reuse=False):
         if network_architecture is None:
             network_architecture = [
-                        (256, tf.nn.relu),
-                        (256, tf.nn.relu)
+                        (64, tf.nn.relu),
+                        (64, tf.nn.relu)
                     ]
 
             with tf.variable_scope('value', reuse=reuse):
@@ -63,7 +66,7 @@ class PGAgent(Policy):
 
     def _setup_training_placeholders(self):
         self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
-        # self.sy_adv = tf.placeholder(tf.float32, [None], name='adv_placeholder')
+        self.sy_adv = tf.placeholder(tf.float32, [None], name='adv_placeholder')
         self.sy_val = tf.placeholder(tf.float32, [None], name='val_placeholder')
         self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
 
@@ -92,15 +95,16 @@ class PGAgent(Policy):
         return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
 
     def _setup_loss(self):
-        batch_size = tf.shape(self.sy_act)[0]
-        indices = tf.stack((tf.range(batch_size), self.sy_act), axis=1)
-        act_logprobs = tf.nn.log_softmax(self._logprobs)
-        logp_act = tf.gather_nd(act_logprobs, indices)
+        # batch_size = tf.shape(self.sy_act)[0]
+        # indices = tf.stack((tf.range(batch_size), self.sy_act), axis=1)
+        # act_logprobs = tf.nn.log_softmax(self._logprobs)
+        act_neg_logprobs = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.sy_act, logits=self._logprobs)
+        # logp_act = tf.gather_nd(act_logprobs, indices)
 
         values, advantages = self._compute_values_and_advantages()
         
         # Regular PG Loss
-        loss = tf.reduce_mean(-logp_act * advantages)
+        loss = tf.reduce_mean(tf.multiply(act_neg_logprobs, advantages))
         # Value Loss
         value_loss = tf.losses.mean_squared_error(labels=values, predictions=self._value)
         # Entropy Penalty
@@ -111,7 +115,7 @@ class PGAgent(Policy):
         self.ent_loss = ent_loss
         return self._alpha * loss + (1 - self._alpha) * value_loss + ent_loss
 
-    def setup_for_training(self, alpha=0.8, entcoeff=0.01):
+    def setup_for_training(self, alpha=0.8, entcoeff=0.001):
         self._train_setup = True
         self._alpha = alpha
         self._entcoeff = entcoeff
@@ -121,7 +125,7 @@ class PGAgent(Policy):
                 loss = self._setup_loss()
 
                 optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-                update_op = optimizer.minimize(loss, var_list=self._model_vars)
+                update_op = optimizer.minimize(loss)#, var_list=self._model_vars)
                 
                 self._loss = loss
                 self._update_op = update_op
@@ -138,7 +142,7 @@ class PGAgent(Policy):
         to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return
 
-    def train(self, batch, learning_rate=1e-4):
+    def train(self, batch, learning_rate=5e-3):
         if not self._train_setup:
             self.setup_for_training()
 
@@ -146,13 +150,12 @@ class PGAgent(Policy):
             self.sy_obs : batch['obs'],
             self.sy_act : batch['act'],
             self.sy_val : batch['val'],
-            # self.sy_adv : batch['adv'],
+            self.sy_adv : batch['adv'],
             self.learning_rate : learning_rate
         }
         
         sess = self._get_session()
         _, loss, l1, vf, el = sess.run([self._update_op, self._loss, self.loss, self.value_loss, self.ent_loss], feed_dict=feed_dict)
-        print(self._alpha * l1, (1 - self._alpha) * vf, self._entcoeff * el)
         return loss
 
     def save_model(self, filename, global_step=None):
