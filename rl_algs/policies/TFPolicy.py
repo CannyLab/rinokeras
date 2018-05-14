@@ -13,13 +13,13 @@ class TFPolicy(Policy):
         self._action = None
         self._value = None
 
-    def _embedding_network(self):
+    def _setup_embedding_network(self):
         return NotImplemented
 
-    def _action_logits(self):
+    def _setup_action_logits(self):
         return NotImplemented
 
-    def _value_function(self):
+    def _setup_value_function(self):
         return NotImplemented
 
     def _get_session(self):
