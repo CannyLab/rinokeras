@@ -13,9 +13,9 @@ class StandardPolicy(TFPolicy):
                         obs_dtype=tf.float32,
                         action_method='greedy',
                         use_conv=False,
-                        embedding_architecture=[64, 64],
-                        logit_architecture=[64, 64],
-                        value_architecture=[64, 64]):
+                        embedding_architecture=[(64,), (64,)],
+                        logit_architecture=[(64,), (64,)],
+                        value_architecture=[(64,), (64,)]):
         super().__init__(obs_shape, num_actions, discrete, scope)
         self._use_conv = use_conv
         self._embedding_architecture = embedding_architecture
@@ -28,8 +28,7 @@ class StandardPolicy(TFPolicy):
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
             self.sy_obs = tf.placeholder(obs_dtype, (None,) + self._obs_shape, name='obs_placeholder')
-            self._action, self._logits, self._value, \
-                self._layers, self._policy_scope = self._setup_agent(self, self.sy_obs, scope)
+            self._action, self._logits, self._value, self._layers, self._policy_scope = self._setup_agent(self.sy_obs, 'agent')
             self._model_vars = self._policy_scope.global_variables()
 
     def _setup_agent(self, img_in, scope):
@@ -38,8 +37,7 @@ class StandardPolicy(TFPolicy):
             embedding = self._embedding_network(img_in, layers)
             logits = self._action_logits(embedding, layers)
             value = self._value_function(embedding)
-            action = tf.argmax(logits, 1) if self._action_method == 'greedy' \
-                        else tf.squeeze(tf.multinomial(logits, 1))
+            action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
             return action, logits, value, layers, tf.get_variable_scope()
 
     def _embedding_network(self, img_in, layers, reuse=False):
@@ -51,7 +49,7 @@ class StandardPolicy(TFPolicy):
 
         with tf.variable_scope('embedding', reuse=reuse):
             out = img_in
-            func = slim.conv2d if self._use_conf else slim.fully_connected
+            func = slim.conv2d if self._use_conv else slim.fully_connected
             for layer in self._embedding_architecture:
                 out = func(out, *layer)
                 layers.append(tf.contrib.layers.flatten(out))
@@ -80,6 +78,7 @@ class StandardPolicy(TFPolicy):
             for layer in self._value_architecture:
                 out = slim.fully_connected(out, *layer)
             value = slim.fully_connected(out, 1, activation_fn=None)
+            value = tf.squeeze(value)
             return value
 
     def predict(self, obs, return_activations=False):
@@ -87,7 +86,7 @@ class StandardPolicy(TFPolicy):
         to_return = [self._action]
         if return_activations:
             to_return.append(self._layers)
-        sess.run(to_return, feed_dict={self.sy_obs : obs})
+        to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return[0] if not return_activations else to_return
 
 

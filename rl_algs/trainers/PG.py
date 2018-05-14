@@ -2,9 +2,9 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
-from .Policy import Policy
+from .Trainer import Trainer
 
-class PGAgent(Policy):
+class PGTrainer(Trainer):
     def __init__(self, obs_shape, ac_shape, policy, alpha=0.8, entcoeff=0.001, scope='traner'):
         super().__init__(obs_shape, ac_shape, policy)
         self._alpha = alpha
@@ -47,7 +47,7 @@ class PGAgent(Policy):
         return values, advantages
 
     def _entropy(self):
-        probs = tf.nn.softmax(self._logprobs)
+        probs = tf.nn.softmax(self._policy.logits)
         logprobs = tf.log(probs)
         return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
 
@@ -70,7 +70,7 @@ class PGAgent(Policy):
 
     def train(self, batch, learning_rate=5e-3):
         feed_dict = {
-            self.sy_obs : batch['obs'],
+            self._policy.sy_obs : batch['obs'],
             self.sy_act : batch['act'],
             self.sy_val : batch['val'],
             self.learning_rate : learning_rate

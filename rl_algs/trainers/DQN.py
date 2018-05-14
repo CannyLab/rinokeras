@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from .Trainer import Trainer
 
-class DQN(Trainer):
+class DQNTrainer(Trainer):
 
     def __init__(self, obs_shape, ac_shape, policy, old_policy, gamma=0.99, scope='trainer'):
         super().__init__(obs_shape, ac_shape, policy)

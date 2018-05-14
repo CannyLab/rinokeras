@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 class Trainer(object):
 
     def __init__(self, obs_shape, ac_shape, policy, discrete=True):

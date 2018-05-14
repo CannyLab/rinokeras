@@ -1,3 +1,5 @@
+import numpy as np
+
 class Policy(object):
 	def __init__(self, obs_shape, ac_shape, discrete=True):
 		if np.isscalar(obs_shape):
