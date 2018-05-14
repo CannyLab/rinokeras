@@ -19,10 +19,12 @@ class DQNTrainer(Trainer):
 
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
             update_op = optimizer.minimize(loss, var_list=self._policy.vars)
-            self._old_policy.create_copy_op_other_to_self(self._policy)
+            update_target_fn = [vt.assign(v) for v, vt in zip(self._policy.vars, self._old_policy.vars)]
+            # self._old_policy.create_copy_op_other_to_self(self._policy)
 
             self._loss = loss
             self._update_op = update_op
+            self._update_target_fn = tf.group(*update_target_fn)
 
     def _setup_placeholders(self):
         self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
@@ -55,11 +57,14 @@ class DQNTrainer(Trainer):
         }
 
         sess = self._get_session()
-        _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        _, loss, pl, opl = sess.run([self._update_op, self._loss, self._policy.logits, self._old_policy.logits], feed_dict=feed_dict)
         self._num_param_updates += 1
-        if self._num_param_updates % self._target_update_freq == 0:
-            self.update_target_network()
+        # if self._num_param_updates % self._target_update_freq == 0:
+            # self.update_target_network()
         return loss
 
     def update_target_network(self):
-        self._old_policy.copy_other_to_self()
+        sess = self._get_session()
+        sess.run(self._update_target_fn)
+        # self._old_policy.copy_other_to_self()
+        # self._policy.update_target_network()

@@ -7,8 +7,8 @@ import tensorflow.contrib.slim as slim
 from .Policy import Policy
 
 class DQNAgent(Policy):
-    def __init__(self, obs_shape, num_actions, scope='agent'):
-        super().__init__(obs_shape, num_actions)
+    def __init__(self, obs_shape, ac_shape, scope='agent'):
+        super().__init__(obs_shape, ac_shape)
         self._train_setup = False
 
         with tf.variable_scope(scope):
@@ -57,7 +57,7 @@ class DQNAgent(Policy):
             for layer in network_architecture:
                 out = slim.fully_connected(out, *layer)
                 layers.append(out)
-            qvals = slim.fully_connected(out, self._num_actions, activation_fn=None)
+            qvals = slim.fully_connected(out, self._ac_shape, activation_fn=None)
             layers.append(qvals)
             return qvals, layers
 
@@ -87,6 +87,7 @@ class DQNAgent(Policy):
         with tf.variable_scope(self._scope):
             self._setup_training_placeholders()
             _, target_qval, _, target_scope = self._setup_agent(self.sy_obs_tp1, 'target_policy')
+            self._target_qval = target_qval
 
             with tf.variable_scope('training'):
                 loss, tderr = self._setup_loss(gamma, target_qval)
@@ -94,7 +95,7 @@ class DQNAgent(Policy):
                 optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, **dict(epsilon=1e-4))
                 update_op = optimizer.minimize(loss, var_list=self._model_vars)
                 update_target_fn = [vt.assign(v) for v, vt in zip(self._model_vars, target_scope.global_variables())]
-
+                self._target_vars = target_scope.global_variables()
                 self._loss = loss
                 self._update_op = update_op
                 self._update_target_fn = tf.group(*update_target_fn)
