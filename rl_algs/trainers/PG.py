@@ -8,10 +8,11 @@ import tensorflow.contrib.slim as slim
 from .Trainer import Trainer
 
 class PGTrainer(Trainer):
-    def __init__(self, obs_shape, ac_shape, policy, alpha=0.8, entcoeff=0.001, scope='traner'):
+    def __init__(self, obs_shape, ac_shape, policy, discrete, alpha=0.8, entcoeff=0.001, scope='traner'):
         super().__init__(obs_shape, ac_shape, policy)
         self._alpha = alpha
         self._entcoeff = entcoeff
+        self._discrete = discrete
 
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope()
@@ -26,7 +27,10 @@ class PGTrainer(Trainer):
 
 
     def _setup_placeholders(self):
-        self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
+        if self._discrete:
+            self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
+        else:
+            self.sy_act = tf.placeholder(tf.float32, (None,) + tuple(ac_shape), name='act_placeholder')
         self.sy_val = tf.placeholder(tf.float32, [None], name='val_placeholder')
         self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
 
@@ -50,13 +54,21 @@ class PGTrainer(Trainer):
         return values, advantages
 
     def _entropy(self):
-        probs = tf.nn.softmax(self._policy.logits)
-        logprobs = tf.log(probs)
-        return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
+        if self._discrete:
+            probs = tf.nn.softmax(self._policy.logits)
+            logprobs = tf.log(probs)
+            return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
+        else:
+            return -self._policy._log_std
 
-    # TODO Handle continuous action spaces
     def _setup_loss(self):
-        act_neg_logprobs = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.sy_act, logits=self._policy.logits)
+        if self._discrete:
+            act_neg_logprobs = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.sy_act, logits=self._policy.logits)
+        else:
+            squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
+            norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
+            neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, 1)
         values, advantages = self._compute_values_and_advantages()
         
         # Regular PG Loss

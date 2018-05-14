@@ -1,4 +1,3 @@
-import copy
 from functools import reduce
 from operator import mul
 
@@ -31,68 +30,69 @@ class StandardPolicy(TFPolicy):
             raise ValueError("Unrecognized action method")
 
         with tf.variable_scope(scope):
-            self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
-            self.sy_obs = tf.placeholder(obs_dtype, (None,) + self._obs_shape, name='obs_placeholder')
-            self._action, self._logits, self._value, self._layers, self._policy_scope = self._setup_agent(self.sy_obs, 'agent')
-            self._model_vars = self._policy_scope.global_variables()
+            self._setup_placeholders()
+            self._layers = []
 
-    def _setup_agent(self, img_in, scope):
-        with tf.variable_scope(scope):
-            layers = []
-            embedding = self._embedding_network(img_in, layers)
-            logits = self._action_logits(embedding, layers)
-            value = self._value_function(embedding)
+            self._setup_embedding_network()
+            self._setup_action_logits()
+            self._setup_value_function()
+
             if self._discrete:
-                action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
+                self._action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
             else:
-                action = logits if self._action_method == 'greedy' else logits
-            return action, logits, value, layers, tf.get_variable_scope()
+                self._log_std = tf.get_variable('log_std', shape=(), dtype=tf.float32, initializer=tf.constant_initializer(-1))
+                self._action = logits if self._action_method == 'greedy' else logits + tf.random_normal(tf.shape(logits), 0, tf.exp(self._log_std))
 
-    def _embedding_network(self, img_in, layers, reuse=False):
-        if img_in.dtype == tf.uint8:
-            img_in = tf.cast(img_in, tf.float32) / 255.0
+            self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
+            self._model_vars = self._scope.global_variables()
+
+    def _setup_placeholders(self):
+        self.sy_obs = tf.placeholder(self._obs_dtype, (None,) + self._obs_shape, name='obs_placeholder')
+
+    def _setup_embedding_network(self, reuse=False):
+        if self.sy_obs.dtype == tf.uint8:
+            self.sy_obs = tf.cast(self.sy_obs, tf.float32) / 255.0
 
         if self._embedding_architecture is None:
-            return img_in
+            return self.sy_obs
 
         with tf.variable_scope('embedding', reuse=reuse):
-            out = img_in
+            out = self.sy_obs
             func = slim.conv2d if self._use_conv else slim.fully_connected
             for layer in self._embedding_architecture:
                 out = func(out, *layer)
-                layers.append(tf.contrib.layers.flatten(out))
-            return layers[-1]
+                self._layers.append(tf.contrib.layers.flatten(out))
+            self._embedding = self._layers[-1]
 
-    # TODO: add support for continuous action spaces
-    def _action_logits(self, embedding, layers, reuse=False):
+    def _setup_action_logits(self, reuse=False):
         if self._logit_architecture is None:
             raise ValueError("Received NoneType for action logit architecture.")
 
         with tf.variable_scope('logits', reuse=reuse):
-            out = embedding
+            out = self._embedding
             for layer in self._logit_architecture:
                 out = slim.fully_connected(out, *layer)
-                layers.append(out)
+                self._layers.append(out)
             if self._discrete:
                 logits = slim.fully_connected(out, self._ac_shape, activation_fn=None)
             else:
                 ac_dim = reduce(mul, self._ac_shape)
                 logits = slim.fully_connected(out, ac_dim, activation_fn=None)
                 logits = tf.reshape(logits, self._ac_shape)
-            layers.append(logits)
-            return logits
+            self._layers.append(logits)
+            self._logits = logits
 
-    def _value_function(self, embedding, reuse=False):
+    def _setup_value_function(self, reuse=False):
         if self._value_architecture is None:
             return None
 
         with tf.variable_scope('value', reuse=reuse):
-            out = embedding
+            out = self._embedding
             for layer in self._value_architecture:
                 out = slim.fully_connected(out, *layer)
             value = slim.fully_connected(out, 1, activation_fn=None)
             value = tf.squeeze(value)
-            return value
+            self._value = value
 
     def predict(self, obs, return_activations=False):
         sess = self._get_session()
