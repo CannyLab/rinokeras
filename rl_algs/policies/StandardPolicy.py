@@ -1,3 +1,7 @@
+import copy
+from functools import reduce
+from operator import mul
+
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
@@ -7,7 +11,7 @@ from .TFPolicy import TFPolicy
 class StandardPolicy(TFPolicy):
 
     def __init__(self, obs_shape, 
-                        num_actions, 
+                        ac_shape, 
                         discrete, 
                         scope='agent', 
                         obs_dtype=tf.float32,
@@ -16,12 +20,13 @@ class StandardPolicy(TFPolicy):
                         embedding_architecture=[(64,), (64,)],
                         logit_architecture=[(64,), (64,)],
                         value_architecture=[(64,), (64,)]):
-        super().__init__(obs_shape, num_actions, discrete, scope)
+        super().__init__(obs_shape, ac_shape, discrete, scope)
         self._use_conv = use_conv
         self._embedding_architecture = embedding_architecture
         self._logit_architecture = logit_architecture
         self._value_architecture = value_architecture
         self._action_method = action_method
+        self._obs_dtype = obs_dtype
         if action_method not in ['greedy', 'sample']:
             raise ValueError("Unrecognized action method")
 
@@ -37,7 +42,10 @@ class StandardPolicy(TFPolicy):
             embedding = self._embedding_network(img_in, layers)
             logits = self._action_logits(embedding, layers)
             value = self._value_function(embedding)
-            action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
+            if self._discrete:
+                action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
+            else:
+                action = logits if self._action_method == 'greedy' else logits
             return action, logits, value, layers, tf.get_variable_scope()
 
     def _embedding_network(self, img_in, layers, reuse=False):
@@ -65,7 +73,12 @@ class StandardPolicy(TFPolicy):
             for layer in self._logit_architecture:
                 out = slim.fully_connected(out, *layer)
                 layers.append(out)
-            logits = slim.fully_connected(out, self._ac_shape, activation_fn=None)
+            if self._discrete:
+                logits = slim.fully_connected(out, self._ac_shape, activation_fn=None)
+            else:
+                ac_dim = reduce(mul, self._ac_shape)
+                logits = slim.fully_connected(out, ac_dim, activation_fn=None)
+                logits = tf.reshape(logits, self._ac_shape)
             layers.append(logits)
             return logits
 
@@ -88,6 +101,18 @@ class StandardPolicy(TFPolicy):
             to_return.append(self._layers)
         to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return[0] if not return_activations else to_return
+
+    def make_copy(self, scope):
+        return StandardPolicy(self._obs_shape,
+                                self._ac_shape,
+                                self._discrete,
+                                scope,
+                                self._obs_dtype,
+                                self._action_method,
+                                self._use_conv,
+                                self._embedding_architecture,
+                                self._logit_architecture,
+                                self._value_architecture)
 
 
 

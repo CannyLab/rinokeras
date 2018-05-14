@@ -7,11 +7,12 @@ from .Trainer import Trainer
 
 class DQNTrainer(Trainer):
 
-    def __init__(self, obs_shape, ac_shape, policy, old_policy, gamma=0.99, scope='trainer'):
+    def __init__(self, obs_shape, ac_shape, policy, gamma=0.99, target_update_freq=10000, scope='trainer'):
         super().__init__(obs_shape, ac_shape, policy)
-        self._old_policy = old_policy
+        self._target_update_freq = target_update_freq
 
         with tf.variable_scope(scope):
+            self._old_policy = policy.make_copy('old_policy')
             self._scope = tf.get_variable_scope()
             self._setup_placeholders()
             loss, tderr = self._setup_loss(gamma)
@@ -55,6 +56,9 @@ class DQNTrainer(Trainer):
 
         sess = self._get_session()
         _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        self._num_param_updates += 1
+        if self._num_param_updates % self._target_update_freq == 0:
+            self.update_target_network()
         return loss
 
     def update_target_network(self):

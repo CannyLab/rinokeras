@@ -8,6 +8,7 @@ class Trainer(object):
         self._policy = policy
         self._discrete = discrete
         self._scope = None
+        self._num_param_updates = 0
 
     def _setup_placeholders(self):
         return NotImplemented
@@ -27,3 +28,7 @@ class Trainer(object):
     @property
     def scope(self):
         return self._scope
+
+    @property
+    def num_param_updates(self):
+        return self._num_param_updates

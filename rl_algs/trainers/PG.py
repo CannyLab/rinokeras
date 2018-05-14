@@ -1,3 +1,6 @@
+from functools import reduce
+from operator import mul
+
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -78,6 +81,7 @@ class PGTrainer(Trainer):
         
         sess = self._get_session()
         _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        self._num_param_updates += 1
         return loss
 
 # class PPOAgent(PGAgent):
