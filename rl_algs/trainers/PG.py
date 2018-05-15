@@ -8,11 +8,10 @@ import tensorflow.contrib.slim as slim
 from .Trainer import Trainer
 
 class PGTrainer(Trainer):
-    def __init__(self, obs_shape, ac_shape, policy, discrete, alpha=0.8, entcoeff=0.001, scope='traner'):
-        super().__init__(obs_shape, ac_shape, policy)
+    def __init__(self, obs_shape, ac_shape, policy, discrete, alpha=0.8, entcoeff=0.001, scope='trainer'):
+        super().__init__(obs_shape, ac_shape, policy, discrete)
         self._alpha = alpha
         self._entcoeff = entcoeff
-        self._discrete = discrete
 
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope()
@@ -30,7 +29,7 @@ class PGTrainer(Trainer):
         if self._discrete:
             self.sy_act = tf.placeholder(tf.int32, [None], name='act_placeholder')
         else:
-            self.sy_act = tf.placeholder(tf.float32, (None,) + tuple(ac_shape), name='act_placeholder')
+            self.sy_act = tf.placeholder(tf.float32, (None,) + tuple(self._ac_shape), name='act_placeholder')
         self.sy_val = tf.placeholder(tf.float32, [None], name='val_placeholder')
         self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
 
@@ -94,6 +93,94 @@ class PGTrainer(Trainer):
         sess = self._get_session()
         _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
         self._num_param_updates += 1
+        return loss
+
+class PPOTrainer(PGTrainer):
+
+    def __init__(self, obs_shape, ac_shape, policy, discrete, 
+                    alpha=0.8, entcoeff=0.001, use_surrogate=True, epsilon=0.2, dtarg=0.03, 
+                    scope='trainer'):
+        self._use_surrogate = use_surrogate
+        self._epsilon = epsilon
+        self._dtarg = dtarg
+        with tf.variable_scope(scope):
+            self._old_policy = policy.make_copy('old_policy')
+            self._old_policy.create_copy_op_other_to_self(policy)
+        super().__init__(obs_shape, ac_shape, policy, discrete, alpha, entcoeff, scope)
+
+    def _setup_placeholders(self):
+        super()._setup_placeholders()
+        self._beta = tf.placeholder(tf.float32, (), name='beta')
+
+    def _setup_loss(self):
+        if self._discrete:
+            neg_logprobs = tf.nn.log_softmax(self._policy.logits)
+            act_neg_logprobs = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.sy_act, logits=self._policy.logits)
+
+            old_neg_logprobs = tf.nn.log_softmax(self._old_policy.logits)
+            old_act_neg_logprobs = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.sy_act, logits=self._old_policy.logits)
+        else:
+            squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
+            norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
+            neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, 1)
+
+            old_squared_diff = tf.squared_difference(self.sy_act, self._old_policy.logits)
+            old_norm_diff = old_squared_diff / (2 * tf.square(tf.exp(self._old_policy._log_std)))
+            old_neg_logprobs = old_norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._old_policy._log_std))) / 2)
+            old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, 1)
+
+        values, advantages = self._compute_values_and_advantages()
+
+        # PPO Surrogate (https://github.com/openai/baselines/blob/master/baselines/ppo1/pposgd_simple.py#L109)
+        ratio = tf.exp(act_neg_logprobs - old_act_neg_logprobs)
+        surr1 = tf.multiply(ratio, advantages)
+        surr2 = tf.multiply(tf.clip_by_value(ratio, 1.0 - self._epsilon, 1.0 + self._epsilon), advantages)
+        # Note the maximum and lack of negative - it depends on whether you compute the log probability or the negative log probability
+        # If PPO seems unstable, there's probably a sign flipped somewhere!
+        surr_loss = tf.reduce_mean(tf.maximum(surr1, surr2))
+
+        # Adaptive KL Penalty
+        kl = tf.reduce_sum(tf.multiply(tf.exp(old_neg_logprobs), neg_logprobs - old_neg_logprobs), 1)
+        self._expected_kl = tf.reduce_mean(kl)
+        adaptive_loss = tf.reduce_mean(surr1 - self._beta * kl)
+
+        # Value Loss
+        value_loss = tf.losses.mean_squared_error(labels=values, predictions=self._policy.value)
+
+        # Entropy Penalty
+        ent_loss = -self._entcoeff * tf.reduce_mean(self._entropy())
+        
+        loss = surr_loss if self._use_surrogate else adaptive_loss
+
+        return self._alpha * loss + (1 - self._alpha) * value_loss + ent_loss
+
+    def train(self, batch, learning_rate=1e-4, n_iters=2):
+        beta = 1.0
+
+        self._old_policy.copy_other_to_self()
+
+        feed_dict = {
+            self._policy.sy_obs : batch['obs'],
+            self._old_policy.sy_obs : batch['obs'],
+            self.sy_act : batch['act'],
+            self.sy_val : batch['val'],
+            self.learning_rate : learning_rate
+        }
+
+        sess = self._get_session() 
+        loss = None
+        for _ in range(n_iters):
+            if self._use_surrogate:
+                _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+                # print(ratio)
+            else:
+                feed_dict[self._beta] = beta
+                _, loss, d = sess.run([self._update_op, self._loss, self._expected_kl], feed_dict=feed_dict)
+                if (d < self._dtarg / 1.5):
+                    beta /= 2.0
+                elif (d > self._dtarg * 1.5):
+                    beta *= 2.0
         return loss
 
 # class PPOAgent(PGAgent):

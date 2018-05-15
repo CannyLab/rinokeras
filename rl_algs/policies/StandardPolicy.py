@@ -1,5 +1,6 @@
 from functools import reduce
 from operator import mul
+import collections
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -38,10 +39,11 @@ class StandardPolicy(TFPolicy):
             self._setup_value_function()
 
             if self._discrete:
-                self._action = tf.argmax(logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(logits, 1))
+                self._action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(self._logits, 1))
             else:
                 self._log_std = tf.get_variable('log_std', shape=(), dtype=tf.float32, initializer=tf.constant_initializer(-1))
-                self._action = logits if self._action_method == 'greedy' else logits + tf.random_normal(tf.shape(logits), 0, tf.exp(self._log_std))
+                self._action = self._logits if self._action_method == 'greedy' else self._logits + tf.random_normal(tf.shape(self._logits), 0, tf.exp(self._log_std))
+                self._action = self._action[0] # only needed during inference
 
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
             self._model_vars = self._scope.global_variables()
@@ -54,7 +56,8 @@ class StandardPolicy(TFPolicy):
             self.sy_obs = tf.cast(self.sy_obs, tf.float32) / 255.0
 
         if self._embedding_architecture is None:
-            return self.sy_obs
+            self._embedding = self.sy_obs
+            return
 
         with tf.variable_scope('embedding', reuse=reuse):
             out = self.sy_obs
@@ -76,15 +79,18 @@ class StandardPolicy(TFPolicy):
             if self._discrete:
                 logits = slim.fully_connected(out, self._ac_shape, activation_fn=None)
             else:
-                ac_dim = reduce(mul, self._ac_shape)
+                ac_dim = self._ac_shape 
+                if isinstance(ac_dim, collections.Iterable):
+                    ac_dim = reduce(mul, self._ac_shape)
                 logits = slim.fully_connected(out, ac_dim, activation_fn=None)
-                logits = tf.reshape(logits, self._ac_shape)
+                logits = tf.reshape(logits, (-1,) + self._ac_shape)
             self._layers.append(logits)
             self._logits = logits
 
     def _setup_value_function(self, reuse=False):
         if self._value_architecture is None:
-            return None
+            self._value = None
+            return
 
         with tf.variable_scope('value', reuse=reuse):
             out = self._embedding

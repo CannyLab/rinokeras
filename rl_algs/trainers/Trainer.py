@@ -1,12 +1,15 @@
 import tensorflow as tf
+import numpy as np
 
 class Trainer(object):
 
-    def __init__(self, obs_shape, ac_shape, policy, discrete=True):
-        self._obs_shape = obs_shape
+    def __init__(self, obs_shape, ac_shape, policy, discrete):
+        self._obs_shape = obs_shape if not np.isscalar(obs_shape) else (obs_shape,)
         self._ac_shape = ac_shape
         self._policy = policy
         self._discrete = discrete
+        if not discrete and np.isscalar(ac_shape):
+            self._ac_shape = (ac_shape,)
         self._scope = None
         self._num_param_updates = 0
 
