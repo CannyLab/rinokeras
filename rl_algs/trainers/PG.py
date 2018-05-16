@@ -42,6 +42,7 @@ class PGTrainer(Trainer):
         mean, var = tf.nn.moments(self.sy_val, [0])
         baseline = baseline * (tf.sqrt(var) + 1e-10)
         baseline = baseline + mean
+
         values = self.sy_val
         values = values - mean
         values = values / (tf.sqrt(var) + 1e-10)
@@ -58,7 +59,7 @@ class PGTrainer(Trainer):
             logprobs = tf.log(probs)
             return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
         else:
-            return -self._policy._log_std
+            return self._policy._log_std
 
     def _setup_loss(self):
         if self._discrete:
@@ -67,9 +68,8 @@ class PGTrainer(Trainer):
             squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
             norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
             neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
-            act_neg_logprobs = tf.reduce_sum(neg_logprobs, 1)
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
         values, advantages = self._compute_values_and_advantages()
-        
         # Regular PG Loss
         loss = tf.reduce_mean(tf.multiply(act_neg_logprobs, advantages))
         # Value Loss
@@ -80,7 +80,8 @@ class PGTrainer(Trainer):
         self._action_loss = loss
         self._value_loss = value_loss
         self._ent_loss = ent_loss
-        return self._alpha * loss + (1 - self._alpha) * value_loss + ent_loss
+
+        return self._alpha * loss + (1 - self._alpha) * value_loss #+ ent_loss
 
     def train(self, batch, learning_rate=5e-3):
         feed_dict = {
@@ -91,9 +92,9 @@ class PGTrainer(Trainer):
         }
         
         sess = self._get_session()
-        _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        _, loss, value_loss = sess.run([self._update_op, self._loss, self._value_loss], feed_dict=feed_dict)
         self._num_param_updates += 1
-        return loss
+        return loss, value_loss
 
 class PPOTrainer(PGTrainer):
 
@@ -123,22 +124,21 @@ class PPOTrainer(PGTrainer):
             squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
             norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
             neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
-            act_neg_logprobs = tf.reduce_sum(neg_logprobs, 1)
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
 
             old_squared_diff = tf.squared_difference(self.sy_act, self._old_policy.logits)
             old_norm_diff = old_squared_diff / (2 * tf.square(tf.exp(self._old_policy._log_std)))
             old_neg_logprobs = old_norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._old_policy._log_std))) / 2)
-            old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, 1)
+            old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
 
         values, advantages = self._compute_values_and_advantages()
 
         # PPO Surrogate (https://github.com/openai/baselines/blob/master/baselines/ppo1/pposgd_simple.py#L109)
-        ratio = tf.exp(act_neg_logprobs - old_act_neg_logprobs)
+        # Note the order of subtraction. If PPO seems unstable it's probably a function of this being bad
+        ratio = tf.exp(old_act_neg_logprobs - act_neg_logprobs)
         surr1 = tf.multiply(ratio, advantages)
         surr2 = tf.multiply(tf.clip_by_value(ratio, 1.0 - self._epsilon, 1.0 + self._epsilon), advantages)
-        # Note the maximum and lack of negative - it depends on whether you compute the log probability or the negative log probability
-        # If PPO seems unstable, there's probably a sign flipped somewhere!
-        surr_loss = tf.reduce_mean(tf.maximum(surr1, surr2))
+        surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
 
         # Adaptive KL Penalty
         kl = tf.reduce_sum(tf.multiply(tf.exp(old_neg_logprobs), neg_logprobs - old_neg_logprobs), 1)
@@ -153,9 +153,9 @@ class PPOTrainer(PGTrainer):
         
         loss = surr_loss if self._use_surrogate else adaptive_loss
 
-        return self._alpha * loss + (1 - self._alpha) * value_loss + ent_loss
+        return self._alpha * loss + (1 - self._alpha) * value_loss# + ent_loss
 
-    def train(self, batch, learning_rate=1e-4, n_iters=2):
+    def train(self, batch, learning_rate=1e-4, n_iters=10):
         beta = 1.0
 
         self._old_policy.copy_other_to_self()
@@ -173,7 +173,6 @@ class PPOTrainer(PGTrainer):
         for _ in range(n_iters):
             if self._use_surrogate:
                 _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
-                # print(ratio)
             else:
                 feed_dict[self._beta] = beta
                 _, loss, d = sess.run([self._update_op, self._loss, self._expected_kl], feed_dict=feed_dict)

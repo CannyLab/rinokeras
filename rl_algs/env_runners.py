@@ -23,6 +23,7 @@ class EnvironmentRunner(object):
         self._agent = agent    
         self._episode_num = 0
         self._return_activations = kwargs.get('return_activations', False)
+        self._max_episode_steps = kwargs.get('max_episode_steps', float('inf'))
 
         modifyobs = kwargs.get('modifyobs', None)
         modifyreward = kwargs.get('modifyreward', None)
@@ -76,14 +77,18 @@ class EnvironmentRunner(object):
             else:
                 action = pred
             self._num_agent_actions += 1
+        self._num_steps += 1
 
         # Step the environment
         obs, rew, done, _ = self._env.step(action)
+        if self._num_steps >= self._max_episode_steps:
+            done = True
+
         self._obs = self._modifyobs(obs)
         self._rew = self._modifyreward(rew)
         self._done = done
         self._act = action
-        self._num_steps += 1
+        
         self._rollout['act'].append(self._act)
         self._rollout['rew'].append(self._rew)
         if self._return_activations:
@@ -168,12 +173,6 @@ class PGEnvironmentRunner(EnvironmentRunner):
         while not self._done:
             self.step(self._obs[None])
 
-        # self._rollout['val'].append(self._rew)
-        # for t in reversed(range(self._num_steps - 1)):
-            # self._rollout['val'].append(self._rollout['rew'][t] + self._gamma * self._rollout['val'][-1])
-
-        # self._rollout['val'].reverse()
-
         for key in self._rollout:
             dtype = np.float64
             if key == 'obs':
@@ -204,41 +203,6 @@ class PGEnvironmentRunner(EnvironmentRunner):
             self._rollout['val'] /= self._rollout['val'].std() + 1e-10
 
         return dict(self._rollout) # cast to dict so keys will error
-
-    def step(self, obs=None):
-        if self._done:
-            raise RuntimeError("Cannot step environment which is done. Call reset first.")
-        if obs is None:
-            obs = self._obs
-        self._rollout['obs'].append(obs)
-
-        # Get action
-        pred = self._agent.predict(obs, return_activations=self._return_activations)
-        if self._return_activations:
-            action, val, probs, activs = pred
-        else:
-            action = pred
-
-        # Step the environment
-        obs, rew, done, _ = self._env.step(action)
-        self._obs = self._modifyobs(obs)
-        self._rew = self._modifyreward(rew)
-        self._done = done
-        self._act = action
-        self._num_steps += 1
-        self._rollout['act'].append(self._act)
-        self._rollout['rew'].append(self._rew)
-        if self._return_activations:
-            self._val = val
-            self._probs = probs
-            self._activs = activs
-            self._rollout['baseline'].append(self._val)
-            self._rollout['probs'].append(self._probs)
-            self._rollout['activs'].append(self._activs)
-
-        self._episode_rew += self._rew
-
-        return self._done
 
     @property
     def summary(self):

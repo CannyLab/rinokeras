@@ -41,9 +41,13 @@ class StandardPolicy(TFPolicy):
             if self._discrete:
                 self._action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(self._logits, 1))
             else:
-                self._log_std = tf.get_variable('log_std', shape=(), dtype=tf.float32, initializer=tf.constant_initializer(-1))
-                self._action = self._logits if self._action_method == 'greedy' else self._logits + tf.random_normal(tf.shape(self._logits), 0, tf.exp(self._log_std))
-                self._action = self._action[0] # only needed during inference
+                if self._action_method == 'greedy':
+                    self._action = self._logits
+                else:
+                    self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(-1))
+                    epsilon = tf.random_normal(tf.shape(self._logits))
+                    self._action = self._logits + epsilon * tf.exp(self._log_std)
+                self._action = self._action # only needed during inference
 
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
             self._model_vars = self._scope.global_variables()
