@@ -90,6 +90,7 @@ class PGTrainer(Trainer):
             self.sy_val : batch['val'],
             self.learning_rate : learning_rate
         }
+        feed_dict.update(self._policy.feed_dict_extras(batch))
         
         sess = self._get_session()
         _, loss, value_loss = sess.run([self._update_op, self._loss, self._value_loss], feed_dict=feed_dict)
@@ -153,6 +154,10 @@ class PPOTrainer(PGTrainer):
         
         loss = surr_loss if self._use_surrogate else adaptive_loss
 
+        self._action_loss = loss
+        self._value_loss = value_loss
+        self._ent_loss = ent_loss
+
         return self._alpha * loss + (1 - self._alpha) * value_loss# + ent_loss
 
     def train(self, batch, learning_rate=1e-4, n_iters=10):
@@ -167,20 +172,24 @@ class PPOTrainer(PGTrainer):
             self.sy_val : batch['val'],
             self.learning_rate : learning_rate
         }
+        
+        feed_dict.update(self._policy.feed_dict_extras(batch))
+        feed_dict.update(self._old_policy.feed_dict_extras(batch))
 
         sess = self._get_session() 
         loss = None
+        value_loss = None
         for _ in range(n_iters):
             if self._use_surrogate:
-                _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+                _, loss, value_loss = sess.run([self._update_op, self._loss, self._value_loss], feed_dict=feed_dict)
             else:
                 feed_dict[self._beta] = beta
-                _, loss, d = sess.run([self._update_op, self._loss, self._expected_kl], feed_dict=feed_dict)
+                _, loss, value_loss, d = sess.run([self._update_op, self._loss, self._value_loss, self._expected_kl], feed_dict=feed_dict)
                 if (d < self._dtarg / 1.5):
                     beta /= 2.0
                 elif (d > self._dtarg * 1.5):
                     beta *= 2.0
-        return loss
+        return loss, value_loss
 
 # class PPOAgent(PGAgent):
 

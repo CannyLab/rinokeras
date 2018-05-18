@@ -174,13 +174,7 @@ class PGEnvironmentRunner(EnvironmentRunner):
             self.step(self._obs[None])
 
         for key in self._rollout:
-            dtype = np.float64
-            if key == 'obs':
-                dtype = np.uint8
-            elif key == 'act':
-                dtype = np.int32
-
-            self._rollout[key] = np.squeeze(np.array(self._rollout[key], dtype=dtype))
+            self._rollout[key] = np.squeeze(np.array(self._rollout[key]))
             if self._num_steps == 1:
                 self._rollout[key] = np.expand_dims(self._rollout[key], 0)
         # compute values

@@ -71,4 +71,13 @@ class TFPolicy(Policy):
     def value(self):
         return self._value
 
+    # Ideally, a training algorithm should be policy agnostic. However, some policies, like the LSTMPolicy,
+    # require extra goodies like an input state. It's easy to handle this when interacting with the environment,
+    # because it calls the policy's "predict" method, but the training algorithm can't really do that. It 
+    # needs to pass a value in for these extra variables. So we can define a property "feed dict extras"
+    # that returns any extra information the policy needs that is stored with the policy on device
+    # rather than on host.
+    def feed_dict_extras(self, batch):
+        return {}
+
 
