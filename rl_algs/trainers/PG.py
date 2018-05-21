@@ -19,6 +19,7 @@ class PGTrainer(Trainer):
             loss = self._setup_loss()
 
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            self._gradients = optimizer.compute_gradients(loss, var_list=self._policy.vars)
             update_op = optimizer.minimize(loss, var_list=self._policy.vars)
                 
             self._loss = loss
@@ -68,7 +69,7 @@ class PGTrainer(Trainer):
             squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
             norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
             neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
-            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._ac_shape) + 1))
         values, advantages = self._compute_values_and_advantages()
         # Regular PG Loss
         loss = tf.reduce_mean(tf.multiply(act_neg_logprobs, advantages))
@@ -125,12 +126,12 @@ class PPOTrainer(PGTrainer):
             squared_diff = tf.squared_difference(self.sy_act, self._policy.logits)
             norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
             neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
-            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
+            act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._ac_shape) + 1))
 
             old_squared_diff = tf.squared_difference(self.sy_act, self._old_policy.logits)
             old_norm_diff = old_squared_diff / (2 * tf.square(tf.exp(self._old_policy._log_std)))
             old_neg_logprobs = old_norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._old_policy._log_std))) / 2)
-            old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, np.arange(1, len(self._obs_shape) + 1))
+            old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, np.arange(1, len(self._ac_shape) + 1))
 
         values, advantages = self._compute_values_and_advantages()
 
@@ -147,7 +148,7 @@ class PPOTrainer(PGTrainer):
         adaptive_loss = tf.reduce_mean(surr1 - self._beta * kl)
 
         # Value Loss
-        value_loss = tf.losses.mean_squared_error(labels=values, predictions=self._policy.value)
+        value_loss = tf.losses.huber_loss(labels=values, predictions=self._policy.value)
 
         # Entropy Penalty
         ent_loss = -self._entcoeff * tf.reduce_mean(self._entropy())

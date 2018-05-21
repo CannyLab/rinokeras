@@ -34,26 +34,30 @@ class StandardPolicy(TFPolicy):
             self._setup_placeholders()
             self._layers = []
 
-            self._setup_embedding_network()
-            self._setup_action_logits()
-            self._setup_value_function()
-
-            if self._discrete:
-                self._action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(self._logits, 1))
-            else:
-                if self._action_method == 'greedy':
-                    self._action = self._logits
-                else:
-                    self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(-1))
-                    epsilon = tf.random_normal(tf.shape(self._logits))
-                    self._action = self._logits + epsilon * tf.exp(self._log_std)
-                self._action = self._action # only needed during inference
+            self._setup_agent()
+            self._setup_action()
 
             self._scope = tf.get_variable_scope() # do it like this because you could be inside another scope - this will give you the full scope path
             self._model_vars = self._scope.global_variables()
 
     def _setup_placeholders(self):
         self.sy_obs = tf.placeholder(self._obs_dtype, (None,) + self._obs_shape, name='obs_placeholder')
+
+    def _setup_agent(self):
+        self._setup_embedding_network()
+        self._setup_action_logits()
+        self._setup_value_function()
+
+    def _setup_action(self):
+        if self._discrete:
+            self._action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(self._logits, 1))
+        else:
+            if self._action_method == 'greedy':
+                self._action = self._logits
+            else:
+                self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(-1))
+                epsilon = tf.random_normal(tf.shape(self._logits))
+                self._action = self._logits + epsilon * tf.exp(self._log_std)
 
     def _setup_embedding_network(self, reuse=False):
         if self.sy_obs.dtype == tf.uint8:

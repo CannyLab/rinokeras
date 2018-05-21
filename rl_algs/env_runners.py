@@ -24,6 +24,7 @@ class EnvironmentRunner(object):
         self._episode_num = 0
         self._return_activations = kwargs.get('return_activations', False)
         self._max_episode_steps = kwargs.get('max_episode_steps', float('inf'))
+        self._pass_reward_to_agent = kwargs.get('pass_reward_to_agent', False)
 
         modifyobs = kwargs.get('modifyobs', None)
         modifyreward = kwargs.get('modifyreward', None)
@@ -71,7 +72,8 @@ class EnvironmentRunner(object):
         if random:
             action = np.random.randint(self._env.action_space.n)
         else:
-            pred = self._agent.predict(obs, return_activations=self._return_activations)
+            pred = self._agent.predict(obs, return_activations=self._return_activations) \
+                        if not self._pass_reward_to_agent else self._agent.predict(obs, self._rew, return_activations=self._return_activations)
             if self._return_activations:
                 action, qval, activs = pred
             else:
@@ -83,7 +85,6 @@ class EnvironmentRunner(object):
         obs, rew, done, _ = self._env.step(action)
         if self._num_steps >= self._max_episode_steps:
             done = True
-
         self._obs = self._modifyobs(obs)
         self._rew = self._modifyreward(rew)
         self._done = done
@@ -104,12 +105,11 @@ class EnvironmentRunner(object):
     def reset(self):
         if self._done:
             self._episode_num += 1
-
         obs = self._env.reset()
         self._obs = self._modifyobs(obs)
         self._done = False
         self._act = None
-        self._rew = None
+        self._rew = 0.
         self._qval = None
         self._activs = None
         self._num_steps = 0
@@ -137,7 +137,7 @@ class EnvironmentRunner(object):
     def summary(self):
         printstr = []
         printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5}'.format(self._episode_rew))
+        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
         printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
         printstr.append('PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps))
         return '\t' + ', '.join(printstr)
@@ -159,7 +159,7 @@ class DQNEnvironmentRunner(EnvironmentRunner):
     def summary(self):
         printstr = []
         printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5}'.format(self._episode_rew))
+        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
         printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
         printstr.append('PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps))
         return '\t' + ', '.join(printstr)
@@ -202,7 +202,7 @@ class PGEnvironmentRunner(EnvironmentRunner):
     def summary(self):
         printstr = []
         printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5}'.format(self._episode_rew))
+        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
         printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
         return '\t' + ', '.join(printstr)
 

@@ -7,8 +7,8 @@ from .Trainer import Trainer
 
 class DQNTrainer(Trainer):
 
-    def __init__(self, obs_shape, ac_shape, policy, gamma=0.99, target_update_freq=10000, scope='trainer'):
-        super().__init__(obs_shape, ac_shape, policy)
+    def __init__(self, obs_shape, ac_shape, policy, discrete, gamma=0.99, target_update_freq=10000, scope='trainer'):
+        super().__init__(obs_shape, ac_shape, policy, discrete)
         self._target_update_freq = target_update_freq
 
         with tf.variable_scope(scope):
@@ -41,7 +41,7 @@ class DQNTrainer(Trainer):
 
         # Q(s_t, a_t) = r_t + max_a Q(s_{t+1}, a)
         target_val = self.sy_rew + gamma * tf.reduce_max(self._old_policy.logits, axis=1) * (1 - self.sy_done)
-        loss = tf.losses.mean_squared_error(labels=target_val, predictions=curr_val)
+        loss = tf.losses.huber_loss(labels=target_val, predictions=curr_val)
         tderr = tf.reduce_mean(tf.abs(curr_val - target_val)) # tderr is l1 loss
 
         return loss, tderr
@@ -55,6 +55,9 @@ class DQNTrainer(Trainer):
             self.sy_done : batch['done'],
             self.learning_rate : learning_rate
         }
+
+        feed_dict.update(self._policy.feed_dict_extras(batch))
+        feed_dict.update(self._old_policy.feed_dict_extras(batch))
 
         sess = self._get_session()
         _, loss, pl, opl = sess.run([self._update_op, self._loss, self._policy.logits, self._old_policy.logits], feed_dict=feed_dict)

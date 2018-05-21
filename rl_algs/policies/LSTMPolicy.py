@@ -19,35 +19,36 @@ class LSTMPolicy(StandardPolicy):
                         embedding_architecture=[(64,), (64,)],
                         logit_architecture=[(64,), (64,)],
                         value_architecture=[(64,), (64,)],
-                        lstm_cell_size=512):
+                        lstm_cell_size=512,
+                        use_reward=False):
         self._lstm_cell_size = lstm_cell_size
+        self._use_reward = use_reward
         super().__init__(obs_shape, ac_shape, discrete, scope, obs_dtype, action_method, use_conv,
                             embedding_architecture, logit_architecture, value_architecture)
 
     def _setup_placeholders(self):
         self.sy_obs = tf.placeholder(self._obs_dtype, (None, None) + self._obs_shape, name='obs_placeholder')
-
-    def _setup_embedding_network(self, reuse=False):
+        if self._use_reward:
+            self.sy_rew = tf.placeholder(tf.float32, (None,), name='rew_placeholder')
+    
+    def _setup_agent(self):
+        obs_placeholder = self.sy_obs
         batch_size = tf.shape(self.sy_obs)[0]
         num_timesteps = tf.shape(self.sy_obs)[1]
+        self.sy_obs = tf.reshape(self.sy_obs, (batch_size * num_timesteps,) + self._obs_shape)
+        self._setup_embedding_network()
+        self.sy_obs = obs_placeholder
+        if self._use_reward:
+            rew = tf.expand_dims(self.sy_rew, 1)
+            self._embedding = tf.concat((self._embedding, rew), 1)
 
-        if self.sy_obs.dtype == tf.uint8:
-            self.sy_obs = tf.cast(self.sy_obs, tf.float32) / 255.0
+        self._embedding = tf.reshape(self._embedding, (batch_size, num_timesteps, self._embedding.shape[1]))
+        self._setup_lstm_network()
 
-        if self._embedding_architecture is not None:
-            with tf.variable_scope('embedding', reuse=reuse):
-                out = self.sy_obs
-                func = slim.conv2d if self._use_conv else slim.fully_connected
-                for layer in self._embedding_architecture:
-                    out = func(out, *layer)
-                    self._layers.append(tf.contrib.layers.flatten(out))
-                out = self._layers[-1]
-                embedding_size = tf.shape(out)[1]
-                out = tf.reshape(out, (batch_size, num_timesteps, embedding_size))
-        else:
-            out = self.sy_obs
+        self._setup_action_logits()
+        self._setup_value_function()
 
-
+    def _setup_lstm_network(self, reuse=False):
         with tf.variable_scope('lstm', reuse=reuse):
             lstm = rnn.BasicLSTMCell(self._lstm_cell_size)
             self._state_size = lstm.state_size
@@ -61,7 +62,7 @@ class LSTMPolicy(StandardPolicy):
             self._state_in = (c_in, h_in)
 
             state_in = rnn.LSTMStateTuple(c_in, h_in)
-            lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm, out, initial_state=state_in, dtype=tf.float32)
+            lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm, self._embedding, initial_state=state_in, dtype=tf.float32)
 
             lstm_c, lstm_h = lstm_state
             self._embedding = tf.reshape(lstm_outputs, [-1, self._lstm_cell_size])
@@ -70,7 +71,7 @@ class LSTMPolicy(StandardPolicy):
             # All this stuff is only needed when collecting rollouts, so can hardcode [0, :]
             self._state_out = [lstm_c[:1,:], lstm_h[:1,:]] # doing it like this does keepdims automatically I think
 
-    def predict(self, obs, return_activations=False):
+    def predict(self, obs, rew=None, return_activations=False):
         if obs.ndim == 2 and obs.shape[0] == 1:
             obs = np.expand_dims(obs, 1) # add time dimension
         sess = self._get_session()
@@ -80,6 +81,10 @@ class LSTMPolicy(StandardPolicy):
         feed_dict = {self.sy_obs : obs,
                         self._state_in[0] : self._state_curr[0],
                         self._state_in[1] : self._state_curr[1]}
+        if self._use_reward:
+            if np.isscalar(rew):
+                rew = np.array([rew])
+            feed_dict[self.sy_rew] = rew
         to_return = sess.run(to_return, feed_dict=feed_dict)
         self._state_curr = to_return[1:3]
         return to_return[0] if not return_activations else to_return
@@ -99,6 +104,8 @@ class LSTMPolicy(StandardPolicy):
                 self._state_in[0] : np.tile(self._state_init[0], (batch_size, 1)),
                 self._state_in[1] : np.tile(self._state_init[1], (batch_size, 1))
         }
+        if self._use_reward:
+            extras[self.sy_rew] = batch['rew']
         return extras
     
     def make_copy(self, scope):
