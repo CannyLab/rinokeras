@@ -59,7 +59,7 @@ class EnvironmentRunner(object):
         while not self._done:
             self.step()
 
-        return self._rollout
+        return dict(self._rollout)
 
     def step(self, obs=None, random=False):
         if self._done:
@@ -178,7 +178,16 @@ class PGEnvironmentRunner(EnvironmentRunner):
             if self._num_steps == 1:
                 self._rollout[key] = np.expand_dims(self._rollout[key], 0)
         # compute values
-        self._rollout['val'] = scipy.signal.lfilter([1], [1, -self._gamma], self._rollout['rew'][::-1], axis=0)[::-1]
+        rewards = self._rollout['rew'][::-1]
+        if (self._num_steps == self._max_episode_steps):
+            args = [self._obs[None]]
+            if self._pass_reward_to_agent:
+                args.append(self._rew)
+            val = self._agent.predict_value(*args)
+            rewards = np.concatenate(([val], rewards))
+        self._rollout['val'] = scipy.signal.lfilter([1], [1, -self._gamma], rewards, axis=0)[::-1]
+        if (self._num_steps == self._max_episode_steps):
+            self._rollout['val'] = self._rollout['val'][:-1]
 
         if self._return_activations:
             # normalize baseline to vals
@@ -202,7 +211,7 @@ class PGEnvironmentRunner(EnvironmentRunner):
     def summary(self):
         printstr = []
         printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
+        printstr.append('REWARD: {:>7.2f}'.format(self._episode_rew))
         printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
         return '\t' + ', '.join(printstr)
 

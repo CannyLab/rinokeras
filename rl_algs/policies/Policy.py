@@ -17,8 +17,8 @@ class Policy(object):
 	def predict(self, obs):
 		return NotImplemented
 
-	# Function to train the policy on a batch
-	def train(self, batch, learning_rate):
+	# Should return the value of an observation
+	def predict_value(self, obs):
 		return NotImplemented
 
 	# Save the model

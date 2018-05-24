@@ -32,7 +32,7 @@ class StandardPolicy(TFPolicy):
 
         with tf.variable_scope(scope):
             self._setup_placeholders()
-            self._layers = []
+            self._layers = {}
 
             self._setup_agent()
             self._setup_action()
@@ -44,13 +44,16 @@ class StandardPolicy(TFPolicy):
         self.sy_obs = tf.placeholder(self._obs_dtype, (None,) + self._obs_shape, name='obs_placeholder')
 
     def _setup_agent(self):
-        self._setup_embedding_network()
-        self._setup_action_logits()
-        self._setup_value_function()
+        self._embedding = self._setup_embedding_network(self.sy_obs, self._layers)
+        self._logits = self._setup_action_logits(self._embedding, self._layers)
+        if self._value_architecture is not None:
+            value_embedding = self._setup_embedding_network(self.sy_obs, {}, scope='value_embedding')
+            self._value = self._setup_value_function(value_embedding, {})
 
     def _setup_action(self):
         if self._discrete:
-            self._action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.squeeze(tf.multinomial(self._logits, 1))
+            action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.multinomial(self._logits, 1)
+            self._action = tf.squeeze(action)
         else:
             if self._action_method == 'greedy':
                 self._action = self._logits
@@ -59,31 +62,32 @@ class StandardPolicy(TFPolicy):
                 epsilon = tf.random_normal(tf.shape(self._logits))
                 self._action = self._logits + epsilon * tf.exp(self._log_std)
 
-    def _setup_embedding_network(self, reuse=False):
+    def _setup_embedding_network(self, inputs, layers, reuse=False, scope='embedding'):
+        layers[scope] = []
+        embedding = inputs
         if self.sy_obs.dtype == tf.uint8:
-            self.sy_obs = tf.cast(self.sy_obs, tf.float32) / 255.0
+            embedding = tf.cast(embedding, tf.float32) / 255.0
 
         if self._embedding_architecture is None:
-            self._embedding = self.sy_obs
-            return
+            layers[scope].append(tf.contrib.layers.flatten(embedding))
+        else:
+            with tf.variable_scope(scope, reuse=reuse):
+                func = slim.conv2d if self._use_conv else slim.fully_connected
+                for layer in self._embedding_architecture:
+                    embedding = func(embedding, *layer)
+                    layers[scope].append(tf.contrib.layers.flatten(embedding))
+        return layers[scope][-1]
 
-        with tf.variable_scope('embedding', reuse=reuse):
-            out = self.sy_obs
-            func = slim.conv2d if self._use_conv else slim.fully_connected
-            for layer in self._embedding_architecture:
-                out = func(out, *layer)
-                self._layers.append(tf.contrib.layers.flatten(out))
-            self._embedding = self._layers[-1]
-
-    def _setup_action_logits(self, reuse=False):
+    def _setup_action_logits(self, inputs, layers, reuse=False, scope='logits'):
         if self._logit_architecture is None:
-            raise ValueError("Received NoneType for action logit architecture.")
+            raise TypeError("Received NoneType for action logit architecture.")
+        layers[scope] = []
 
-        with tf.variable_scope('logits', reuse=reuse):
-            out = self._embedding
+        with tf.variable_scope(scope, reuse=reuse):
+            out = inputs
             for layer in self._logit_architecture:
                 out = slim.fully_connected(out, *layer)
-                self._layers.append(out)
+                layers[scope].append(out)
             if self._discrete:
                 logits = slim.fully_connected(out, self._ac_shape, activation_fn=None)
             else:
@@ -92,21 +96,23 @@ class StandardPolicy(TFPolicy):
                     ac_dim = reduce(mul, self._ac_shape)
                 logits = slim.fully_connected(out, ac_dim, activation_fn=None)
                 logits = tf.reshape(logits, (-1,) + self._ac_shape)
-            self._layers.append(logits)
-            self._logits = logits
+            layers[scope].append(logits)
+            return logits
 
-    def _setup_value_function(self, reuse=False):
+    def _setup_value_function(self, inputs, layers, reuse=False):
+        layers['value'] = []
         if self._value_architecture is None:
-            self._value = None
-            return
-
-        with tf.variable_scope('value', reuse=reuse):
-            out = self._embedding
-            for layer in self._value_architecture:
-                out = slim.fully_connected(out, *layer)
-            value = slim.fully_connected(out, 1, activation_fn=None)
-            value = tf.squeeze(value)
-            self._value = value
+            layers['value'].append(None)
+        else:
+            with tf.variable_scope('value', reuse=reuse):
+                out = inputs
+                for layer in self._value_architecture:
+                    out = slim.fully_connected(out, *layer)
+                    layers['value'].append(out)
+                value = slim.fully_connected(out, 1, activation_fn=None)
+                value = tf.squeeze(value)
+                layers['value'].append(value)
+        return layers['value'][-1]
 
     def predict(self, obs, return_activations=False):
         sess = self._get_session()
@@ -116,8 +122,12 @@ class StandardPolicy(TFPolicy):
         to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return[0] if not return_activations else to_return
 
+    def predict_value(self, obs):
+        sess = self._get_session()
+        return sess.run(self._value, feed_dict={self.sy_obs : obs})
+
     def make_copy(self, scope):
-        return StandardPolicy(self._obs_shape,
+        return self.__class__(self._obs_shape,
                                 self._ac_shape,
                                 self._discrete,
                                 scope,
@@ -127,6 +137,9 @@ class StandardPolicy(TFPolicy):
                                 self._embedding_architecture,
                                 self._logit_architecture,
                                 self._value_architecture)
+
+    def clear_memory(self):
+        return
 
 
 

@@ -8,22 +8,28 @@ import tensorflow.contrib.slim as slim
 from .Trainer import Trainer
 
 class PGTrainer(Trainer):
-    def __init__(self, obs_shape, ac_shape, policy, discrete, alpha=0.8, entcoeff=0.001, scope='trainer'):
+    def __init__(self, obs_shape, ac_shape, policy, discrete, alpha=0.8, entcoeff=0.1, scope='trainer'):
         super().__init__(obs_shape, ac_shape, policy, discrete)
         self._alpha = alpha
         self._entcoeff = entcoeff
+        self._train_vars = self._policy.vars
 
         with tf.variable_scope(scope):
             self._scope = tf.get_variable_scope()
             self._setup_placeholders()
-            loss = self._setup_loss()
+            loss, value_loss = self._setup_loss()
 
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-            self._gradients = optimizer.compute_gradients(loss, var_list=self._policy.vars)
-            update_op = optimizer.minimize(loss, var_list=self._policy.vars)
+            grads, vars = zip(*optimizer.compute_gradients(loss, var_list=self._train_vars))
+            self._vars = [v for v, g in zip(vars, grads) if g is not None]
+            self._grads = [g for g in grads if g is not None]
+            capped_grads = [tf.clip_by_value(grad, -1., 1.) if grad is not None else None for grad in grads]
+            update_op = optimizer.apply_gradients(zip(capped_grads, vars))
+            value_update_op = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(value_loss, var_list=self._train_vars)
                 
             self._loss = loss
             self._update_op = update_op
+            self._value_update_op = value_update_op
 
 
     def _setup_placeholders(self):
@@ -35,7 +41,7 @@ class PGTrainer(Trainer):
         self.learning_rate = tf.placeholder(tf.float32, (), name='learning_rate')
 
     def _compute_values_and_advantages(self):
-        baseline = self._policy.value
+        baseline = tf.stop_gradient(self._policy.value)
         mean, var = tf.nn.moments(baseline, [0])
         baseline = baseline - mean
         baseline = baseline / (tf.sqrt(var) + 1e-10)
@@ -45,8 +51,8 @@ class PGTrainer(Trainer):
         baseline = baseline + mean
 
         values = self.sy_val
-        values = values - mean
-        values = values / (tf.sqrt(var) + 1e-10)
+        # values = values - mean
+        # values = values / (tf.sqrt(var) + 1e-10)
 
         advantages = self.sy_val - baseline
         mean, var = tf.nn.moments(advantages, [0])
@@ -70,11 +76,13 @@ class PGTrainer(Trainer):
             norm_diff = squared_diff / (2 * tf.square(tf.exp(self._policy._log_std)))
             neg_logprobs = norm_diff + (tf.log(2 * np.pi * tf.square(tf.exp(self._policy._log_std))) / 2)
             act_neg_logprobs = tf.reduce_sum(neg_logprobs, np.arange(1, len(self._ac_shape) + 1))
+        self._neg_logprobs = act_neg_logprobs
         values, advantages = self._compute_values_and_advantages()
+        self._advantages = advantages
         # Regular PG Loss
         loss = tf.reduce_mean(tf.multiply(act_neg_logprobs, advantages))
         # Value Loss
-        value_loss = tf.losses.mean_squared_error(labels=values, predictions=self._policy.value)
+        value_loss = tf.losses.huber_loss(labels=values, predictions=self._policy.value)
         # Entropy Penalty
         ent_loss = -self._entcoeff*tf.reduce_mean(self._entropy())
 
@@ -82,7 +90,7 @@ class PGTrainer(Trainer):
         self._value_loss = value_loss
         self._ent_loss = ent_loss
 
-        return self._alpha * loss + (1 - self._alpha) * value_loss #+ ent_loss
+        return loss + ent_loss, value_loss
 
     def train(self, batch, learning_rate=5e-3):
         feed_dict = {
@@ -92,16 +100,16 @@ class PGTrainer(Trainer):
             self.learning_rate : learning_rate
         }
         feed_dict.update(self._policy.feed_dict_extras(batch))
-        
+
         sess = self._get_session()
-        _, loss, value_loss = sess.run([self._update_op, self._loss, self._value_loss], feed_dict=feed_dict)
+        _, _, loss, value_loss = sess.run([self._update_op, self._value_update_op, self._action_loss, self._value_loss], feed_dict=feed_dict)
         self._num_param_updates += 1
         return loss, value_loss
 
 class PPOTrainer(PGTrainer):
 
     def __init__(self, obs_shape, ac_shape, policy, discrete, 
-                    alpha=0.8, entcoeff=0.001, use_surrogate=True, epsilon=0.2, dtarg=0.03, 
+                    alpha=0.8, entcoeff=0.1, use_surrogate=True, epsilon=0.2, dtarg=0.03, 
                     scope='trainer'):
         self._use_surrogate = use_surrogate
         self._epsilon = epsilon
@@ -134,13 +142,17 @@ class PPOTrainer(PGTrainer):
             old_act_neg_logprobs = tf.reduce_sum(old_neg_logprobs, np.arange(1, len(self._ac_shape) + 1))
 
         values, advantages = self._compute_values_and_advantages()
+        self._advantages = advantages
 
         # PPO Surrogate (https://github.com/openai/baselines/blob/master/baselines/ppo1/pposgd_simple.py#L109)
         # Note the order of subtraction. If PPO seems unstable it's probably a function of this being bad
-        ratio = tf.exp(old_act_neg_logprobs - act_neg_logprobs)
-        surr1 = tf.multiply(ratio, advantages)
-        surr2 = tf.multiply(tf.clip_by_value(ratio, 1.0 - self._epsilon, 1.0 + self._epsilon), advantages)
-        surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
+        self._test1 = act_neg_logprobs
+        self._test2 = old_act_neg_logprobs
+        ratio = tf.exp(tf.stop_gradient(old_act_neg_logprobs) - act_neg_logprobs)
+        self._ratio = ratio
+        surr1 = -tf.multiply(ratio, advantages)
+        surr2 = -tf.multiply(tf.clip_by_value(ratio, 1.0 - self._epsilon, 1.0 + self._epsilon), advantages)
+        surr_loss = tf.reduce_mean(tf.maximum(surr1, surr2))
 
         # Adaptive KL Penalty
         kl = tf.reduce_sum(tf.multiply(tf.exp(old_neg_logprobs), neg_logprobs - old_neg_logprobs), 1)
@@ -159,7 +171,7 @@ class PPOTrainer(PGTrainer):
         self._value_loss = value_loss
         self._ent_loss = ent_loss
 
-        return self._alpha * loss + (1 - self._alpha) * value_loss# + ent_loss
+        return loss + ent_loss, value_loss 
 
     def train(self, batch, learning_rate=1e-4, n_iters=10):
         beta = 1.0
@@ -176,20 +188,25 @@ class PPOTrainer(PGTrainer):
         
         feed_dict.update(self._policy.feed_dict_extras(batch))
         feed_dict.update(self._old_policy.feed_dict_extras(batch))
-
         sess = self._get_session() 
+        # grads = sess.run(self._grads, feed_dict=feed_dict)
+        # for v, g in zip(self._vars, grads):
+        #     print(v.name, g.min(), g.max())
         loss = None
-        value_loss = None
         for _ in range(n_iters):
             if self._use_surrogate:
-                _, loss, value_loss = sess.run([self._update_op, self._loss, self._value_loss], feed_dict=feed_dict)
+                _, loss, ratio = sess.run([self._update_op, self._action_loss, self._ratio], feed_dict=feed_dict)
+                # print(ratio.min(), ratio.max())
             else:
                 feed_dict[self._beta] = beta
-                _, loss, value_loss, d = sess.run([self._update_op, self._loss, self._value_loss, self._expected_kl], feed_dict=feed_dict)
+                _, loss = sess.run([self._update_op, self._action_loss, self._expected_kl], feed_dict=feed_dict)
                 if (d < self._dtarg / 1.5):
                     beta /= 2.0
                 elif (d > self._dtarg * 1.5):
                     beta *= 2.0
+        _, value_loss = sess.run([self._value_update_op, self._value_loss], feed_dict=feed_dict)
+        self._num_param_updates += 1
+
         return loss, value_loss
 
 # class PPOAgent(PGAgent):

@@ -32,24 +32,23 @@ class LSTMPolicy(StandardPolicy):
             self.sy_rew = tf.placeholder(tf.float32, (None,), name='rew_placeholder')
     
     def _setup_agent(self):
-        obs_placeholder = self.sy_obs
         batch_size = tf.shape(self.sy_obs)[0]
         num_timesteps = tf.shape(self.sy_obs)[1]
-        self.sy_obs = tf.reshape(self.sy_obs, (batch_size * num_timesteps,) + self._obs_shape)
-        self._setup_embedding_network()
-        self.sy_obs = obs_placeholder
+        inputs = tf.reshape(self.sy_obs, (batch_size * num_timesteps,) + self._obs_shape)
+        self._embedding = self._setup_embedding_network(inputs, self._layers)
+        self._embedding1 = self._embedding
         if self._use_reward:
             rew = tf.expand_dims(self.sy_rew, 1)
             self._embedding = tf.concat((self._embedding, rew), 1)
 
-        self._embedding = tf.reshape(self._embedding, (batch_size, num_timesteps, self._embedding.shape[1]))
-        self._setup_lstm_network()
-
-        self._setup_action_logits()
-        self._setup_value_function()
-
-    def _setup_lstm_network(self, reuse=False):
-        with tf.variable_scope('lstm', reuse=reuse):
+        lstm_inputs = tf.reshape(self._embedding, (batch_size, num_timesteps, self._embedding.shape[1]))
+        self._inputs = lstm_inputs
+        self._embedding = self._setup_lstm_network(lstm_inputs, self._layers)
+        self._logits = self._setup_action_logits(self._embedding, self._layers)
+        self._value = self._setup_value_function(self._embedding, {})
+    
+    def _setup_lstm_network(self, inputs, layers, reuse=False, scope='lstm'):
+        with tf.variable_scope(scope, reuse=reuse):
             lstm = rnn.BasicLSTMCell(self._lstm_cell_size)
             self._state_size = lstm.state_size
 
@@ -62,17 +61,18 @@ class LSTMPolicy(StandardPolicy):
             self._state_in = (c_in, h_in)
 
             state_in = rnn.LSTMStateTuple(c_in, h_in)
-            lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm, self._embedding, initial_state=state_in, dtype=tf.float32)
+            lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm, inputs, initial_state=state_in, dtype=tf.float32)
 
             lstm_c, lstm_h = lstm_state
-            self._embedding = tf.reshape(lstm_outputs, [-1, self._lstm_cell_size])
-            self._layers.append(self._embedding)
+            lstm_outputs = tf.reshape(lstm_outputs, [-1, self._lstm_cell_size])
+            layers[scope] = lstm_outputs
 
             # All this stuff is only needed when collecting rollouts, so can hardcode [0, :]
             self._state_out = [lstm_c[:1,:], lstm_h[:1,:]] # doing it like this does keepdims automatically I think
+            return lstm_outputs
 
     def predict(self, obs, rew=None, return_activations=False):
-        if obs.ndim == 2 and obs.shape[0] == 1:
+        if obs.shape[0] == 1 and obs.shape[1] != 1:
             obs = np.expand_dims(obs, 1) # add time dimension
         sess = self._get_session()
         to_return = [self._action, self._state_out[0], self._state_out[1]]
@@ -88,6 +88,21 @@ class LSTMPolicy(StandardPolicy):
         to_return = sess.run(to_return, feed_dict=feed_dict)
         self._state_curr = to_return[1:3]
         return to_return[0] if not return_activations else to_return
+
+    def predict_value(self, obs, rew=None):
+        if obs.shape[0] == 1 and obs.shape[1] != 1:
+            obs = np.expand_dims(obs, 1) # add time dimension
+
+        feed_dict = {self.sy_obs : obs,
+                    self._state_in[0] : self._state_curr[0],
+                    self._state_in[1] : self._state_curr[1]}
+        if self._use_reward:
+            if np.isscalar(rew):
+                rew = np.array([rew])
+            feed_dict[self.sy_rew] = rew
+
+        sess = self._get_session()
+        return sess.run(self._value, feed_dict=feed_dict)
 
     def clear_memory(self):
         self._state_curr = self._state_init
@@ -109,7 +124,7 @@ class LSTMPolicy(StandardPolicy):
         return extras
     
     def make_copy(self, scope):
-        return LSTMPolicy(self._obs_shape,
+        return self.__class__(self._obs_shape,
                                 self._ac_shape,
                                 self._discrete,
                                 scope,
@@ -119,7 +134,8 @@ class LSTMPolicy(StandardPolicy):
                                 self._embedding_architecture,
                                 self._logit_architecture,
                                 self._value_architecture,
-                                self._lstm_cell_size)
+                                self._lstm_cell_size,
+                                self._use_reward)
 
 
 
