@@ -54,13 +54,22 @@ class StandardPolicy(TFPolicy):
         if self._discrete:
             action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.multinomial(self._logits, 1)
             self._action = tf.squeeze(action)
+            self._neglogpac = tf.softmax(self._logits)
         else:
             if self._action_method == 'greedy':
                 self._action = self._logits
             else:
                 self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(-1))
+                self._std = tf.exp(self._log_std)
                 epsilon = tf.random_normal(tf.shape(self._logits))
-                self._action = self._logits + epsilon * tf.exp(self._log_std)
+                self._action = self._logits + epsilon * self._std
+                # norm_diff = 0.5 * tf.reduce_sum(tf.square(self._action - self._logits) / self._std, np.arange(1, len(self._ac_shape) + 1))
+                # neg_logprobs = norm_diff + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._log_std)
+                # self._neglogpac = neg_logprobs
+
+                self._neglogpac = 0.5 * tf.reduce_sum(tf.square((self._action - self._logits) / self._std), axis=-1) \
+                   + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(self._action)[-1]) \
+                   + tf.reduce_sum(self._log_std, axis=-1)
 
     def _setup_embedding_network(self, inputs, layers, reuse=False, scope='embedding'):
         layers[scope] = []
@@ -110,9 +119,25 @@ class StandardPolicy(TFPolicy):
                     out = slim.fully_connected(out, *layer)
                     layers['value'].append(out)
                 value = slim.fully_connected(out, 1, activation_fn=None)
-                value = tf.squeeze(value)
+                # value = tf.squeeze(value)
+                value = value[:,0]
                 layers['value'].append(value)
         return layers['value'][-1]
+
+    def get_neg_logp_actions(self, actions):
+        if self._discrete:
+            return tf.nn.sparse_softmax_cross_entropy_with_logits(labels=actions, logits=self._logits)
+        else:
+            return 0.5 * tf.reduce_sum(tf.square((actions - self._logits) / self._std), np.arange(1, len(self._ac_shape) + 1)) \
+                    + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._log_std)
+
+    def entropy(self):
+        if self._discrete:
+            probs = tf.nn.softmax(self._logits)
+            logprobs = tf.log(probs)
+            return -tf.reduce_sum(tf.multiply(probs, logprobs), 1)
+        else:
+            return tf.reduce_sum(self._log_std + 0.5 * np.log(2.0 * np.pi * np.e))
 
     def predict(self, obs, return_activations=False):
         sess = self._get_session()
@@ -122,7 +147,12 @@ class StandardPolicy(TFPolicy):
         to_return = sess.run(to_return, feed_dict={self.sy_obs : obs})
         return to_return[0] if not return_activations else to_return
 
-    def predict_value(self, obs):
+    def step(self, obs, states, dones):
+        sess = self._get_session()
+        actions, values, neglogpac = sess.run([self._action, self._value, self._neglogpac], feed_dict = {self.sy_obs : obs})
+        return actions, values, None, neglogpac
+
+    def predict_value(self, obs, dummy, dummy1):
         sess = self._get_session()
         return sess.run(self._value, feed_dict={self.sy_obs : obs})
 

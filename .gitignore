@@ -103,3 +103,6 @@ ENV/
 # Vim files
 *.swp
 *.swo
+
+benchmark
+benchmark/*

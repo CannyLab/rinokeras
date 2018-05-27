@@ -7,7 +7,8 @@ parser.add_argument('--policy', action='store', default='standard', choices=['st
 parser.add_argument('--gamma', action='store', type=float, default=0.99, help='discount factor')
 parser.add_argument('--benchmark', action='store', type=str, default=None, help='where to save results for benchmarking')
 parser.add_argument('--loglevel', action='store', choices=['debug', 'info', 'warning'], default='info', help='hide debugging information')
-parser.add_argument('--max_steps', action='store', type=int, default=-1, help='maximum number of steps to take')
+parser.add_argument('--max-episode-steps', action='store', type=int, default=-1, help='maximum number of steps to take')
+parser.add_argument('--max-learning-steps', action='store', type=int, default=5000, help='maximum number of learning steps')
 args = parser.parse_args()
 
 import gym
@@ -16,6 +17,7 @@ env = gym.make(args.env)
 import os
 import logging
 import itertools
+import pickle as pkl
 
 import numpy as np
 import tensorflow as tf
@@ -33,6 +35,8 @@ ob_shape = env.observation_space.shape
 ac_shape = env.action_space.n if discrete else env.action_space.shape
 
 action_method = 'greedy' if args.alg == 'dqn' else 'sample'
+
+benchmark_results = {'args' : args}
 
 policy = None
 if args.policy == 'standard':
@@ -52,25 +56,30 @@ elif args.policy == 'lstm':
 elif args.policy == 'random':
     policy = RandomPolicy(ob_shape, ac_shape, discrete)
 
+benchmark_results['embedding_architecture'] = policy._embedding_architecture
+benchmark_results['logit_architecture'] = policy._logit_architecture
+benchmark_results['value_architecture'] = policy._value_architecture
+benchmark_results['lstm_cell_size'] = getattr(policy, '_lstm_cell_size', None)
+
 trainer = None
 if args.alg == 'dqn':
     trainer = DQNTrainer(ob_shape, ac_shape, policy, discrete, gamma=args.gamma, target_update_freq=1000)
 elif args.alg == 'pg':
     trainer = PGTrainer(ob_shape, ac_shape, policy, discrete, entcoeff=0)
 elif args.alg == 'ppo':
-    trainer = PPOTrainer(ob_shape, ac_shape, policy, discrete, entcoeff=0)
+    trainer = PPOTrainer(ob_shape, ac_shape, policy, discrete, epsilon=0.1, entcoeff=0)
 
 
 
 runner = None
-max_steps = float('inf') if args.max_steps <= 0 else args.max_steps
+max_steps = float('inf') if args.max_episode_steps <= 0 else args.max_episode_steps
 if args.alg == 'dqn':
     replay_buffer = ReplayBuffer(10 ** 6, 4)
     runner = DQNEnvironmentRunner(env, policy, replay_buffer, max_episode_steps=max_steps)
 elif args.alg in ['pg', 'ppo']:
     runner = PGEnvironmentRunner(env, policy, args.gamma, max_episode_steps=max_steps)
 
-all_episode_rewards = []
+benchmark_results['episode_rewards'] = []
 agent_err = [0] * 100
 value_err = [0] * 100
 
@@ -80,7 +89,9 @@ sess.run(tf.global_variables_initializer())
 loglevels = {'debug' : logging.DEBUG, 'info' : logging.INFO, 'warning' : logging.WARNING}
 logging.basicConfig(filename=None, level=loglevels[args.loglevel], format='%(message)s')
 
-batch_size = 64 if args.alg == 'dqn' else 3
+batch_size = 64 if args.alg == 'dqn' else 10
+
+benchmark_file = None if args.benchmark is None else os.path.join('benchmark', args.benchmark) + '.pkl'
 
 if args.alg == 'dqn':
     lr_schedule = PiecewiseSchedule([
@@ -99,10 +110,15 @@ if args.alg == 'dqn':
     )
 
     for t in itertools.count():
+        if trainer.num_param_updates == args.max_learning_steps:
+            break
+        if benchmark_file and trainer.num_param_updates % 1000 == 0:
+            with open(benchmark_file, 'wb') as f:
+                pkl.dump(benchmark_results, f)
         done = runner.step(exploration.value(t))
         if done:
             logging.debug(runner.summary)
-            all_episode_rewards.append(runner.episode_rew)
+            benchmark_results['episode_rewards'].append(runner.episode_rew)
             runner.reset()
 
         if t > 50000 and t % 4 == 0 and replay_buffer.can_sample(batch_size):
@@ -110,31 +126,37 @@ if args.alg == 'dqn':
             err = trainer.train(batch, lr_schedule.value(t))
             agent_err[trainer.num_param_updates % 100] = err
 
-        if t % 10000 == 0 and runner.episode_num >= 100:
+        if t % 10000 == 0:
             printstr = ''
-            printstr += 'Timestep {:>6}, '.format(t)
+            printstr += 'Timestep {:>6}, '.format(runner.episode_num)
             printstr += 'Param Updates {:>6}, '.format(trainer.num_param_updates)
-            printstr += 'Reward {:>7.2f}, '.format(np.mean(all_episode_rewards[-100:]))
+            printstr += 'Reward {:>7.2f}, '.format(np.mean(benchmark_results['episode_rewards'][-100:]))
             printstr += 'Err {:>5.2f}, '.format(np.mean(agent_err[:trainer.num_param_updates]))
             printstr += 'Exploration {:.5f}'.format(exploration.value(t))
             logging.debug(printstr)
 
 else:
+    lr_mult = 1.0
     lr_schedule = PiecewiseSchedule([
-                                         (0,                   1e-3),
-                                         (300, 1e-4),
-                                         (10000,  5e-5),
+                                         (0,                   1e-3*lr_mult),
+                                         (300, 1e-4*lr_mult),
+                                         (10000,  5e-5*lr_mult),
                                     ],
-                                    outside_value=5e-5)
+                                    outside_value=5e-5*lr_mult)
 
     for t in itertools.count():
+        if trainer.num_param_updates == args.max_learning_steps:
+            break
+        if benchmark_file and trainer.num_param_updates % 1000 == 0:
+            with open(benchmark_file, 'wb') as f:
+                pkl.dump(benchmark_results, f)
         rollouts = []
         for _ in range(batch_size):
             runner.reset()
             policy.clear_memory()
             rollouts.append(runner.get_rollout())
             logging.debug(runner.summary)
-            all_episode_rewards.append(runner.episode_rew)
+            benchmark_results['episode_rewards'].append(runner.episode_rew)
 
         batch = {key : np.concatenate([rollout[key] for rollout in rollouts]) for key in rollouts[0]}
         if args.policy == 'lstm':
@@ -145,11 +167,14 @@ else:
         agent_err[trainer.num_param_updates % 100] = err
         value_err[trainer.num_param_updates % 100] = v_err
 
-        if t % 3 == 0 and runner.episode_num >= 100:
+        if t % 3 == 0:
             printstr = ''
-            printstr += 'Timestep {:>6}, '.format(t)
+            printstr += 'Timestep {:>6}, '.format(runner.episode_num)
             printstr += 'Param Updates {:>6}, '.format(trainer.num_param_updates)
-            printstr += 'Reward {:>7.2f}, '.format(np.mean(all_episode_rewards[-100:]))
+            printstr += 'Reward {:>7.2f}, '.format(np.mean(benchmark_results['episode_rewards'][-100:]))
             printstr += 'Err {:>5.2f}, '.format(np.mean(agent_err[:trainer.num_param_updates]))
             printstr += 'ValErr {:>5.2f}'.format(np.mean(agent_err[:trainer.num_param_updates]))
             logging.info(printstr)
+if benchmark_file:
+    with open(benchmark_file, 'wb') as f:
+        pkl.dump(benchmark_results, f)
