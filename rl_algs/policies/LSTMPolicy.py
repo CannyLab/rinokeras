@@ -20,11 +20,12 @@ class LSTMPolicy(StandardPolicy):
                         logit_architecture=[(64,), (64,)],
                         value_architecture=[(64,), (64,)],
                         lstm_cell_size=512,
-                        use_reward=False):
+                        use_reward=False,
+                        initial_logstd=0):
         self._lstm_cell_size = lstm_cell_size
         self._use_reward = use_reward
         super().__init__(obs_shape, ac_shape, discrete, scope, obs_dtype, action_method, use_conv,
-                            embedding_architecture, logit_architecture, value_architecture)
+                            embedding_architecture, logit_architecture, value_architecture, initial_logstd)
 
     def _setup_placeholders(self):
         self.sy_obs = tf.placeholder(self._obs_dtype, (None, None) + self._obs_shape, name='obs_placeholder')
@@ -36,7 +37,6 @@ class LSTMPolicy(StandardPolicy):
         num_timesteps = tf.shape(self.sy_obs)[1]
         inputs = tf.reshape(self.sy_obs, (batch_size * num_timesteps,) + self._obs_shape)
         self._embedding = self._setup_embedding_network(inputs, self._layers)
-        self._embedding1 = self._embedding
         if self._use_reward:
             rew = tf.expand_dims(self.sy_rew, 1)
             self._embedding = tf.concat((self._embedding, rew), 1)
@@ -116,11 +116,11 @@ class LSTMPolicy(StandardPolicy):
     def feed_dict_extras(self, batch):
         batch_size = batch['obs'].shape[0]
         extras = {
-                self._state_in[0] : np.tile(self._state_init[0], (batch_size, 1)),
-                self._state_in[1] : np.tile(self._state_init[1], (batch_size, 1))
+                self._state_in[0] : np.tile(self._state_curr[0], (batch_size, 1)),
+                self._state_in[1] : np.tile(self._state_curr[1], (batch_size, 1))
         }
         if self._use_reward:
-            extras[self.sy_rew] = batch['rew']
+            extras[self.sy_rew] = batch['rew_in']
         return extras
     
     def make_copy(self, scope):
@@ -135,7 +135,8 @@ class LSTMPolicy(StandardPolicy):
                                 self._logit_architecture,
                                 self._value_architecture,
                                 self._lstm_cell_size,
-                                self._use_reward)
+                                self._use_reward,
+                                self._initial_logstd)
 
 
 

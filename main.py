@@ -9,6 +9,7 @@ parser.add_argument('--benchmark', action='store', type=str, default=None, help=
 parser.add_argument('--loglevel', action='store', choices=['debug', 'info', 'warning'], default='info', help='hide debugging information')
 parser.add_argument('--max-episode-steps', action='store', type=int, default=-1, help='maximum number of steps to take')
 parser.add_argument('--max-learning-steps', action='store', type=int, default=5000, help='maximum number of learning steps')
+parser.add_argument('--eager', action='store_true', help='run in eager mode')
 args = parser.parse_args()
 
 import gym
@@ -21,9 +22,17 @@ import pickle as pkl
 
 import numpy as np
 import tensorflow as tf
+if args.eager:
+    import tensorflow.contrib.eager as tfe
+    tf.enable_eager_execution()
 
-from rl_algs.policies import StandardPolicy, LSTMPolicy, RandomPolicy
-from rl_algs.trainers import DQNTrainer, PGTrainer, PPOTrainer
+if not args.eager:
+    from rl_algs.policies import StandardPolicy, LSTMPolicy, RandomPolicy
+    from rl_algs.trainers import DQNTrainer, PGTrainer, PPOTrainer
+else:
+    from rl_algs.policies.StandardModel import StandardPolicy
+    from rl_algs.trainers.PolicyGradient import PGTrainer
+    from rl_algs.trainers.PPO import PPOTrainer
 from rl_algs.utils import ReplayBuffer, PiecewiseSchedule
 from rl_algs.env_runners import PGEnvironmentRunner, DQNEnvironmentRunner
 
@@ -82,9 +91,9 @@ elif args.alg in ['pg', 'ppo']:
 benchmark_results['episode_rewards'] = []
 agent_err = [0] * 100
 value_err = [0] * 100
-
-sess = tf.InteractiveSession()
-sess.run(tf.global_variables_initializer())
+if not args.eager:
+    sess = tf.InteractiveSession()
+    sess.run(tf.global_variables_initializer())
 
 loglevels = {'debug' : logging.DEBUG, 'info' : logging.INFO, 'warning' : logging.WARNING}
 logging.basicConfig(filename=None, level=loglevels[args.loglevel], format='%(message)s')

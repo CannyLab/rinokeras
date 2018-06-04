@@ -19,7 +19,8 @@ class StandardPolicy(TFPolicy):
                         use_conv=False,
                         embedding_architecture=[(64,), (64,)],
                         logit_architecture=[(64,), (64,)],
-                        value_architecture=[(64,), (64,)]):
+                        value_architecture=[(64,), (64,)],
+                        initial_logstd=0):
         super().__init__(obs_shape, ac_shape, discrete, scope)
         self._use_conv = use_conv
         self._embedding_architecture = embedding_architecture
@@ -27,6 +28,7 @@ class StandardPolicy(TFPolicy):
         self._value_architecture = value_architecture
         self._action_method = action_method
         self._obs_dtype = obs_dtype
+        self._initial_logstd = initial_logstd
         if action_method not in ['greedy', 'sample']:
             raise ValueError("Unrecognized action method")
 
@@ -54,12 +56,12 @@ class StandardPolicy(TFPolicy):
         if self._discrete:
             action = tf.argmax(self._logits, 1) if self._action_method == 'greedy' else tf.multinomial(self._logits, 1)
             self._action = tf.squeeze(action)
-            self._neglogpac = tf.softmax(self._logits)
+            # self._neglogpac = tf.softmax(self._logits)
         else:
             if self._action_method == 'greedy':
                 self._action = self._logits
             else:
-                self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(-1))
+                self._log_std = tf.get_variable('log_std', shape=self._ac_shape, dtype=tf.float32, initializer=tf.constant_initializer(self._initial_logstd))
                 self._std = tf.exp(self._log_std)
                 epsilon = tf.random_normal(tf.shape(self._logits))
                 self._action = self._logits + epsilon * self._std
@@ -67,9 +69,9 @@ class StandardPolicy(TFPolicy):
                 # neg_logprobs = norm_diff + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._log_std)
                 # self._neglogpac = neg_logprobs
 
-                self._neglogpac = 0.5 * tf.reduce_sum(tf.square((self._action - self._logits) / self._std), axis=-1) \
-                   + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(self._action)[-1]) \
-                   + tf.reduce_sum(self._log_std, axis=-1)
+                # self._neglogpac = 0.5 * tf.reduce_sum(tf.square((self._action - self._logits) / self._std), axis=-1) \
+                #    + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(self._action)[-1]) \
+                #    + tf.reduce_sum(self._log_std, axis=-1)
 
     def _setup_embedding_network(self, inputs, layers, reuse=False, scope='embedding'):
         layers[scope] = []
@@ -166,7 +168,8 @@ class StandardPolicy(TFPolicy):
                                 self._use_conv,
                                 self._embedding_architecture,
                                 self._logit_architecture,
-                                self._value_architecture)
+                                self._value_architecture,
+                                self._initial_logstd)
 
     def clear_memory(self):
         return

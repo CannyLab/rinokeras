@@ -83,14 +83,15 @@ class PGTrainer(Trainer):
         feed_dict.update(self._policy.feed_dict_extras(batch))
 
         sess = self._get_session()
-        _, loss, value_loss = sess.run([self._update_op, self._action_loss, self._value_loss], feed_dict=feed_dict)
+        _, loss, value_loss, logstd = sess.run([self._update_op, self._action_loss, self._value_loss, self._policy._log_std], feed_dict=feed_dict)
+        print(logstd)
         self._num_param_updates += 1
         return loss, value_loss
 
 class PPOTrainer(PGTrainer):
 
     def __init__(self, obs_shape, ac_shape, policy, discrete, 
-                    valuecoeff=0.8, entcoeff=0.1, max_grad_norm=1.0, epsilon=0.2,
+                    valuecoeff=0.8, entcoeff=0.1, max_grad_norm=0.5, epsilon=0.2,
                     scope='trainer'):
         self._epsilon = epsilon
         with tf.variable_scope(scope):
@@ -146,6 +147,5 @@ class PPOTrainer(PGTrainer):
         value_loss = None
         for _ in range(n_iters):
             _, loss, value_loss = sess.run([self._update_op, self._surr_loss, self._value_loss], feed_dict=feed_dict)
-
         self._num_param_updates += 1
         return loss, value_loss

@@ -17,7 +17,7 @@ def rgb2gray(rgb):
 
 class EnvironmentRunner(object):
     def __init__(self, env, agent, **kwargs):
-        assert isinstance(agent, Policy), "Agent must be a subclass of Policy. Received {}".format(type(agent))
+        # assert isinstance(agent, Policy), "Agent must be a subclass of Policy. Received {}".format(type(agent))
 
         self._env = env
         self._agent = agent    
@@ -65,6 +65,8 @@ class EnvironmentRunner(object):
         if self._done:
             raise RuntimeError("Cannot step environment which is done. Call reset first.")
         self._rollout['obs'].append(self._obs)
+        if self._pass_reward_to_agent:
+            self._rollout['rew_in'].append(self._rew)
         if obs is None:
             obs = self._obs
 
@@ -75,7 +77,7 @@ class EnvironmentRunner(object):
             pred = self._agent.predict(obs, return_activations=self._return_activations) \
                         if not self._pass_reward_to_agent else self._agent.predict(obs, self._rew, return_activations=self._return_activations)
             if self._return_activations:
-                action, qval, activs = pred
+                action, activs = pred
             else:
                 action = pred
             self._num_agent_actions += 1
@@ -93,9 +95,7 @@ class EnvironmentRunner(object):
         self._rollout['act'].append(self._act)
         self._rollout['rew'].append(self._rew)
         if self._return_activations:
-            self._qval = None if random else qval
             self._activs = None if random else activs
-            self._rollout['qval'].append(self._qval)
             self._rollout['activs'].append(self._activs)
 
         self._episode_rew += self._rew
@@ -110,7 +110,6 @@ class EnvironmentRunner(object):
         self._done = False
         self._act = None
         self._rew = 0.
-        self._qval = None
         self._activs = None
         self._num_steps = 0
         self._num_agent_actions = 0
@@ -189,7 +188,7 @@ class PGEnvironmentRunner(EnvironmentRunner):
         # if (self._num_steps == self._max_episode_steps):
         #     self._rollout['val'] = self._rollout['val'][:-1]
 
-        if self._return_activations:
+        if False and self._return_activations:
             # normalize baseline to vals
             self._rollout['baseline'] -= self._rollout['baseline'].mean()
             self._rollout['baseline'] /= self._rollout['baseline'].std() + 1e-10 # deal with zero std
