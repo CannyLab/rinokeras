@@ -106,3 +106,4 @@ ENV/
 
 benchmark
 benchmark/*
+test.py
