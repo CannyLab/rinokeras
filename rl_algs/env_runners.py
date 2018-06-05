@@ -5,7 +5,6 @@ from collections import defaultdict
 import numpy as np
 import tensorflow as tf
 import gym
-import gym_gridworld
 import scipy.signal
 
 from .policies.Policy import Policy
