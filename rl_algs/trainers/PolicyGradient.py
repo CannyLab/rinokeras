@@ -39,7 +39,7 @@ class PGTrainer(Trainer):
         
     
     def _loss_function(self, obs, act, val):
-        logits, pred_values = self._policy.call(obs, is_training=True)
+        logits, pred_values = self._policy(obs, is_training=True)
 
         neg_logp_actions = self._policy.get_neg_logp_actions(logits, act)
         values, advantages = self._compute_values_and_advantages(val, pred_values)

@@ -110,8 +110,6 @@ class StandardPolicy(tf.keras.Model):
             self._built = True
 
     def call(self, obs, is_training=False):
-        if not self._built:
-            self.build()
         if obs.dtype == np.uint8:
             obs = np.asarray(obs, np.float32) / 255
         embedding = self._embedding_function(obs)

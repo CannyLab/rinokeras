@@ -31,6 +31,7 @@ if not args.eager:
     from rl_algs.trainers import DQNTrainer, PGTrainer, PPOTrainer
 else:
     from rl_algs.policies.StandardModel import StandardPolicy
+    from rl_algs.policies.LSTMModel import LSTMPolicy
     from rl_algs.trainers.PolicyGradient import PGTrainer
     from rl_algs.trainers.PPO import PPOTrainer
 from rl_algs.utils import ReplayBuffer, PiecewiseSchedule
@@ -120,6 +121,7 @@ if args.alg == 'dqn':
 
     for t in itertools.count():
         if trainer.num_param_updates == args.max_learning_steps:
+            from rl_algs.trainers.PPO import PPOTrainer
             break
         if benchmark_file and trainer.num_param_updates % 1000 == 0:
             with open(benchmark_file, 'wb') as f:
@@ -182,7 +184,7 @@ else:
             printstr += 'Param Updates {:>6}, '.format(trainer.num_param_updates)
             printstr += 'Reward {:>7.2f}, '.format(np.mean(benchmark_results['episode_rewards'][-100:]))
             printstr += 'Err {:>5.2f}, '.format(np.mean(agent_err[:trainer.num_param_updates]))
-            printstr += 'ValErr {:>5.2f}'.format(np.mean(agent_err[:trainer.num_param_updates]))
+            printstr += 'ValErr {:>5.2f}'.format(np.mean(value_err[:trainer.num_param_updates]))
             logging.info(printstr)
 if benchmark_file:
     with open(benchmark_file, 'wb') as f:

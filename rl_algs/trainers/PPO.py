@@ -15,8 +15,8 @@ class PPOTrainer(PGTrainer):
         super().__init__(obs_shape, ac_shape, policy, discrete, valuecoeff, entcoeff, max_grad_norm, scope)
 
     def _loss_function(self, obs, act, val):
-        logits, vpred = self._policy.call(obs, is_training=True)
-        old_logits, old_vpred = self._old_policy.call(obs, is_training=True)
+        logits, vpred = self._policy(obs, is_training=True)
+        old_logits, old_vpred = self._old_policy(obs, is_training=True)
 
         neg_logp_actions = self._policy.get_neg_logp_actions(logits, act)
         old_neg_logp_actions = self._old_policy.get_neg_logp_actions(old_logits, act)
