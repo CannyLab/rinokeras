@@ -6,9 +6,10 @@ import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 import numpy as np
 
-from .layers import Stack, Conv2DStack, DenseStack, RandomNoise
+from .Policy import Policy
+from rl_algs.eager.common.layers import Stack, Conv2DStack, DenseStack, RandomNoise
 
-class StandardPolicy(tf.keras.Model):
+class StandardPolicy(Policy):
 
     def __init__(self, 
                  obs_shape,
@@ -65,12 +66,6 @@ class StandardPolicy(tf.keras.Model):
 
         elif not self._discrete and self._action_method == 'sample':
             get_action = RandomNoise(self._ac_shape, self._initial_logstd)
-            # self._logstd = tfe.Variable(np.zeros(self._ac_shape) + self._initial_logstd, dtype=tf.float32)
-            # self.trainable_variables.append(self._logstd)
-            
-            # def get_action(logits):
-                # epsilon = tf.random_normal(self._ac_shape)
-                # return logits + epsilon * self.std
 
             return get_action
 
@@ -138,9 +133,6 @@ class StandardPolicy(tf.keras.Model):
             return - tf.reduce_sum(probs * logprobs, 1)
         else:
             return tf.reduce_sum(self._action_function.logstd + 0.5 * np.log(2.0 * np.pi * np.e))
-
-    def clear_memory(self):
-        return
 
     def make_copy(self):
         return self.__class__(self._obs_shape,

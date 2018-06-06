@@ -46,11 +46,9 @@ class PPOTrainer(PGTrainer):
 
     def train(self, batch, learning_rate, n_iters=10):
         self._old_policy.set_weights(self._policy.get_weights())
-        for key, val in batch.items():
-            if val.dtype == np.float64:
-                batch[key] = np.asarray(val, dtype=np.float32)
         for _ in range(n_iters):
-            grads = self._grads_function(batch['obs'], batch['act'], batch['val'])
-            self._optimizer.apply_gradients(zip(grads, self._policy.variables))
+            loss = self._train_on_batch(batch['obs'], batch['act'], batch['val'])
+
         self._num_param_updates += 1
-        return self._surr_loss.numpy(), self._value_loss.numpy()
+        
+        return [l.numpy() for l in loss]

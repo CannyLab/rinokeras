@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 
-from .StandardModel import StandardPolicy
+from .StandardPolicy import StandardPolicy
 
 class LSTMPolicy(StandardPolicy):
 
@@ -42,15 +42,16 @@ class LSTMPolicy(StandardPolicy):
             if not self.built:
                 dummy_obs = tf.zeros((1,) + self._obs_shape, dtype=tf.float32)
 
-            embedding = self._embedding_function(dummy_obs)
-            if self._use_reward:
-                embedding = tf.concat((embedding, tf.zeros((1,1))), 1)
-
-            memory_embed, memory = self._memory_function(embedding)
-            logits = self._logits_function(memory_embed)
-            value = self._value_function(memory_embed)
-            action = self._action_function(logits)
-            self.built = True
+                embedding = self._embedding_function(dummy_obs)
+                if self._use_reward:
+                    embedding = tf.concat((embedding, tf.zeros((1,1))), 1)
+                embedding = tf.expand_dims(embedding, 1)
+                memory_embed, memory_h, memory_c = self._memory_function(embedding)
+                memory = (memory_h, memory_c)
+                logits = self._logits_function(memory_embed)
+                value = self._value_function(memory_embed)
+                action = self._action_function(logits)
+                self.built = True
 
         def call(self, obs, is_training=False):
             if self._use_reward:
@@ -68,11 +69,14 @@ class LSTMPolicy(StandardPolicy):
             batch_size, timesteps = obs.shape[:2]
 
             embedding = self._embedding_function(obs)
-            embedding = tf.reshape(embedding, (batch_size, timesteps, embedding.shape[-1]))
             if self._use_reward:
                 embedding = tf.concat((embedding, rew), 1)
-            memory_embed, self._memory = self._memory_function(embedding, initial_state=self._memory)
+
+            embedding = tf.reshape(embedding, (batch_size, timesteps, embedding.shape[-1]))
+            memory_embed, memory_h, memory_c = self._memory_function(embedding, initial_state=self._memory)
+            self._memory = (memory_h, memory_c)
             memory_embed = tf.reshape(memory_embed, (batch_size * timesteps, memory_embed.shape[-1]))
+            
             logits = self._logits_function(memory_embed)
             if is_training:
                 value = self._value_function(memory_embed)

@@ -13,13 +13,6 @@ class PGTrainer(Trainer):
         self._valuecoeff = valuecoeff
         self._entcoeff = entcoeff
 
-        self._optimizer = tf.train.AdamOptimizer(learning_rate=0.001, epsilon=1e-5)
-        
-    def _batch_norm(self, array, mean, var):
-        array = array - mean
-        array = array / (tf.sqrt(var) + 1e-10)
-        return array
-
     def _compute_values_and_advantages(self, values, pred_values):
         baseline = tf.stop_gradient(pred_values)
         mean, var = tf.nn.moments(baseline, [0])
@@ -51,25 +44,13 @@ class PGTrainer(Trainer):
         # Entropy Penalty
         entropy = tf.reduce_mean(self._policy.entropy(logits))
 
-        self._action_loss = loss
-        self._value_loss = value_loss
-        self._entropy_loss = entropy
-
-        return loss - self._entcoeff * entropy + self._valuecoeff * value_loss
-
-    def _grads_function(self, obs, act, val):
-        with tf.GradientTape() as tape:
-            loss = self._loss_function(obs, act, val)
-        return tape.gradient(loss, self._policy.variables)
+        return loss - self._entcoeff * entropy + self._valuecoeff * value_loss, loss, value_loss, entropy
 
     def train(self, batch, learning_rate):
-        for key, val in batch.items():
-            if val.dtype == np.float64:
-                batch[key] = np.asarray(val, dtype=np.float32)
-        grads = self._grads_function(batch['obs'], batch['act'], batch['val'])
-        self._optimizer.apply_gradients(zip(grads, self._policy.variables))
+        loss = self._train_on_batch(batch['obs'], batch['act'], batch['val'])
         self._num_param_updates += 1
-        return self._action_loss.numpy(), self._value_loss.numpy()
+
+        return [l.numpy() for l in loss]
 
 
 

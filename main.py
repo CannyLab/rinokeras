@@ -30,10 +30,8 @@ if not args.eager:
     from rl_algs.policies import StandardPolicy, LSTMPolicy, RandomPolicy
     from rl_algs.trainers import DQNTrainer, PGTrainer, PPOTrainer
 else:
-    from rl_algs.policies.StandardModel import StandardPolicy
-    from rl_algs.policies.LSTMModel import LSTMPolicy
-    from rl_algs.trainers.PolicyGradient import PGTrainer
-    from rl_algs.trainers.PPO import PPOTrainer
+    from rl_algs.eager.policies import StandardPolicy, LSTMPolicy
+    from rl_algs.eager.trainers import PGTrainer, PPOTrainer
 from rl_algs.utils import ReplayBuffer, PiecewiseSchedule
 from rl_algs.env_runners import PGEnvironmentRunner, DQNEnvironmentRunner
 
