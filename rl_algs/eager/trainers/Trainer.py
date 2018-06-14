@@ -11,8 +11,12 @@ class Trainer(object):
         if not discrete and np.isscalar(ac_shape):
             self._ac_shape = (ac_shape,)
         self._num_param_updates = 0
-        self._optimizer = tf.keras.optimizers.get(optimizer)(1e-3)
-
+        if optimizer == 'adam':
+            self._optimizer = tf.train.AdamOptimizer()
+        elif optimizer == 'rmsprop':
+            self._optimizer = tf.train.RMSPropOptimizer()
+        else:
+            raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
     def _batch_norm(self, array, mean, var):
         array = array - mean
         array = array / (tf.sqrt(var) + 1e-10)
@@ -24,17 +28,19 @@ class Trainer(object):
     def _grads_function(self, obs, act, *args):
         with tf.GradientTape() as tape:
             loss = self._loss_function(obs, act, *args)
-            
+        
         if isinstance(loss, tuple):
             losses = loss[1:]
-            loss = loss[0]
+            total_loss = loss[0]
         else:
             losses = loss
+            total_loss = loss
 
         return tape.gradient(total_loss, self._policy.variables), losses
 
-    def _train_on_batch(self, obs, act, *args):
-        grads, loss = self._grads_function(batch['obs'], batch['act'], batch['val'])
+    def _train_on_batch(self, obs, act, *args, learning_rate=1e-3):
+        grads, loss = self._grads_function(obs, act, *args)
+        self._optimizer._lr = learning_rate
         self._optimizer.apply_gradients(zip(grads, self._policy.variables))
         return loss
 

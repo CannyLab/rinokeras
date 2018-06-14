@@ -22,20 +22,32 @@ class RandomNoise(tf.keras.layers.Layer):
 
 class LuongAttention(tf.keras.layers.Layer):
 
-    def __init__(self):
+    def __init__(self, local=False, stddev=1.0):
         super().__init__()
+        self.local = local
+        if self.local:
+            self.stddev = stddev
 
     def build(self, inputs):
         self.attention_weights = self.add_variable('attention_weights', (inputs[0][-1] + inputs[1][-1], inputs[1][-1]),
                                                                         initializer=tf.initializers.variance_scaling())
 
-    def call(self, inputs):
+    def call(self, inputs, t=None):
         target_hidden, source_hidden_sequence = inputs
         # source hidden sequence shape -> (None, None, encoder_cell_size)
         # target hidden shape -> (None, decoder_cell_size)
         score = tf.matmul(source_hidden_sequence, tf.expand_dims(target_hidden, -1))
         alignment = tf.nn.softmax(score, 1)
-        weighted = tf.reduce_sum(source_hidden_sequence * alignment, 1) # will broadcast over third dimension
+        weights = alignment
+
+        if self.local:
+            if t is None:
+                raise TypeError("Must pass in position for local attention")
+            relative_position = tf.cast(tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
+            position_weighting = tf.exp( - tf.square(relative_position) / (2 * tf.square(self.stddev)) )
+            weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
+            
+        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1) # will broadcast over third dimension
         concatenated = tf.concat((target_hidden, weighted), 1)
         output = tf.tanh(tf.matmul(concatenated, self.attention_weights))
         return output
@@ -48,6 +60,8 @@ class FixedLengthDecoder(tf.keras.Model):
         self.attention = attention
         if attention == 'luong':
             self.attention_fn = LuongAttention()
+        elif attention == 'luonglocal':
+            self.attention_fn = LuongAttention(local=True)
 
     def call(self, inputs, seq_len, target_inputs=None):
         if self.attention:
@@ -68,7 +82,7 @@ class FixedLengthDecoder(tf.keras.Model):
             output, state = self.cell(inputs, states=state)
 
             if self.attention:
-                output = self.attention_fn((output, source_sequence))
+                output = self.attention_fn((output, source_sequence), t=t)
             outputs.append(output)
 
             if target_inputs is None:

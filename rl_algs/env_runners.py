@@ -73,8 +73,9 @@ class EnvironmentRunner(object):
         if random:
             action = np.random.randint(self._env.action_space.n)
         else:
-            pred = self._agent.predict(obs, return_activations=self._return_activations) \
-                        if not self._pass_reward_to_agent else self._agent.predict(obs, self._rew, return_activations=self._return_activations)
+            if self._pass_reward_to_agent:
+                obs = (obs, self._rew)
+            pred = self._agent.predict(obs, return_activations=self._return_activations)
             if self._return_activations:
                 action, activs = pred
             else:

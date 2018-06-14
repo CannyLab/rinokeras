@@ -22,12 +22,7 @@ class StandardPolicy(Policy):
                  value_architecture=[64],
                  initial_logstd=0):
 
-        super().__init__()
-        self._obs_shape = obs_shape
-        self._ac_shape = ac_shape
-        if not isinstance(self._ac_shape, collections.Iterable):
-            self._ac_shape = (ac_shape,)
-        self._discrete = discrete
+        super().__init__(obs_shape, ac_shape, discrete)
         self._action_method = action_method
         self._use_conv = use_conv
         self._embedding_architecture = embedding_architecture
@@ -107,6 +102,8 @@ class StandardPolicy(Policy):
     def call(self, obs, is_training=False):
         if obs.dtype == np.uint8:
             obs = np.asarray(obs, np.float32) / 255
+        else:
+            obs = np.asarray(obs, np.float32)
         embedding = self._embedding_function(obs)
         logits = self._logits_function(embedding)
         if is_training:
