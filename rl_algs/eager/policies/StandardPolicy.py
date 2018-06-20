@@ -66,27 +66,23 @@ class StandardPolicy(Policy):
 
     def _setup_embedding_function(self):
         return Conv2DStack(self._embedding_architecture) if self._use_conv \
-                    else DenseStack(self._embedding_architecture)
+                    else DenseStack(self._embedding_architecture, output_activation='relu')
 
 
     def _setup_logit_function(self, activation=None):
         ac_dim = reduce(mul, self._ac_shape)
 
+        if self._logit_architecture is None:
+            self._logit_architecture = []
         logit_function = Stack()
-        if self._logit_architecture is not None:
-            logit_function.add(DenseStack(self._logit_architecture))
-        logit_function.add(tf.keras.layers.Dense(ac_dim))
-        if activation is not None:
-            logit_function.add(tf.keras.layers.Activation(activation))
+        logit_function.add(DenseStack(self._logit_architecture + [ac_dim], output_activation=activation))
         logit_function.add(tf.keras.layers.Reshape(self._ac_shape))
         return logit_function
 
     def _setup_value_function(self):
         if self._value_architecture is None:
             return None
-        value_function = Stack()
-        value_function.add(DenseStack(self._value_architecture))
-        value_function.add(tf.keras.layers.Dense(1))
+        value_funciton = DenseStack(self._value_architecture + [1])
         return value_function 
 
     def build(self):

@@ -86,7 +86,7 @@ class AttentionQKV(tf.keras.Model):
         return (queries, keys, values)
 
 
-class ScaledDotProductAttention(tf.keras.layers.Layer):
+class ScaledDotProductAttentionMap(tf.keras.layers.Layer):
 
     def build(self, input_shapes):
         shape_dims = input_shapes[0].ndims
@@ -123,7 +123,7 @@ class ScaledDotProductAttention(tf.keras.layers.Layer):
         output = tf.matmul(weights, values)
         return output
 
-class MultiHeadAttention(tf.keras.Model):
+class MultiHeadAttentionMap(tf.keras.Model):
 
     def __init__(self, n_heads, output_depth, attention_type="scaled_dot"):
         super().__init__()
@@ -131,7 +131,7 @@ class MultiHeadAttention(tf.keras.Model):
         if attention_type != "scaled_dot":
             raise NotImplementedError("Haven't got around to implementing other attention types yet!")
         self.attention_type = attention_type
-        self.attention_layer = ScaledDotProductAttention()
+        self.attention_layer = ScaledDotProductAttentionMap()
         self.n_heads = n_heads
         self.output_layer = tf.keras.layers.Dense(output_depth, use_bias=False)
 
@@ -185,7 +185,7 @@ class SelfAttention(tf.keras.Model):
         channels = input_shape[-1]
         assert channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         self.compute_qkv = AttentionQKV(channels, channels)
-        self.attention_layer = MultiHeadAttention(self.n_heads, channels)
+        self.attention_layer = MultiHeadAttentionMap(self.n_heads, channels)
 
     def call(self, inputs):
         """Fast multi-head self attention.
@@ -195,4 +195,33 @@ class SelfAttention(tf.keras.Model):
         :return: output: Tensor with same shape as input
         """
         q, k, v = self.compute_qkv((inputs, inputs))
+        return self.attention_layer((q, k, v))
+
+class MultiHeadAttention(tf.keras.Model):
+
+    def __init__(self, n_heads, attention_type="scaled_dot"):
+        super().__init__()
+        if attention_type != "scaled_dot":
+            raise NotImplementedError("Haven't got around to implementing other attention types yet!")
+
+        self.n_heads = n_heads
+        self.attention_type = attention_type
+
+    def build(self, input_shapes):
+        query_antecedent_shape, memory_antecedent_shape = input_shapes
+        qa_channels = query_antecedent_shape[-1]
+        ma_channels = memory_antecedent_shape[-1]
+        assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
+        self.compute_qkv = AttentionQKV(qa_channels, ma_channels)
+        self.attention_layer = MultiHeadAttentionMap(self.n_heads, ma_channels)
+
+    def call(self, inputs):
+        """Fast multi-head self attention.
+
+            :param inputs: tuple of (query_antecedent, memory_antecedent)
+                query_antecedent -> tensor w/ shape [batch_size, n_queries, channels]
+                memory_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
+        """
+        query_antecedent, memory_antecedent = inputs
+        q, k, v = self.compute_qkv((query_antecedent, memory_antecedent))
         return self.attention_layer((q, k, v))
