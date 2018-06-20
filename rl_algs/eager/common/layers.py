@@ -20,80 +20,6 @@ class RandomNoise(tf.keras.layers.Layer):
     def std(self):
         return tf.exp(self._logstd)
 
-class LuongAttention(tf.keras.layers.Layer):
-
-    def __init__(self, local=False, stddev=1.0):
-        super().__init__()
-        self.local = local
-        if self.local:
-            self.stddev = stddev
-
-    def build(self, inputs):
-        self.attention_weights = self.add_variable('attention_weights', (inputs[0][-1] + inputs[1][-1], inputs[1][-1]),
-                                                                        initializer=tf.initializers.variance_scaling())
-
-    def call(self, inputs, t=None):
-        target_hidden, source_hidden_sequence = inputs
-        # source hidden sequence shape -> (None, None, encoder_cell_size)
-        # target hidden shape -> (None, decoder_cell_size)
-        score = tf.matmul(source_hidden_sequence, tf.expand_dims(target_hidden, -1))
-        alignment = tf.nn.softmax(score, 1)
-        weights = alignment
-
-        if self.local:
-            if t is None:
-                raise TypeError("Must pass in position for local attention")
-            relative_position = tf.cast(tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
-            position_weighting = tf.exp( - tf.square(relative_position) / (2 * tf.square(self.stddev)) )
-            weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
-            
-        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1) # will broadcast over third dimension
-        concatenated = tf.concat((target_hidden, weighted), 1)
-        output = tf.tanh(tf.matmul(concatenated, self.attention_weights))
-        return output
-
-class FixedLengthDecoder(tf.keras.Model):
-
-    def __init__(self, units, attention=None):
-        super().__init__()
-        self.cell = tf.keras.layers.LSTMCell(units)
-        self.attention = attention
-        if attention == 'luong':
-            self.attention_fn = LuongAttention()
-        elif attention == 'luonglocal':
-            self.attention_fn = LuongAttention(local=True)
-
-    def call(self, inputs, seq_len, target_inputs=None):
-        if self.attention:
-            initial_state, source_sequence = inputs
-        else:
-            initial_state = inputs
-        batch_size = initial_state[0].shape[0]
-        if target_inputs is None:
-            inputs = tf.zeros((batch_size, self.cell.units))
-        elif isinstance(target_inputs, list):
-            inputs = target_inputs[0]
-        else:
-            inputs = target_inputs[:,0]
-
-        outputs = []
-        state = initial_state
-        for t in range(seq_len):
-            output, state = self.cell(inputs, states=state)
-
-            if self.attention:
-                output = self.attention_fn((output, source_sequence), t=t)
-            outputs.append(output)
-
-            if target_inputs is None:
-                inputs = output
-            elif isinstance(target_inputs, list):
-                inputs = target_inputs[t + 1]
-            else:
-                inputs = target_inputs[:,t + 1]
-        outputs = tf.stack(outputs, 1)
-        return outputs
-
 # I presume this is just how Sequential is added but at the moment Sequential requires input size to be specified at the begining
 class Stack(tf.keras.Model):
     def __init__(self, layers=None):
@@ -114,18 +40,14 @@ class Stack(tf.keras.Model):
 
 class Conv2DStack(Stack):
 
-    def __init__(self, layers, batch_norm=False, activation='relu', flatten_output=True):
+    def __init__(self, layers, batch_norm=False, activation='relu', padding='same', flatten_output=True):
         super().__init__()
         if layers is None:
             layers = []
-        def cast_layer(inputs):
-            if inputs.dtype == tf.uint8:
-                return tf.cast(inputs, tf.float32) / 255
-        self.add(cast_layer)
         for layer in layers:
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
-            self.add(tf.keras.layers.Conv2D(*layer))
+            self.add(tf.keras.layers.Conv2D(*layer, padding=padding))
             if batch_norm:
                 self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))
@@ -133,7 +55,7 @@ class Conv2DStack(Stack):
 
 class DenseStack(Stack):
 
-    def __init__(self, layers, activation='relu'):
+    def __init__(self, layers, batch_norm=False, activation='relu'):
         super().__init__()
         if layers is None:
             layers = []
@@ -141,29 +63,6 @@ class DenseStack(Stack):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
             self.add(tf.keras.layers.Dense(*layer))
+            if batch_norm:
+                self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))
-
-# class SimpleNN(tf.keras.Model):
-#     def __init__(self):
-#         super().__init__()
-#         self.all_layers = [tf.keras.layers.Dense(10, activation='relu')]
-#         self.all_layers.append(tf.keras.layers.Dense(2))
-
-#     def call(self, input_data):
-#         output = input_data
-#         for layer in self.all_layers:
-#             output = layer(output)
-#         return output
-
-# class MNISTModel(tf.keras.Model):
-
-#     def __init__(self):
-#         super().__init__()
-#         self.conv = Conv2DStack([(16, 5, 2), (32, 5, 2)])
-#         self.classify = tf.keras.layers.Dense(10)
-
-#     def call(self, inputs):
-#         net = self.conv(inputs)
-#         logits = self.classify(net)
-#         output = tf.nn.softmax(logits)
-#         return output

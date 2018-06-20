@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 
+from rl_algs.eager.common.layers import EagerLSTM
 from .StandardPolicy import StandardPolicy
 
 class LSTMPolicy(StandardPolicy):
@@ -33,7 +34,7 @@ class LSTMPolicy(StandardPolicy):
         self._memory_function = self._setup_memory_function()
 
     def _setup_memory_function(self):
-        memory_func = tf.keras.layers.LSTM(self._lstm_cell_size,
+        memory_func = EagerLSTM(self._lstm_cell_size,
                                             return_sequences=True,
                                             return_state=True)
         return memory_func
@@ -41,13 +42,12 @@ class LSTMPolicy(StandardPolicy):
     def build(self):
         if not self.built:
             dummy_obs = tf.zeros((1,1) + self._obs_shape, dtype=tf.float32)
+            dummy_rew = tf.zeros((1,1,1))
 
             embedding = self._embedding_function(dummy_obs)
             if self._use_reward:
-                embedding = tf.concat((embedding, tf.zeros((1,1,1))), 2)
-            # embedding = tf.expand_dims(embedding, 1)
-            memory_embed, memory_h, memory_c = self._memory_function(embedding)
-            memory = (memory_h, memory_c)
+                embedding = tf.concat((embedding, dummy_rew), -1)
+            memory_embed, memory = self._memory_function(embedding)
             logits = self._logits_function(memory_embed)
             value = self._value_function(memory_embed)
             action = self._action_function(logits)
@@ -56,11 +56,11 @@ class LSTMPolicy(StandardPolicy):
     def call(self, obs, is_training=False):
         if self._use_reward:
             obs, rew = obs
-            rew = np.asarray(rew, dtype=np.float32)
-        if obs.dtype == np.uint8:
-            obs = np.asarray(obs, np.float32) / 255
-        else:
-            obs = np.asarray(obs, np.float32)
+            # rew = np.asarray(rew, dtype=np.float32)
+        # if obs.dtype == np.uint8:
+            # obs = np.asarray(obs, np.float32) / 255
+        # else:
+            # obs = np.asarray(obs, np.float32)
         
         ob_dim = len(self._obs_shape)
         if obs.ndim == ob_dim:
@@ -71,7 +71,7 @@ class LSTMPolicy(StandardPolicy):
             raise ValueError("Received observation of incorrect size. Expected {}. Received {}.".format((None,None) + self._obs_shape, obs.shape))
 
         batch_size, timesteps = obs.shape[:2]
-        rew = rew.reshape((batch_size, timesteps, -1))
+        rew = tf.reshape(rew, (batch_size, timesteps, 1))
 
         embedding = self._embedding_function(obs)
         if self._use_reward:
@@ -80,11 +80,11 @@ class LSTMPolicy(StandardPolicy):
             embedding = tf.concat((embedding, rew), 2)
 
         # embedding = tf.reshape(embedding, (batch_size, timesteps, embedding.shape[-1]))
-        memory_embed, memory_h, memory_c = self._memory_function(embedding, initial_state=self._memory)
-        self._memory = (memory_h, memory_c)
+        memory_embed, self._memory = self._memory_function(embedding, initial_state=self._memory)
         memory_embed = tf.reshape(memory_embed, (batch_size * timesteps, memory_embed.shape[-1]))
             
         logits = self._logits_function(memory_embed)
+        logits = tf.reshape(logits, (batch_size, timesteps) + self._ac_shape)
         if is_training:
             value = self._value_function(memory_embed)
             return logits, tf.squeeze(value)
