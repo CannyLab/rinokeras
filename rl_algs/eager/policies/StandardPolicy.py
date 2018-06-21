@@ -82,7 +82,7 @@ class StandardPolicy(Policy):
     def _setup_value_function(self):
         if self._value_architecture is None:
             return None
-        value_funciton = DenseStack(self._value_architecture + [1])
+        value_function = DenseStack(self._value_architecture + [1])
         return value_function 
 
     def build(self):

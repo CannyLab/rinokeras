@@ -86,26 +86,13 @@ class AttentionQKV(tf.keras.Model):
         return (queries, keys, values)
 
 
-class ScaledDotProductAttentionMap(tf.keras.layers.Layer):
+class ScaledDotProductAttentionMap(tf.keras.Model):
 
-    def build(self, input_shapes):
-        shape_dims = input_shapes[0].ndims
-        assert all(shape.ndims == shape_dims for shape in input_shapes), 'All inputs must have same number of dimensions'
+    def __init__(self, dropout_rate=None):
+        self.dropout = None if dropout_rate is None else tf.keras.layers.Dropout(dropout_rate)
 
-        q_shape = input_shapes[0]
-        k_shape = input_shapes[1]
-        v_shape = input_shapes[2]
 
-        if shape_dims == 4:
-            heads = q_shape[1]
-            shape = (1, heads, q_shape[-2], k_shape[-2])
-        else:
-            shape = (1, q_shape[-2], k_shape[-2])
-
-        self.bias = self.add_variable('bias', shape, initializer=tf.zeros_initializer())
-        super().build(input_shapes)
-
-    def call(self, inputs):
+    def call(self, inputs, mask=None):
         """Fast scaled dot product attention.
 
             :param queries: Tensor with shape [batch_size, heads (optional), n_queries, depth_k]
@@ -116,10 +103,14 @@ class ScaledDotProductAttentionMap(tf.keras.layers.Layer):
         """
         queries, keys, values = inputs
         logits = tf.matmul(queries, keys, transpose_b=True) # (batch_size, heads, n_queries, n_keyval)
-        logits += self.bias
+        if mask is not None:
+            bias = tf.cast(tf.logical_not(mask), tf.float32) - 1e9
+            logits += bias
+
         dk = float(keys.shape[-1].value)
         weights = tf.nn.softmax(logits / np.sqrt(dk))# (batch_size, heads, n_queries, n_keyval)
-
+        if self.dropout is not None:
+            weights = self.dropout(weights)
         output = tf.matmul(weights, values)
         return output
 
@@ -139,7 +130,7 @@ class MultiHeadAttentionMap(tf.keras.Model):
         for shape in input_shape:
             assert shape[-1] % self.n_heads == 0, 'Shape of feature input must be divisible by n_heads'
 
-    def call(self, inputs):
+    def call(self, inputs, mask=None):
         """Fast multi-head scaled dot product attention.
 
         :param queries: Tensor with shape [batch_size, n_queries, depth_k]
@@ -153,7 +144,7 @@ class MultiHeadAttentionMap(tf.keras.Model):
         keys_split = self.split_heads(keys)
         values_split = self.split_heads(values)
 
-        attention_output_split = self.attention_layer((queries_split, keys_split, values_split))
+        attention_output_split = self.attention_layer((queries_split, keys_split, values_split), mask=mask)
         attention_output = self.combine_heads(attention_output_split)
         output = self.output_layer(attention_output)
         return output
@@ -187,7 +178,7 @@ class SelfAttention(tf.keras.Model):
         self.compute_qkv = AttentionQKV(channels, channels)
         self.attention_layer = MultiHeadAttentionMap(self.n_heads, channels)
 
-    def call(self, inputs):
+    def call(self, inputs, mask=None):
         """Fast multi-head self attention.
 
         :param inputs: Tensor with shape [batch_size, sequence_length, channels]
@@ -195,7 +186,7 @@ class SelfAttention(tf.keras.Model):
         :return: output: Tensor with same shape as input
         """
         q, k, v = self.compute_qkv((inputs, inputs))
-        return self.attention_layer((q, k, v))
+        return self.attention_layer((q, k, v), mask=mask)
 
 class MultiHeadAttention(tf.keras.Model):
 
@@ -215,7 +206,7 @@ class MultiHeadAttention(tf.keras.Model):
         self.compute_qkv = AttentionQKV(qa_channels, ma_channels)
         self.attention_layer = MultiHeadAttentionMap(self.n_heads, ma_channels)
 
-    def call(self, inputs):
+    def call(self, inputs, mask=None):
         """Fast multi-head self attention.
 
             :param inputs: tuple of (query_antecedent, memory_antecedent)
@@ -224,4 +215,4 @@ class MultiHeadAttention(tf.keras.Model):
         """
         query_antecedent, memory_antecedent = inputs
         q, k, v = self.compute_qkv((query_antecedent, memory_antecedent))
-        return self.attention_layer((q, k, v))
+        return self.attention_layer((q, k, v), mask=mask)

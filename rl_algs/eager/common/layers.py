@@ -109,14 +109,18 @@ class Residual(tf.keras.Model):
         if norm:
             self.normalization = LayerNorm(normaxis)
 
-    def call(self, inputs):
+    def call(self, inputs, *args, **kwargs):
         """Implements residual connection w/ possible normalization
 
             :param inputs: A Tensor
 
                 implements -> output = LayerNorm(x + layer(x))
         """
-        residual = inputs + self.layer(inputs)
+        layer_out = self.layer(inputs, *args, **kwargs)
+        if isinstance(inputs, tuple):
+            inputs = inputs[0]
+
+        residual = inputs + layer_out
         if self.norm:
             residual = self.normalization(residual)
         return residual

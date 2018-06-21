@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 
-from rl_algs.eager.common.layers import EagerLSTM
+from rl_algs.eager.common.rnn import EagerLSTM
 from .StandardPolicy import StandardPolicy
 
 class LSTMPolicy(StandardPolicy):
