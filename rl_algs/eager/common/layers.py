@@ -101,13 +101,14 @@ class DenseStack(Stack):
 
 class Residual(tf.keras.Model):
 
-    def __init__(self, layer, norm=False, normaxis=-1):
+    def __init__(self, layer, norm=False, normaxis=-1, dropout=None):
         super().__init__()
         self.norm = norm
         self.normaxis = normaxis
         self.layer = layer
         if norm:
             self.normalization = LayerNorm(normaxis)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
 
     def call(self, inputs, *args, **kwargs):
         """Implements residual connection w/ possible normalization
@@ -119,8 +120,11 @@ class Residual(tf.keras.Model):
         layer_out = self.layer(inputs, *args, **kwargs)
         if isinstance(inputs, tuple):
             inputs = inputs[0]
-
+            
+        if self.dropout:
+            layer_out = self.dropout(layer_out)
         residual = inputs + layer_out
+
         if self.norm:
             residual = self.normalization(residual)
         return residual

@@ -88,8 +88,8 @@ class AttentionQKV(tf.keras.Model):
 
 class ScaledDotProductAttentionMap(tf.keras.Model):
 
-    def __init__(self, dropout_rate=None):
-        self.dropout = None if dropout_rate is None else tf.keras.layers.Dropout(dropout_rate)
+    def __init__(self, dropout=None):
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
 
 
     def call(self, inputs, mask=None):
@@ -116,13 +116,13 @@ class ScaledDotProductAttentionMap(tf.keras.Model):
 
 class MultiHeadAttentionMap(tf.keras.Model):
 
-    def __init__(self, n_heads, output_depth, attention_type="scaled_dot"):
+    def __init__(self, n_heads, output_depth, attention_type="scaled_dot", dropout=None):
         super().__init__()
 
         if attention_type != "scaled_dot":
             raise NotImplementedError("Haven't got around to implementing other attention types yet!")
         self.attention_type = attention_type
-        self.attention_layer = ScaledDotProductAttentionMap()
+        self.attention_layer = ScaledDotProductAttentionMap(dropout=dropout)
         self.n_heads = n_heads
         self.output_layer = tf.keras.layers.Dense(output_depth, use_bias=False)
 
@@ -140,23 +140,23 @@ class MultiHeadAttentionMap(tf.keras.Model):
         """
         queries, keys, values = inputs
 
-        queries_split = self.split_heads(queries)
-        keys_split = self.split_heads(keys)
-        values_split = self.split_heads(values)
+        queries_split = self._split_heads(queries)
+        keys_split = self._split_heads(keys)
+        values_split = self._split_heads(values)
 
         attention_output_split = self.attention_layer((queries_split, keys_split, values_split), mask=mask)
-        attention_output = self.combine_heads(attention_output_split)
+        attention_output = self._combine_heads(attention_output_split)
         output = self.output_layer(attention_output)
         return output
 
 
-    def split_heads(self, tensor):
+    def _split_heads(self, tensor):
         new_feature_size = tensor.shape[-1] // self.n_heads
         tensor = tf.reshape(tensor, tensor.shape.as_list()[:-1] + [self.n_heads, new_feature_size])
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         return tensor
 
-    def combine_heads(self, tensor):
+    def _combine_heads(self, tensor):
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         new_feature_size = tensor.shape[-2] * tensor.shape[-1]
         tensor = tf.reshape(tensor, tensor.shape.as_list()[:-2] + [new_feature_size])
