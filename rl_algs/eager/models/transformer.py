@@ -62,6 +62,15 @@ class TransformerDecoderBlock(tf.keras.Model):
 
 class TransformerEncoder(tf.keras.Model):
 
+	# TODO: Handle embedding of input, lookup in position encoding
 	def __init__(self, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
 
 		self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) for _ in range(n_layers)])
+
+class TransformerDecoder(tf.keras.Model):
+
+	# TODO: Handle embedding of target, lookup in position encoding, decoding of outputs, padding of inputs
+	# Oh also need to do decoding at test time
+	def __init__(self, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
+
+		self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout) for _ in range(n_layers)])
