@@ -8,8 +8,8 @@ import tensorflow.contrib.eager as tfe
 from .Trainer import Trainer
 
 class PGTrainer(Trainer):
-    def __init__(self, obs_shape, ac_shape, policy, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, scope='trainer'):
-        super().__init__(obs_shape, ac_shape, policy, discrete)
+    def __init__(self, model, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, scope='trainer'):
+        super().__init__(model, discrete)
         self._valuecoeff = valuecoeff
         self._entcoeff = entcoeff
 
@@ -31,10 +31,10 @@ class PGTrainer(Trainer):
         return normed_values, advantages
         
     
-    def _loss_function(self, obs, act, val):
-        logits, pred_values = self._policy(obs, is_training=True)
+    def loss_function(self, obs, act, val):
+        logits, pred_values = self._model(obs, is_training=True)
 
-        neg_logp_actions = self._policy.get_neg_logp_actions(logits, act)
+        neg_logp_actions = self._model.get_neg_logp_actions(logits, act)
         values, advantages = self._compute_values_and_advantages(val, pred_values)
 
         # Regular PG Loss
@@ -42,7 +42,7 @@ class PGTrainer(Trainer):
         # Value Loss
         value_loss = tf.losses.mean_squared_error(labels=values, predictions=pred_values)
         # Entropy Penalty
-        entropy = tf.reduce_mean(self._policy.entropy(logits))
+        entropy = tf.reduce_mean(self._model.entropy(logits))
 
         return loss - self._entcoeff * entropy + self._valuecoeff * value_loss, loss, value_loss, entropy
 

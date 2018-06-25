@@ -283,3 +283,60 @@ class LinearSchedule(object):
         """See Schedule.value"""
         fraction  = min(float(t) / self.schedule_timesteps, 1.0)
         return self.initial_p + fraction * (self.final_p - self.initial_p)
+
+def write_tfrecord(data, ndata, filename):
+    if filename[-10:] != '.tfrecords':
+        filename += '.tfrecords'
+
+    writer = tf.python_io.TFRecordWriter(filename)
+
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+    def _float_feature(value):
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+    def _bytes_feature(value):
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+    for i in range(ndata):
+        if i % 100 == 0:
+            print('Progress: {:.2%}'.format(i / ndata))
+
+        features = {}
+        for key, val in data.items():
+            if val.ndim == 1:
+                if val.dtype in [np.int32, np.int64]:
+                    ftype = _int64_feature
+                else:
+                    ftype = _float_feature
+            else:
+                ftype = _bytes_feature
+            features[key] = ftype(val[i])
+
+        example = tf.train.Example(features=tf.train.Features(feature=features))
+        writer.write(example.SerializeToString())
+
+# Format -> dictionary of feature names : namedtuple(features_shape, dtype)
+# features_shape == 0 means do not reshape
+def read_tfrecord(dataformat, filename):
+    dataset = tf.data.TFRecordDataset(filename)
+
+    def _parse_function(example_proto):
+        features = {key : tf.FixedLenFeature((), tf.string if val.shape == 0 else val.dtype) for key, val in dataformat.items()}
+        parsed_features = tf.parse_single_example(example_proto, features)
+        for name, feat in parsed_features.items():
+            shape = dataformat[name].shape
+            if shape != 0:
+                feat = tf.decode_raw(feat, dataformat[name].dtype)
+                parsed_features[name] = tf.reshape(feat, shape)
+        return parsed_features
+
+    dataset = dataset.map(_parse_function)
+
+    return dataset
+
+
+
+
+

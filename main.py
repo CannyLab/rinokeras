@@ -70,6 +70,7 @@ benchmark_results['value_architecture'] = policy._value_architecture
 benchmark_results['lstm_cell_size'] = getattr(policy, '_lstm_cell_size', None)
 
 trainer = None
+# TODO: eager won't work b/c I removed ob_shape and ac_shape as arguments, but haven't done so for non-eager code
 if args.alg == 'dqn':
     trainer = DQNTrainer(ob_shape, ac_shape, policy, discrete, gamma=args.gamma, target_update_freq=1000)
 elif args.alg == 'pg':

@@ -89,6 +89,7 @@ class AttentionQKV(tf.keras.Model):
 class ScaledDotProductAttentionMap(tf.keras.Model):
 
     def __init__(self, dropout=None):
+        super().__init__()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
 
 
@@ -164,19 +165,20 @@ class MultiHeadAttentionMap(tf.keras.Model):
 
 class SelfAttention(tf.keras.Model):
 
-    def __init__(self, n_heads, attention_type="scaled_dot"):
+    def __init__(self, n_heads, attention_type="scaled_dot", dropout=None):
         super().__init__()
         if attention_type != "scaled_dot":
             raise NotImplementedError("Haven't got around to implementing other attention types yet!")
 
         self.n_heads = n_heads
         self.attention_type = attention_type
+        self.dropout = dropout
 
     def build(self, input_shape):
         channels = input_shape[-1]
         assert channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         self.compute_qkv = AttentionQKV(channels, channels)
-        self.attention_layer = MultiHeadAttentionMap(self.n_heads, channels)
+        self.attention_layer = MultiHeadAttentionMap(self.n_heads, channels, dropout=self.dropout)
 
     def call(self, inputs, mask=None):
         """Fast multi-head self attention.
@@ -190,13 +192,14 @@ class SelfAttention(tf.keras.Model):
 
 class MultiHeadAttention(tf.keras.Model):
 
-    def __init__(self, n_heads, attention_type="scaled_dot"):
+    def __init__(self, n_heads, attention_type="scaled_dot", dropout=None):
         super().__init__()
         if attention_type != "scaled_dot":
             raise NotImplementedError("Haven't got around to implementing other attention types yet!")
 
         self.n_heads = n_heads
         self.attention_type = attention_type
+        self.dropout = dropout
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
@@ -204,7 +207,7 @@ class MultiHeadAttention(tf.keras.Model):
         ma_channels = memory_antecedent_shape[-1]
         assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         self.compute_qkv = AttentionQKV(qa_channels, ma_channels)
-        self.attention_layer = MultiHeadAttentionMap(self.n_heads, ma_channels)
+        self.attention_layer = MultiHeadAttentionMap(self.n_heads, ma_channels, dropout=self.dropout)
 
     def call(self, inputs, mask=None):
         """Fast multi-head self attention.

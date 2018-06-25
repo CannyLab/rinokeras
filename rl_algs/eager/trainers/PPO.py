@@ -9,17 +9,17 @@ from .PolicyGradient import PGTrainer
 
 class PPOTrainer(PGTrainer):
     
-    def __init__(self, obs_shape, ac_shape, policy, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, epsilon=0.2, scope='trainer'):
+    def __init__(self, model, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, epsilon=0.2, scope='trainer'):
         self._epsilon = epsilon
-        self._old_policy = policy.make_copy()
-        super().__init__(obs_shape, ac_shape, policy, discrete, valuecoeff, entcoeff, max_grad_norm, scope)
+        self._old_model = model.make_copy()
+        super().__init__(model, discrete, valuecoeff, entcoeff, max_grad_norm, scope)
 
-    def _loss_function(self, obs, act, val):
-        logits, vpred = self._policy(obs, is_training=True)
-        old_logits, old_vpred = self._old_policy(obs, is_training=True)
+    def loss_function(self, obs, act, val):
+        logits, vpred = self._model(obs, is_training=True)
+        old_logits, old_vpred = self._old_model(obs, is_training=True)
 
-        neg_logp_actions = self._policy.get_neg_logp_actions(logits, act)
-        old_neg_logp_actions = self._old_policy.get_neg_logp_actions(old_logits, act)
+        neg_logp_actions = self._model.get_neg_logp_actions(logits, act)
+        old_neg_logp_actions = self._old_model.get_neg_logp_actions(old_logits, act)
         values, advantages = self._compute_values_and_advantages(val, vpred)
 
         # PPO Surrogate (https://github.com/openai/baselines/blob/master/baselines/ppo2/)
@@ -36,7 +36,7 @@ class PPOTrainer(PGTrainer):
         surr_loss = tf.reduce_mean(tf.maximum(surr1, surr2))
 
         # Value Loss
-        entropy = tf.reduce_mean(self._policy.entropy(logits))
+        entropy = tf.reduce_mean(self._model.entropy(logits))
 
         self._surr_loss = surr_loss
         self._value_loss = value_loss
@@ -45,7 +45,7 @@ class PPOTrainer(PGTrainer):
         return surr_loss - self._entcoeff * entropy + self._valuecoeff * value_loss
 
     def train(self, batch, learning_rate, n_iters=10):
-        self._old_policy.set_weights(self._policy.get_weights())
+        self._old_model.set_weights(self._model.get_weights())
         for _ in range(n_iters):
             loss = self._train_on_batch(batch['obs'], batch['act'], batch['val'])
 
