@@ -57,10 +57,10 @@ class Stack(tf.keras.Model):
     def add(self, layer):
         self._layers.append(layer)
 
-    def call(self, inputs, training=None, mask=None):
+    def call(self, inputs, **kwargs):
         output = inputs
         for layer in self._layers:
-            output = layer(output)
+            output = layer(output, **kwargs)
         return output
 
 class Conv2DStack(Stack):
