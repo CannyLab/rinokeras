@@ -34,9 +34,14 @@ class LSTMPolicy(StandardPolicy):
         self._memory_function = self._setup_memory_function()
 
     def _setup_memory_function(self):
-        memory_func = EagerLSTM(self._lstm_cell_size,
+        if tf.executing_eagerly():
+            memory_func = EagerLSTM(self._lstm_cell_size,
                                             return_sequences=True,
                                             return_state=True)
+        else:
+            memory_func = tf.keras.layers.LSTM(self._lstm_cell_size,
+                                                return_sequences=True,
+                                                return_state=True)
         return memory_func
 
     def build(self):
@@ -47,7 +52,7 @@ class LSTMPolicy(StandardPolicy):
             embedding = self._embedding_function(dummy_obs)
             if self._use_reward:
                 embedding = tf.concat((embedding, dummy_rew), -1)
-            memory_embed, memory = self._memory_function(embedding)
+            memory_embed, memory_h, memory_c = self._memory_function(embedding)
             logits = self._logits_function(memory_embed)
             value = self._value_function(memory_embed)
             action = self._action_function(logits)
@@ -80,7 +85,8 @@ class LSTMPolicy(StandardPolicy):
             embedding = tf.concat((embedding, rew), 2)
 
         # embedding = tf.reshape(embedding, (batch_size, timesteps, embedding.shape[-1]))
-        memory_embed, self._memory = self._memory_function(embedding, initial_state=self._memory)
+        memory_embed, memory_h, memory_c = self._memory_function(embedding, initial_state=self._memory)
+        self._memory = (memory_h, memory_c)
         memory_embed = tf.reshape(memory_embed, (batch_size * timesteps, memory_embed.shape[-1]))
             
         logits = self._logits_function(memory_embed)
@@ -90,7 +96,7 @@ class LSTMPolicy(StandardPolicy):
             return logits, tf.squeeze(value)
         else:
             action = self._action_function(logits)
-            return action.numpy()
+            return action.numpy() if tf.executing_eagerly() else action
 
     def clear_memory(self):
         self._memory = None

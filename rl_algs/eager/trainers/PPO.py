@@ -47,7 +47,7 @@ class PPOTrainer(PGTrainer):
     def train(self, batch, learning_rate, n_iters=10):
         self._old_model.set_weights(self._model.get_weights())
         for _ in range(n_iters):
-            loss = self._train_on_batch(batch['obs'], batch['act'], batch['val'])
+            loss = self._train_on_batch(batch['obs'], batch['act'], batch['val'], learning_rate=learning_rate)
 
         self._num_param_updates += 1
         

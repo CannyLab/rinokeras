@@ -83,7 +83,7 @@ class AttentionQKV(tf.keras.Model):
         keys = self.key_layer(memory_antecedent)
         values = self.value_layer(memory_antecedent)
 
-        return (queries, keys, values)
+        return [queries, keys, values]
 
 
 class ScaledDotProductAttentionMap(tf.keras.Model):
@@ -109,7 +109,7 @@ class ScaledDotProductAttentionMap(tf.keras.Model):
             logits += bias
 
         dk = float(keys.shape[-1].value)
-        weights = tf.nn.softmax(logits / np.sqrt(dk))# (batch_size, heads, n_queries, n_keyval)
+        weights = tf.nn.softmax(logits / np.sqrt(dk), axis=-1) # (batch_size, heads, n_queries, n_keyval)
         if self.dropout is not None:
             weights = self.dropout(weights)
         output = tf.matmul(weights, values)
@@ -137,10 +137,11 @@ class MultiHeadAttentionMap(tf.keras.Model):
         :param queries: Tensor with shape [batch_size, n_queries, depth_k]
         :param keys:    Tensor with shape [batch_size, n_keyval, depth_k]
         :param values:  Tensor with shape [batch_size, n_keyval, depth_v]
-        :return: output: Tensor with shape [batch_size, n_querires, depth_v]
+
+        :return: output: Tensor with shape [batch_size, n_queries, depth_v]
         """
         queries, keys, values = inputs
-
+        
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
@@ -152,43 +153,20 @@ class MultiHeadAttentionMap(tf.keras.Model):
 
 
     def _split_heads(self, tensor):
-        new_feature_size = tensor.shape[-1] // self.n_heads
-        tensor = tf.reshape(tensor, tensor.shape.as_list()[:-1] + [self.n_heads, new_feature_size])
+        shape = tensor.shape.as_list()
+        tensorlen = shape[1]
+        new_feature_size = shape[2] // self.n_heads
+        tensor = tf.reshape(tensor, (-1, tensorlen, self.n_heads, new_feature_size))
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         return tensor
 
     def _combine_heads(self, tensor):
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
-        new_feature_size = tensor.shape[-2] * tensor.shape[-1]
-        tensor = tf.reshape(tensor, tensor.shape.as_list()[:-2] + [new_feature_size])
+        shape = tensor.shape.as_list()
+        tensorlen = shape[1]
+        new_feature_size = shape[2] * shape[3]
+        tensor = tf.reshape(tensor, (-1, tensorlen, new_feature_size))
         return tensor
-
-class SelfAttention(tf.keras.Model):
-
-    def __init__(self, n_heads, attention_type="scaled_dot", dropout=None):
-        super().__init__()
-        if attention_type != "scaled_dot":
-            raise NotImplementedError("Haven't got around to implementing other attention types yet!")
-
-        self.n_heads = n_heads
-        self.attention_type = attention_type
-        self.dropout = dropout
-
-    def build(self, input_shape):
-        channels = input_shape[-1]
-        assert channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
-        self.compute_qkv = AttentionQKV(channels, channels)
-        self.attention_layer = MultiHeadAttentionMap(self.n_heads, channels, dropout=self.dropout)
-
-    def call(self, inputs, mask=None):
-        """Fast multi-head self attention.
-
-        :param inputs: Tensor with shape [batch_size, sequence_length, channels]
-
-        :return: output: Tensor with same shape as input
-        """
-        q, k, v = self.compute_qkv((inputs, inputs))
-        return self.attention_layer((q, k, v), mask=mask)
 
 class MultiHeadAttention(tf.keras.Model):
 

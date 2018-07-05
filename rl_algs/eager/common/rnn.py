@@ -80,11 +80,11 @@ class EagerLSTM(tf.keras.Model):
         hidden_states = tf.stack(c_list, axis=1)
         
         if self.return_all_states:
-            return hidden_outputs, [hidden_outputs, hidden_states]
+            return hidden_outputs, hidden_outputs, hidden_states
         if self.return_state and self.return_sequences:
-            return hidden_outputs, [h_state, c_state]
+            return hidden_outputs, h_state, c_state
         elif self.return_state and not self.return_sequences:
-            return h_state, [h_state, c_state]
+            return h_state, h_state, c_state
         elif self.return_sequences and not self.return_state:
             return hidden_outputs
         else:
@@ -110,15 +110,22 @@ class EagerBidirectionalLSTM(tf.keras.Model):
 
 class FixedLengthDecoder(tf.keras.Model):
 
-    def __init__(self, units, attention=None, output_layer=None):
+    def __init__(self, units, output_size, output_layer=None, attention=None):
         super().__init__()
         self.cell = EagerLSTMCell(units)#tf.keras.layers.LSTMCell(units)
+        self.output_size = output_size
         self.attention = attention
         if attention == 'luong':
             self.attention_fn = LuongAttention()
         elif attention == 'luonglocal':
             self.attention_fn = LuongAttention(local=True)
-        self.output_layer = output_layer
+
+        if output_layer is None:
+            self.output_layer = tf.keras.layers.Dense(output_size)
+        else:
+            self.output_layer = output_layer
+
+        self.target_embedding = tf.keras.layers.Dense(units, activation='relu')
 
     def call(self, inputs, seq_len, target_inputs=None):
         if self.attention:
@@ -126,8 +133,9 @@ class FixedLengthDecoder(tf.keras.Model):
         else:
             initial_state = inputs
         batch_size = initial_state[0].shape[0]
+
         if target_inputs is None:
-            inputs = tf.zeros((batch_size, self.cell.units))
+            inputs = tf.zeros((batch_size, self.output_size))
         elif isinstance(target_inputs, list):
             inputs = target_inputs[0]
         else:
@@ -136,10 +144,11 @@ class FixedLengthDecoder(tf.keras.Model):
         outputs = []
         state = initial_state
         for t in range(seq_len):
+            inputs = self.target_embedding(inputs)
             output, state = self.cell(inputs, states=state)
-
             if self.attention:
                 output = self.attention_fn((output, source_sequence), t=t)
+            output = self.output_layer(output)
             outputs.append(output)
 
             if target_inputs is None:
@@ -149,6 +158,4 @@ class FixedLengthDecoder(tf.keras.Model):
             else:
                 inputs = target_inputs[:,t + 1]
         outputs = tf.stack(outputs, 1)
-        if self.output_layer is not None:
-            outputs = self.output_layer(outputs)
         return outputs

@@ -30,12 +30,15 @@ class LayerNorm(tf.keras.layers.Layer):
         super().__init__(**kwargs)
 
     def build(self, input_shape):
+        shape = input_shape[self.axis] if not isinstance(self.axis, tuple) \
+                                        else [input_shape[axis] for axis in self.axis]
+
         self.gamma = self.add_variable(name='gamma',
-                                        shape=input_shape[1:],
+                                        shape=shape,
                                         initializer=tf.keras.initializers.Ones(),
                                         trainable=True)
         self.beta = self.add_variable(name='beta',
-                                        shape=input_shape[1:],
+                                        shape=shape,
                                         initializer=tf.keras.initializers.Zeros(),
                                         trainable=True)
         super().build(input_shape)
