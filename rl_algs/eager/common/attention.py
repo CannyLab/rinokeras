@@ -1,4 +1,3 @@
-import collections
 import tensorflow as tf
 import numpy as np
 
@@ -11,8 +10,9 @@ class LuongAttention(tf.keras.layers.Layer):
             self.stddev = stddev
 
     def build(self, inputs):
-        self.attention_weights = self.add_variable('attention_weights', (inputs[0][-1] + inputs[1][-1], inputs[1][-1]),
-                                                                        initializer=tf.initializers.variance_scaling())
+        self.attention_weights = self.add_variable('attention_weights',
+                                                   (inputs[0][-1] + inputs[1][-1], inputs[1][-1]),
+                                                   initializer=tf.initializers.variance_scaling())
 
     def call(self, inputs, t=None):
         target_hidden, source_hidden_sequence = inputs
@@ -26,10 +26,10 @@ class LuongAttention(tf.keras.layers.Layer):
             if t is None:
                 raise TypeError("Must pass in position for local attention")
             relative_position = tf.cast(tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
-            position_weighting = tf.exp( - tf.square(relative_position) / (2 * tf.square(self.stddev)) )
+            position_weighting = tf.exp(-tf.square(relative_position) / (2 * tf.square(self.stddev)))
             weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
             
-        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1) # will broadcast over third dimension
+        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1)  # will broadcast over third dimension
         concatenated = tf.concat((target_hidden, weighted), 1)
         output = tf.tanh(tf.matmul(concatenated, self.attention_weights))
         return output
@@ -92,7 +92,6 @@ class ScaledDotProductAttentionMap(tf.keras.Model):
         super().__init__()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
 
-
     def call(self, inputs, mask=None):
         """Fast scaled dot product attention.
 
@@ -103,13 +102,14 @@ class ScaledDotProductAttentionMap(tf.keras.Model):
             :return: output: Tensor with shape [batch_size, heads (optional), n_queries, depth_v]
         """
         queries, keys, values = inputs
-        logits = tf.matmul(queries, keys, transpose_b=True) # (batch_size, heads, n_queries, n_keyval)
+        dk = float(keys.shape.as_list()[-1])
+        logits = tf.matmul(queries, keys, transpose_b=True) / np.sqrt(dk)  # (batch_size, heads, n_queries, n_keyval)
         if mask is not None:
-            bias = tf.cast(tf.logical_not(mask), tf.float32) - 1e9
+            bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
             logits += bias
 
-        dk = float(keys.shape[-1].value)
-        weights = tf.nn.softmax(logits / np.sqrt(dk), axis=-1) # (batch_size, heads, n_queries, n_keyval)
+        weights = tf.nn.softmax(logits, axis=-1)  # (batch_size, heads, n_queries, n_keyval)
+
         if self.dropout is not None:
             weights = self.dropout(weights)
         output = tf.matmul(weights, values)
@@ -151,7 +151,6 @@ class MultiHeadAttentionMap(tf.keras.Model):
         output = self.output_layer(attention_output)
         return output
 
-
     def _split_heads(self, tensor):
         shape = tensor.shape.as_list()
         tensorlen = shape[1]
@@ -183,7 +182,8 @@ class MultiHeadAttention(tf.keras.Model):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
         qa_channels = query_antecedent_shape[-1]
         ma_channels = memory_antecedent_shape[-1]
-        assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, 'Feature size must be divisible by n_heads'
+        assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
+            'Feature size must be divisible by n_heads'
         self.compute_qkv = AttentionQKV(qa_channels, ma_channels)
         self.attention_layer = MultiHeadAttentionMap(self.n_heads, ma_channels, dropout=self.dropout)
 

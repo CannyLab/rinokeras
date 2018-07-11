@@ -1,4 +1,3 @@
-import collections
 import tensorflow as tf
 
 from .attention import LuongAttention
@@ -8,28 +7,29 @@ class EagerLSTMCell(tf.keras.Model):
     def __init__(self, units, **kwargs):
         super().__init__(**kwargs)
         self.units = units
+
         def bias_initializer(_, *args, **kwargs):
             # Unit forget bias from the paper
             # - [Learning to forget: Continual prediction with LSTM]
             return tf.keras.backend.concatenate([
-                    tf.keras.initializers.Zeros()((self.units,), *args, **kwargs), # input gate
-                    tf.keras.initializers.Ones()((self.units,), *args, **kwargs), # forget gate
-                    tf.keras.initializers.Zeros()((self.units * 2,), *args, **kwargs) # context and output gates
-                ])
+                tf.keras.initializers.Zeros()((self.units,), *args, **kwargs),  # input gate
+                tf.keras.initializers.Ones()((self.units,), *args, **kwargs),  # forget gate
+                tf.keras.initializers.Zeros()((self.units * 2,), *args, **kwargs)  # context and output gates
+            ])
         self.kernel = tf.keras.layers.Dense(4 * units, use_bias=False)
-        self.recurrent_kernel = tf.keras.layers.Dense(4 * units, kernel_initializer='glorot_uniform', bias_initializer=bias_initializer)
+        self.recurrent_kernel = tf.keras.layers.Dense(4 * units, 
+                                                      kernel_initializer='glorot_uniform',
+                                                      bias_initializer=bias_initializer)
 
     def call(self, inputs, states, training=None, mask=None):
-        
         h_state, c_state = states
-        
         # LSTM gate steps
         z = self.kernel(inputs) + self.recurrent_kernel(h_state)
 
         z0 = z[:, :self.units]
-        z1 = z[:, self.units:2*self.units]
-        z2 = z[:, 2*self.units:3*self.units]
-        z3 = z[:, 3*self.units:]
+        z1 = z[:, self.units:2 * self.units]
+        z2 = z[:, 2 * self.units:3 * self.units]
+        z3 = z[:, 3 * self.units:]
 
         # gate updates
         i = tf.keras.activations.sigmoid(z0)
@@ -78,7 +78,7 @@ class EagerLSTM(tf.keras.Model):
 
         hidden_outputs = tf.stack(h_list, axis=1)
         hidden_states = tf.stack(c_list, axis=1)
-        
+
         if self.return_all_states:
             return hidden_outputs, hidden_outputs, hidden_states
         if self.return_state and self.return_sequences:
@@ -101,7 +101,7 @@ class EagerBidirectionalLSTM(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
 
-        reverse_inputs = inputs[:,::-1]
+        reverse_inputs = inputs[:, ::-1]
 
         res1 = self.forward_lstm(inputs)
         res2 = self.backward_lstm(reverse_inputs)
@@ -112,7 +112,7 @@ class FixedLengthDecoder(tf.keras.Model):
 
     def __init__(self, units, output_size, output_layer=None, attention=None):
         super().__init__()
-        self.cell = EagerLSTMCell(units)#tf.keras.layers.LSTMCell(units)
+        self.cell = EagerLSTMCell(units)
         self.output_size = output_size
         self.attention = attention
         if attention == 'luong':
@@ -139,7 +139,7 @@ class FixedLengthDecoder(tf.keras.Model):
         elif isinstance(target_inputs, list):
             inputs = target_inputs[0]
         else:
-            inputs = target_inputs[:,0]
+            inputs = target_inputs[:, 0]
 
         outputs = []
         state = initial_state
@@ -156,6 +156,6 @@ class FixedLengthDecoder(tf.keras.Model):
             elif isinstance(target_inputs, list):
                 inputs = target_inputs[t + 1]
             else:
-                inputs = target_inputs[:,t + 1]
+                inputs = target_inputs[:, t + 1]
         outputs = tf.stack(outputs, 1)
         return outputs

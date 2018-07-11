@@ -8,7 +8,8 @@ class RandomNoise(tf.keras.layers.Layer):
         super().__init__()
         self._shape = shape
         self._logstd = self.add_variable('logstd', shape, dtype=tf.float32,
-                                            initializer=tf.constant_initializer(initial))
+                                         initializer=tf.constant_initializer(initial))
+
     def call(self, inputs):
         epsilon = tf.random_normal(self._shape)
         return inputs + epsilon * tf.exp(self._logstd)
@@ -31,16 +32,16 @@ class LayerNorm(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         shape = input_shape[self.axis] if not isinstance(self.axis, tuple) \
-                                        else [input_shape[axis] for axis in self.axis]
+            else [input_shape[axis] for axis in self.axis]
 
         self.gamma = self.add_variable(name='gamma',
-                                        shape=shape,
-                                        initializer=tf.keras.initializers.Ones(),
-                                        trainable=True)
+                                       shape=shape,
+                                       initializer=tf.keras.initializers.Ones(),
+                                       trainable=True)
         self.beta = self.add_variable(name='beta',
-                                        shape=shape,
-                                        initializer=tf.keras.initializers.Zeros(),
-                                        trainable=True)
+                                      shape=shape,
+                                      initializer=tf.keras.initializers.Zeros(),
+                                      trainable=True)
         super().build(input_shape)
 
     def call(self, inputs):
@@ -48,7 +49,8 @@ class LayerNorm(tf.keras.layers.Layer):
         std = K.std(inputs, axis=self.axis, keepdims=True)
         return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
 
-# I presume this is just how Sequential is added but at the moment Sequential requires input size to be specified at the begining
+# I presume this is just how Sequential is added but at the moment Sequential 
+# requires input size to be specified at the begining
 class Stack(tf.keras.Model):
     def __init__(self, layers=None):
         super().__init__()

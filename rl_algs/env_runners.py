@@ -1,17 +1,13 @@
-import sys
 import types
 from collections import defaultdict
 
 import numpy as np
-import tensorflow as tf
-import gym
 import scipy.signal
 
-from .policies.Policy import Policy
 
 # https://stackoverflow.com/questions/12201577/how-can-i-convert-an-rgb-image-into-grayscale-in-python
 def rgb2gray(rgb):
-    img = np.dot(rgb[:,:,:3], [0.299, 0.587, 0.114])
+    img = np.dot(rgb[:, :, :3], [0.299, 0.587, 0.114])
     return np.expand_dims(img, -1)
 
 class EnvironmentRunner(object):
@@ -38,15 +34,15 @@ class EnvironmentRunner(object):
             raise ValueError("Unknown option for modifyobs argument. Received {}".format(modifyobs))
 
         if modifyreward in [None, False]:
-            self._modifyreward = lambda rew : rew
+            self._modifyreward = lambda rew: rew
         elif isinstance(modifyreward, types.FunctionType):
             self._modifyreward = modifyreward
         elif modifyreward == 'zeroone':
-            self._modifyreward = lambda rew : 1 if rew > 0 else 0
+            self._modifyreward = lambda rew: 1 if rew > 0 else 0
         elif modifyreward == 'penalize':
-            self._modifyreward = lambda rew : rew - 1
+            self._modifyreward = lambda rew: rew - 1
         else:
-            raise ValueError("Unknown option for modifyrew argument. Received {}".format(modifyrew))
+            raise ValueError("Unknown option for modifyreward argument. Received {}".format(modifyreward))
         
         self._done = False
         self.reset()
@@ -114,7 +110,7 @@ class EnvironmentRunner(object):
         self._num_steps = 0
         self._num_agent_actions = 0
         self._episode_rew = 0
-        self._rollout = defaultdict(lambda : [])
+        self._rollout = defaultdict(lambda: [])
 
     @property
     def episode_rew(self):
@@ -191,8 +187,8 @@ class PGEnvironmentRunner(EnvironmentRunner):
         if False and self._return_activations:
             # normalize baseline to vals
             self._rollout['baseline'] -= self._rollout['baseline'].mean()
-            self._rollout['baseline'] /= self._rollout['baseline'].std() + 1e-10 # deal with zero std
-            self._rollout['baseline'] *= self._rollout['val'].std() + 1e-10 # deal with zero std
+            self._rollout['baseline'] /= self._rollout['baseline'].std() + 1e-10  # deal with zero std
+            self._rollout['baseline'] *= self._rollout['val'].std() + 1e-10  # deal with zero std
             self._rollout['baseline'] += self._rollout['val'].mean()
 
             # compute and normalize advantages
@@ -204,7 +200,7 @@ class PGEnvironmentRunner(EnvironmentRunner):
             self._rollout['val'] -= self._rollout['val'].mean()
             self._rollout['val'] /= self._rollout['val'].std() + 1e-10
 
-        return dict(self._rollout) # cast to dict so keys will error
+        return dict(self._rollout)  # cast to dict so keys will error
 
     @property
     def summary(self):
@@ -217,4 +213,3 @@ class PGEnvironmentRunner(EnvironmentRunner):
     def reset(self):
         self._val = None
         super().reset()
-

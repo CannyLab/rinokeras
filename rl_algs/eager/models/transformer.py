@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 from rl_algs.eager.common.layers import Residual, Stack, DenseStack
 from rl_algs.eager.common.attention import MultiHeadAttention
@@ -13,7 +12,8 @@ class PositionEmbedding(tf.keras.Model):
         self.hidden_size = hidden_size
         self.n_symbols = n_symbols
         if discrete:
-            assert n_symbols is not None and n_symbols > 0, 'Trying to predict a discrete value but received invalid n_symbols: {}'.format(n_symbols)
+            assert n_symbols is not None and n_symbols > 0, \
+                'Trying to predict a discrete value but received invalid n_symbols: {}'.format(n_symbols)
             self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True)
         else:
             self.input_embedding = tf.keras.layers.Dense(hidden_size)
@@ -31,13 +31,13 @@ class PositionEmbedding(tf.keras.Model):
 
             :return embedding: float32 Tensor with shape [batch_size, sequence_length, hidden_size]
         """
-        sequence_length = inputs.shape.as_list()[1] 
+        sequence_length = inputs.shape.as_list()[1]
 
-        position_embedding = self.get_position_embedding(sequence_length) # return [1, sequence_length, hidden_size]
-        embedding = self.input_embedding(inputs) # return [batch_size, sequence_length, hidden_size]
+        position_embedding = self.get_position_embedding(sequence_length)  # return [1, sequence_length, hidden_size]
+        embedding = self.input_embedding(inputs)  # return [batch_size, sequence_length, hidden_size]
         embedding += position_embedding
         if mask is not None:
-            embedding *= tf.cast(mask[:,:,None], tf.float32)
+            embedding *= tf.cast(mask[:, :, None], tf.float32)
         return embedding
 
     def get_position_embedding(self, sequence_length):
@@ -49,11 +49,10 @@ class PositionEmbedding(tf.keras.Model):
                :param sequence_length: an integer length of input sequence
 
                :return position_embedding: float32 Tensor with shape [1, sequence_length, hidden_size]
-               
         """
 
         seq_pos = tf.cast(tf.range(sequence_length)[None, :] + 1, tf.float32)
-        embedding = seq_pos[:,:,None] / self._divisor
+        embedding = seq_pos[:, :, None] / self._divisor
 
         sin_embedding = tf.sin(embedding)
         cos_embedding = tf.cos(embedding)
@@ -68,8 +67,8 @@ class PositionEmbedding2D(tf.keras.Model):
     def build(self, input_shape):
         channels = input_shape[-1]
         self.hidden_size = channels
-        assert hidden_size % 4 == 0, 'Hidden size must be multiple of four for 2D sinusoidal encoding'
-        
+        assert self.hidden_size % 4 == 0, 'Hidden size must be multiple of four for 2D sinusoidal encoding'
+
         power = tf.range(0, self.hidden_size, 4, dtype=tf.float32) / self.hidden_size
         divisor = 10000 ** power
         self._divisor = divisor
@@ -166,16 +165,19 @@ class TransformerDecoderBlock(tf.keras.Model):
 
     def call(self, inputs, self_attention_mask=None, attention_mask=None, fast_decode=False):
         encoder_outputs, decoder_inputs = inputs
-        target_attention_out = self.residual_self_attention((decoder_inputs if not fast_decode else decoder_inputs[:,-1:], 
-                                                                decoder_inputs), 
-                                                                mask=self_attention_mask)
-        encdec_attention_out = self.residual_multi_attention((target_attention_out, encoder_outputs), mask=attention_mask)
+        target_attention_out = self.residual_self_attention(
+            (decoder_inputs, decoder_inputs),
+            # (decoder_inputs if not fast_decode else decoder_inputs[:, -1:], decoder_inputs),
+            mask=self_attention_mask)
+
+        encdec_attention_out = self.residual_multi_attention((target_attention_out, encoder_outputs),
+                                                             mask=attention_mask)
         output = self.residual_dense(encdec_attention_out)
         return [encoder_outputs, output]
 
 class TransformerEncoder(tf.keras.Model):
-    """Stack of TransformerEncoderBlocks. Performs initial embedding to d_model dimensions, then repeated self-attention.
-        Defaults to 6 layers of self-attention.
+    """Stack of TransformerEncoderBlocks. Performs initial embedding to d_model dimensions,
+        then repeated self-attention. Defaults to 6 layers of self-attention.
     """
 
     def __init__(self, discrete, n_symbols_in=None, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
@@ -191,7 +193,7 @@ class TransformerEncoder(tf.keras.Model):
 
 
 class TransformerDecoder(tf.keras.Model):
-    """Stack of TransformerDecoderBlocks. Performs initial embedding to d_model dimensions, then repeated self-attention 
+    """Stack of TransformerDecoderBlocks. Performs initial embedding to d_model dimensions, then repeated self-attention
         followed by attention on source sequence. Defaults to 6 layers of self-attention.
     """
 
@@ -199,7 +201,8 @@ class TransformerDecoder(tf.keras.Model):
     def __init__(self, discrete, n_symbols_out=None, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
         super().__init__()
         self.target_embedding = PositionEmbedding(d_model, discrete, n_symbols_out)
-        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout) for _ in range(n_layers)])
+        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
+                                    for _ in range(n_layers)])
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
@@ -210,10 +213,12 @@ class TransformerDecoder(tf.keras.Model):
         batch_size = tf.shape(target_embedding)[0]
         timesteps = target_embedding.shape.as_list()[1]
         future_and_padding_mask = self.get_future_mask(batch_size, timesteps, padding_mask) \
-                                    if (mask_future and not fast_decode) else None
-        _, output = self.decoding_stack((encoder_output, target_embedding), self_attention_mask=future_and_padding_mask,
-                                                                            attention_mask=padding_mask,
-                                                                            fast_decode=fast_decode)
+            if (mask_future and not fast_decode) else None
+
+        _, output = self.decoding_stack((encoder_output, target_embedding),
+                                        self_attention_mask=future_and_padding_mask,
+                                        attention_mask=padding_mask,
+                                        fast_decode=fast_decode)
         return output
 
     def get_future_mask(self, batch_size, sequence_length, padding_mask):
@@ -228,11 +233,11 @@ class TransformerDecoder(tf.keras.Model):
         
         xind = tf.tile(tf.range(sequence_length)[None, :], (sequence_length, 1))
         yind = tf.tile(tf.range(sequence_length)[:, None], (1, sequence_length))
-        mask = yind <= xind
+        mask = yind >= xind
 
         if padding_mask is not None:
-            mask = tf.logical_and(padding_mask[:,:,None], mask[None, :, :])
-            mask = tf.logical_and(mask, padding_mask[:,None,:])
+            mask = tf.logical_and(padding_mask[:, :, None], mask[None, :, :])
+            mask = tf.logical_and(mask, padding_mask[:, None, :])
 
         return mask
 
@@ -280,40 +285,42 @@ class Transformer(tf.keras.Model):
         encoder_output = self.encode_source_sequence(source_sequence, padding_mask)
         for _ in range(max_seq_len):
             target_sequence = tf.concat(output_sequence, axis=1)
-            output = self.decode_target_sequence(encoder_output, target_sequence, 
-                                                    padding_mask=padding_mask,
-                                                    shift_target_sequence_right=False,
-                                                    training=False)
-            output_sequence.append(output)
+            output = self.decode_target_sequence(encoder_output, 
+                                                 target_sequence,
+                                                 padding_mask=padding_mask,
+                                                 shift_target_sequence_right=False,
+                                                 training=True)
+            output_sequence.append(output[:, -1:])
         return tf.concat(output_sequence[1:], axis=1)
 
     def encode_source_sequence(self, source_sequence, padding_mask):
         encoder_output = self.encoder(source_sequence, padding_mask=padding_mask)
         return encoder_output
 
-    def decode_target_sequence(self, encoder_output, target_sequence, padding_mask, shift_target_sequence_right, training):
-        target_size = target_sequence.shape.as_list()[-1]
-        batch_size = tf.shape(target_sequence)[0]
-
+    def decode_target_sequence(self, 
+                               encoder_output, 
+                               target_sequence, 
+                               padding_mask, 
+                               shift_target_sequence_right, 
+                               training):
         if shift_target_sequence_right:
+            batch_size, target_size = tf.shape(target_sequence)[0], target_sequence.shape.as_list()[-1]
             first_zeros = tf.zeros((batch_size, 1, target_size))
-            target_sequence = tf.concat((first_zeros, target_sequence[:,:-1]), axis=1)
+            target_sequence = tf.concat((first_zeros, target_sequence[:, :-1]), axis=1)
 
         decoder_output = self.decoder((encoder_output, target_sequence), 
-                                        padding_mask=padding_mask, 
-                                        mask_future=not training, 
-                                        fast_decode=not training)
+                                      padding_mask=padding_mask, 
+                                      mask_future=training, 
+                                      fast_decode=not training)
         output = self.output_layer(decoder_output)
         return output
-
 
     def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
         source_sequence, target_sequence = inputs
 
         encoder_output = self.encode_source_sequence(source_sequence, padding_mask=padding_mask)
-        decoder_output = self.decode_target_sequence(encoder_output, target_sequence,
-                                                        padding_mask=padding_mask,
-                                                        shift_target_sequence_right=shift_target_sequence_right,
-                                                        training=training)
-
-
+        decoder_output = self.decode_target_sequence((encoder_output, target_sequence),
+                                                     padding_mask=padding_mask,
+                                                     shift_target_sequence_right=shift_target_sequence_right,
+                                                     training=training)
+        return decoder_output
