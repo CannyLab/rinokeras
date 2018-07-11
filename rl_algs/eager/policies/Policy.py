@@ -9,7 +9,7 @@ class Policy(tf.keras.Model):
         self._discrete = discrete
         if discrete and not np.isscalar(ac_shape):
             raise ValueError("ac_shape must be scalar if mode is discrete")
-        elif not discrete and np.isscalar(ac_shape):
+        if np.isscalar(ac_shape):
             self._ac_shape = (ac_shape,)
 
     # Should return the action to perform when seeing obs

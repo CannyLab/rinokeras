@@ -1,31 +1,100 @@
 import types
-from collections import defaultdict
 
+import tensorflow as tf
 import numpy as np
 import scipy.signal
-
 
 # https://stackoverflow.com/questions/12201577/how-can-i-convert-an-rgb-image-into-grayscale-in-python
 def rgb2gray(rgb):
     img = np.dot(rgb[:, :, :3], [0.299, 0.587, 0.114])
     return np.expand_dims(img, -1)
 
-class EnvironmentRunner(object):
-    def __init__(self, env, agent, **kwargs):
-        # assert isinstance(agent, Policy), "Agent must be a subclass of Policy. Received {}".format(type(agent))
+class Rollout:
 
+        def __init__(self, partial_rollout):
+            self.length = len(partial_rollout)
+            self.keys = []
+            self.obs = self._add_key_val('obs', partial_rollout.obs)
+            self.act = self._add_key_val('act', partial_rollout.act)
+            self.rew = self._add_key_val('rew', partial_rollout.rew)
+            self.rew_in = self._add_key_val('rew_in', partial_rollout.rew_in)
+            self.episode_rew = np.sum(self.rew)
+
+        def _add_key_val(self, key, val):
+            if val is None:
+                return None
+
+            self.keys.append(key)
+            val = np.squeeze(np.array(val))
+            if self.length == 1:
+                val = np.expand_dims(val, 0)
+            return val
+
+        def setVal(self, gamma):
+            rewards = self.rew[::-1]
+            self.val = scipy.signal.lfilter([1], [1, -gamma], rewards, axis=0)[::-1]
+            self.keys.append('val')
+
+        def __len__(self):
+            return self.length
+
+class PartialRollout:
+
+    def __init__(self):
+        self.obs = None
+        self.act = None
+        self.rew = None
+        self.rew_in = None
+        self.length = 0
+        self.episode_rew = 0
+
+    def addObs(self, obs):
+        if self.obs is None:
+            self.obs = []
+        self.obs.append(obs)
+        self.length += 1
+
+    def addAct(self, act):
+        if self.act is None:
+            self.act = []
+        self.act.append(act)
+
+    def addRew(self, rew):
+        if self.rew is None:
+            self.rew = []
+        self.rew.append(rew)
+        self.episode_rew += rew
+
+    def addRewIn(self, rew):
+        if self.rew_in is None:
+            self.rew_in = []
+        self.rew_in.append(rew)
+
+    def finalize(self):
+        assert not self.obs or len(self.obs) == self.length, 'Observation length does not match rollout length'
+        assert not self.act or len(self.act) == self.length, 'Action length does not match rollout length'
+        assert not self.rew or len(self.rew) == self.length, 'Reward length does not match rollout length'
+        assert not self.rew_in or len(self.rew_in) == self.length, 'Reward input length does not match rollout length'
+        return Rollout(self)
+
+    def __len__(self):
+        return self.length
+
+class EnvironmentRunner:
+
+    def __init__(self, env, agent, **kwargs):
         self._env = env
         self._agent = agent    
         self._episode_num = 0
-        self._return_activations = kwargs.get('return_activations', False)
         self._max_episode_steps = kwargs.get('max_episode_steps', float('inf'))
         self._pass_reward_to_agent = kwargs.get('pass_reward_to_agent', False)
+        self._initialize_reward_from_environment = kwargs.get('initialize_reward_from_environment', False)
 
         modifyobs = kwargs.get('modifyobs', None)
         modifyreward = kwargs.get('modifyreward', None)
 
         if modifyobs in [None, False]:
-            self._modifyobs = lambda obs : obs
+            self._modifyobs = lambda obs: obs
         elif isinstance(modifyobs, types.FunctionType):
             self._modifyobs = modifyobs
         elif modifyobs in ['grayscale', 'greyscale']:
@@ -47,82 +116,93 @@ class EnvironmentRunner(object):
         self._done = False
         self.reset()
 
-    def get_rollout(self):
-        if self._done:
-            self.reset()
+    def _prepareObs(self, obs):
+        if tf.executing_eagerly():
+            if obs.dtype == np.uint8:
+                dtype = tf.uint8
+            elif obs.dtype in [np.int32, np.int64]:
+                dtype = tf.int32
+            else:
+                dtype = tf.float32
 
+            obs = tf.constant(obs, dtype)
+        obs = obs[None]
+        if self._pass_reward_to_agent:
+            rew = self._rew
+            if tf.executing_eagerly():
+                rew = tf.constant(rew, tf.float32)
+            rew = rew[None]
+            obs = (obs, rew)
+        return obs
+
+    def getRollout(self):
         while not self._done:
             self.step()
 
-        return dict(self._rollout)
+        return self._rollout.finalize()
 
     def step(self, obs=None, random=False):
-        if self._done:
-            raise RuntimeError("Cannot step environment which is done. Call reset first.")
-        self._rollout['obs'].append(self._obs)
-        if self._pass_reward_to_agent:
-            self._rollout['rew_in'].append(self._rew)
+        action = self.getAction(obs, random)
+        return self.stepEnv(action)
+
+    def getAction(self, obs=None, random=False):
         if obs is None:
             obs = self._obs
 
-        # Get action
         if random:
-            action = np.random.randint(self._env.action_space.n)
+            return np.random.randint(self._env.action_space.n)
         else:
-            if self._pass_reward_to_agent:
-                obs = (obs, self._rew)
-            pred = self._agent.predict(obs, return_activations=self._return_activations)
-            if self._return_activations:
-                action, activs = pred
-            else:
-                action = pred
-            self._num_agent_actions += 1
-        self._num_steps += 1
+            obs = self._prepareObs(obs)
+            return self._agent.predict(obs)
 
-        # Step the environment
+    def stepEnv(self, action):
+        if self._done:
+            raise RuntimeError("Cannot step environment which is done. Call reset first.")
+
+        self._rollout.addObs(self._obs)
+        self._rollout.addRewIn(self._rew)
+
         obs, rew, done, _ = self._env.step(action)
+        self._num_steps += 1
         if self._num_steps >= self._max_episode_steps:
             done = True
+
         self._obs = self._modifyobs(obs)
         self._rew = self._modifyreward(rew)
         self._done = done
         self._act = action
-        
-        self._rollout['act'].append(self._act)
-        self._rollout['rew'].append(self._rew)
-        if self._return_activations:
-            self._activs = None if random else activs
-            self._rollout['activs'].append(self._activs)
 
-        self._episode_rew += self._rew
+        self._rollout.addAct(self._act)
+        self._rollout.addRew(self._rew)
 
         return self._done
 
     def reset(self):
         if self._done:
             self._episode_num += 1
+
         obs = self._env.reset()
         self._obs = self._modifyobs(obs)
         self._done = False
         self._act = None
-        self._rew = 0.
-        self._activs = None
+        self._rew = 0. if not self._initialize_reward_from_environment else self._env.get_reward()
         self._num_steps = 0
-        self._num_agent_actions = 0
-        self._episode_rew = 0
-        self._rollout = defaultdict(lambda: [])
+        self._rollout = PartialRollout()
+
+    def _get_printstr(self):
+        printstr = []
+        printstr.append('EPISODE: {:>7}'.format(self.episode_num))
+        printstr.append('REWARD: {:>5.2f}'.format(self.episode_rew))
+        printstr.append('NSTEPS: {:>5}'.format(self.episode_steps))
+        return printstr
 
     @property
     def episode_rew(self):
-        return self._episode_rew
+        return self._rollout.episode_rew
 
     @property
     def episode_steps(self):
-        return self._num_steps
-
-    @property
-    def num_agent_action(self):
-        return self._num_agent_actions
+        return len(self._rollout)
 
     @property
     def episode_num(self):
@@ -130,12 +210,12 @@ class EnvironmentRunner(object):
 
     @property
     def summary(self):
-        printstr = []
-        printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
-        printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
-        printstr.append('PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps))
-        return '\t' + ', '.join(printstr)
+        return '\t' + ', '.join(self._get_printstr())
+
+    @property
+    def isDone(self):
+        return self._done
+    
 
 class DQNEnvironmentRunner(EnvironmentRunner):
     def __init__(self, env, agent, replay_buffer, **kwargs):
@@ -150,66 +230,120 @@ class DQNEnvironmentRunner(EnvironmentRunner):
         self._replay_buffer.store_effect(idx, self._act, self._rew, self._done)
         return self._done
 
-    @property
-    def summary(self):
-        printstr = []
-        printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>5.2f}'.format(self._episode_rew))
-        printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
-        printstr.append('PERCENT_AGENT: {:>6.2f}'.format(100 * self._num_agent_actions / self._num_steps))
-        return '\t' + ', '.join(printstr)
-
 class PGEnvironmentRunner(EnvironmentRunner):
     def __init__(self, env, agent, gamma, **kwargs):
         self._gamma = gamma
         super().__init__(env, agent, **kwargs)
 
-    def get_rollout(self):
+    def getRollout(self):
+        rollout = super().getRollout()
+        rollout.setVal(self._gamma)
+        return rollout
+
+class VectorizedRunner:
+
+    def __init__(self, runners, agent, pass_reward_to_agent=False):
+        self._runners = runners
+        self._current_runners = None
+        self._agent = agent
+        self._pass_reward_to_agent = pass_reward_to_agent
+        self._done = False
+        self._episode_num = 0
+        self.reset()
+
+    def _prepareObs(self, obs, rew=None):
+        if tf.executing_eagerly():
+            if obs.dtype == np.uint8:
+                dtype = tf.uint8
+            elif obs.dtype in [np.int32, np.int64]:
+                dtype = tf.int32
+            else:
+                dtype = tf.float32
+
+            obs = tf.constant(obs, dtype)
+
+        if rew is not None:
+            if tf.executing_eagerly():
+                rew = tf.constant(rew, tf.float32)
+            obs = (obs, rew)
+        return obs
+
+    def sampleRunners(self, n_runners):
+        assert n_runners <= self.num_runners, 'Not enough environments to generate that many rollouts'
+        indices = np.random.choice(self.num_runners, n_runners, replace=False)
+        self._current_runners = [self._runners[i] for i in indices]
+
+    def getRollouts(self):
         while not self._done:
-            self.step(self._obs[None])
+            self.step()
 
-        for key in self._rollout:
-            self._rollout[key] = np.squeeze(np.array(self._rollout[key]))
-            if self._num_steps == 1:
-                self._rollout[key] = np.expand_dims(self._rollout[key], 0)
-        # compute values
-        rewards = self._rollout['rew'][::-1]
-        # if (self._num_steps == self._max_episode_steps):
-        #     args = [self._obs[None]]
-        #     if self._pass_reward_to_agent:
-        #         args.append(self._rew)
-        #     val = self._agent.predict_value(*args)
-        #     rewards = np.concatenate(([val], rewards))
-        self._rollout['val'] = scipy.signal.lfilter([1], [1, -self._gamma], rewards, axis=0)[::-1]
-        # if (self._num_steps == self._max_episode_steps):
-        #     self._rollout['val'] = self._rollout['val'][:-1]
+        rollouts = [runner.getRollout() for runner in self._current_runners]
+        return rollouts
 
-        if False and self._return_activations:
-            # normalize baseline to vals
-            self._rollout['baseline'] -= self._rollout['baseline'].mean()
-            self._rollout['baseline'] /= self._rollout['baseline'].std() + 1e-10  # deal with zero std
-            self._rollout['baseline'] *= self._rollout['val'].std() + 1e-10  # deal with zero std
-            self._rollout['baseline'] += self._rollout['val'].mean()
+    def step(self):
+        actions = self.getAction()
+        return self.stepEnv(actions)
 
-            # compute and normalize advantages
-            self._rollout['adv'] = self._rollout['val'] - self._rollout['baseline']
-            self._rollout['adv'] -= self._rollout['adv'].mean()
-            self._rollout['adv'] /= self._rollout['adv'].std() + 1e-10
+    def getAction(self):
+        obs = np.array([runner._obs for runner in self._current_runners])
+        rew = None
+        if self._pass_reward_to_agent:
+            rew = np.array([runner._rew for runner in self._current_runners])
+        obs = self._prepareObs(obs, rew)
+        action = self._agent.predict(obs)
+        action = [action[i] for i in range(len(self._current_runners))]
+        return action
 
-            # normalize vals to 0/1
-            self._rollout['val'] -= self._rollout['val'].mean()
-            self._rollout['val'] /= self._rollout['val'].std() + 1e-10
+    def stepEnv(self, actions):
+        done = False
+        for runner, act in zip(self._current_runners, actions):
+            runner.stepEnv(act)
+            if runner.isDone:
+                done = True
 
-        return dict(self._rollout)  # cast to dict so keys will error
+        self._done = done
+
+        return done
+
+    def reset(self):
+        if self._current_runners is not None:
+            for runner in self._current_runners:
+                runner.reset()
+
+            if self._done:
+                self._episode_num += len(self._current_runners)
+
+        self._current_runners = None
+        self._done = False
+
+    @property
+    def num_runners(self):
+        return len(self._runners)
+
+    @property
+    def episode_rew(self):
+        if self._current_runners is None:
+            return None
+
+        return np.mean(runner.episode_rew for runner in self._current_runners)
+
+    @property
+    def episode_steps(self):
+        if self._current_runners is None:
+            return None
+
+        return np.mean(runner.episode_steps for runner in self._current_runners)
+
+    @property
+    def episode_num(self):
+        return self._episode_num
 
     @property
     def summary(self):
-        printstr = []
-        printstr.append('EPISODE: {:>7}'.format(self._episode_num))
-        printstr.append('REWARD: {:>7.2f}'.format(self._episode_rew))
-        printstr.append('NSTEPS: {:>5}'.format(self._num_steps))
-        return '\t' + ', '.join(printstr)
+        return '\t' + ', '.join(self._get_printstr())
 
-    def reset(self):
-        self._val = None
-        super().reset()
+    @property
+    def isDone(self):
+        return self._done
+    
+

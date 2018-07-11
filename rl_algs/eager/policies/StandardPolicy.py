@@ -1,9 +1,7 @@
-import collections
 from operator import mul
 from functools import reduce
 
 import tensorflow as tf
-import tensorflow.contrib.eager as tfe
 import numpy as np
 
 from .Policy import Policy
@@ -66,8 +64,7 @@ class StandardPolicy(Policy):
 
     def _setup_embedding_function(self):
         return Conv2DStack(self._embedding_architecture) if self._use_conv \
-                    else DenseStack(self._embedding_architecture, output_activation='relu')
-
+            else DenseStack(self._embedding_architecture, output_activation='relu')
 
     def _setup_logit_function(self, activation=None):
         ac_dim = reduce(mul, self._ac_shape)
@@ -91,8 +88,8 @@ class StandardPolicy(Policy):
             
             embedding = self._embedding_function(dummy_obs)
             logits = self._logits_function(embedding)
-            value = self._value_function(embedding)
-            action = self._action_function(logits)
+            self._value_function(embedding)
+            self._action_function(logits)
             self.built = True
 
     def call(self, obs, is_training=False):
@@ -116,8 +113,9 @@ class StandardPolicy(Policy):
         if self._discrete:
             return tf.nn.sparse_softmax_cross_entropy_with_logits(labels=actions, logits=logits)
         else:
-            return 0.5 * tf.reduce_sum(tf.square((actions - logits) / self._action_function.std), np.arange(1, len(self._ac_shape) + 1)) \
-                    + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._action_function.logstd)
+            return 0.5 * tf.reduce_sum(
+                tf.square((actions - logits) / self._action_function.std), np.arange(1, len(self._ac_shape) + 1)) \
+                + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._action_function.logstd)
 
     def entropy(self, logits):
         if self._discrete:
@@ -129,11 +127,11 @@ class StandardPolicy(Policy):
 
     def make_copy(self):
         return self.__class__(self._obs_shape,
-                                self._ac_shape,
-                                self._discrete,
-                                self._action_method,
-                                self._use_conv,
-                                self._embedding_architecture,
-                                self._logit_architecture,
-                                self._value_architecture,
-                                self._initial_logstd)
+                              self._ac_shape,
+                              self._discrete,
+                              self._action_method,
+                              self._use_conv,
+                              self._embedding_architecture,
+                              self._logit_architecture,
+                              self._value_architecture,
+                              self._initial_logstd)
