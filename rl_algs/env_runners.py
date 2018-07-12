@@ -18,6 +18,7 @@ class Rollout:
             self.act = self._add_key_val('act', partial_rollout.act)
             self.rew = self._add_key_val('rew', partial_rollout.rew)
             self.rew_in = self._add_key_val('rew_in', partial_rollout.rew_in)
+            self.val = None
             self.episode_rew = np.sum(self.rew)
 
         def _add_key_val(self, key, val):
@@ -37,6 +38,17 @@ class Rollout:
 
         def __len__(self):
             return self.length
+
+class BatchRollout(Rollout):
+    
+    def __init__(self, rollouts):
+        self.obs = np.array([roll.obs for roll in rollouts])
+        self.act = np.array([roll.act for roll in rollouts])
+        self.rew = np.array([roll.rew for roll in rollouts])
+        self.rew_in = np.array([roll.rew_in for roll in rollouts])
+        self.val = None
+        if hasattr(rollouts[0], 'val') and rollouts[0].val is not None:
+            self.val = np.array([roll.val for roll in rollouts])
 
 class PartialRollout:
 
@@ -185,7 +197,7 @@ class EnvironmentRunner:
         self._obs = self._modifyobs(obs)
         self._done = False
         self._act = None
-        self._rew = 0. if not self._initialize_reward_from_environment else self._env.get_reward()
+        self._rew = 0. if not self._initialize_reward_from_environment else self._env._get_reward()
         self._num_steps = 0
         self._rollout = PartialRollout()
 
@@ -295,6 +307,8 @@ class VectorizedRunner:
         return action
 
     def stepEnv(self, actions):
+        if self._done:
+            raise RuntimeError("Cannot step environment which is done. Call reset first.")
         done = False
         for runner, act in zip(self._current_runners, actions):
             runner.stepEnv(act)
