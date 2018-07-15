@@ -50,6 +50,11 @@ class BatchRollout(Rollout):
         if hasattr(rollouts[0], 'val') and rollouts[0].val is not None:
             self.val = np.array([roll.val for roll in rollouts])
 
+    def extend(self, rollout):
+        if not isinstance(rollout, BatchRollout):
+            raise TypeError('extend expected BatchRollout, received {}'.format(type(rollout)))
+        self.obs = np.concatenate((self.obs, rollout.obs))
+
 class PartialRollout:
 
     def __init__(self):
