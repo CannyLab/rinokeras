@@ -5,7 +5,7 @@ from rl_algs.eager.common.attention import MultiHeadAttention
 
 class PositionEmbedding(tf.keras.Model):
 
-    def __init__(self, hidden_size, discrete, n_symbols=None):
+    def __init__(self, hidden_size, discrete, n_symbols=None, initializer=None):
         super().__init__()
         assert hidden_size % 2 == 0, 'Hidden size must be even for sinusoidal encoding'
         self.discrete = discrete
@@ -14,7 +14,8 @@ class PositionEmbedding(tf.keras.Model):
         if discrete:
             assert n_symbols is not None and n_symbols > 0, \
                 'Trying to predict a discrete value but received invalid n_symbols: {}'.format(n_symbols)
-            self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True)
+            self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True,
+                                                             embeddings_initializer=initializer)
         else:
             self.input_embedding = tf.keras.layers.Dense(hidden_size)
 
@@ -180,9 +181,17 @@ class TransformerEncoder(tf.keras.Model):
         then repeated self-attention. Defaults to 6 layers of self-attention.
     """
 
-    def __init__(self, discrete, n_symbols_in=None, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
+    def __init__(self, 
+                 discrete, 
+                 n_symbols_in=None, 
+                 n_layers=6, 
+                 n_heads=8, 
+                 d_model=512, 
+                 d_filter=2048, 
+                 dropout=0.1,
+                 embeddings_initializer=None):
         super().__init__()
-        self.input_embedding = PositionEmbedding(d_model, discrete, n_symbols_in)
+        self.input_embedding = PositionEmbedding(d_model, discrete, n_symbols_in, initializer=embeddings_initializer)
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) for _ in range(n_layers)])
 
     # Mask here should just be a mask over padded positions
@@ -198,9 +207,17 @@ class TransformerDecoder(tf.keras.Model):
     """
 
     # TODO: Not sure about beam search, other methods of decoding for NLP.
-    def __init__(self, discrete, n_symbols_out=None, n_layers=6, n_heads=8, d_model=512, d_filter=2048, dropout=0.1):
+    def __init__(self, 
+                 discrete, 
+                 n_symbols_out=None, 
+                 n_layers=6, 
+                 n_heads=8, 
+                 d_model=512, 
+                 d_filter=2048, 
+                 dropout=0.1,
+                 embeddings_initializer=None):
         super().__init__()
-        self.target_embedding = PositionEmbedding(d_model, discrete, n_symbols_out)
+        self.target_embedding = PositionEmbedding(d_model, discrete, n_symbols_out, initializer=embeddings_initializer)
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
                                     for _ in range(n_layers)])
 
