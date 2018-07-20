@@ -1,7 +1,7 @@
 import tensorflow as tf
 
-from rl_algs.eager.common.layers import Residual, Stack, DenseStack
-from rl_algs.eager.common.attention import MultiHeadAttention
+from rl_algs.eager.common.layers import Residual, Stack, DenseStack, LayerNorm
+from rl_algs.eager.common.attention import MultiHeadAttention, SelfAttention
 
 class PositionEmbedding(tf.keras.Model):
 
@@ -11,11 +11,14 @@ class PositionEmbedding(tf.keras.Model):
         self.discrete = discrete
         self.hidden_size = hidden_size
         self.n_symbols = n_symbols
-        if discrete:
+        if discrete and initializer is None:
             assert n_symbols is not None and n_symbols > 0, \
                 'Trying to predict a discrete value but received invalid n_symbols: {}'.format(n_symbols)
-            self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True,
-                                                             embeddings_initializer=initializer)
+            self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True)
+        elif discrete and initializer is not None:
+            self.input_embedding = tf.keras.layers.Embedding(initializer.shape[0], initializer.shape[1], 
+                                                             weights=[initializer],
+                                                             mask_zero=True)
         else:
             self.input_embedding = tf.keras.layers.Dense(hidden_size)
 
@@ -32,7 +35,7 @@ class PositionEmbedding(tf.keras.Model):
 
             :return embedding: float32 Tensor with shape [batch_size, sequence_length, hidden_size]
         """
-        sequence_length = inputs.shape.as_list()[1]
+        sequence_length = tf.shape(inputs)[1]
 
         position_embedding = self.get_position_embedding(sequence_length)  # return [1, sequence_length, hidden_size]
         embedding = self.input_embedding(inputs)  # return [batch_size, sequence_length, hidden_size]
@@ -128,20 +131,29 @@ class TransformerEncoderBlock(tf.keras.Model):
     :return: output: Tensor with same shape as input
     """
 
-    def __init__(self, n_heads, filter_size, hidden_size, dropout=None):
+    def __init__(self, 
+                 n_heads: int, 
+                 filter_size: int, 
+                 hidden_size: int, 
+                 dropout: float = None):
         super().__init__()
-        attention = MultiHeadAttention(n_heads, dropout=dropout)
-        self.residual_self_attention = Residual(attention, norm=True, dropout=dropout)
+        self.residual_self_attention = Residual(SelfAttention('scaled_dot', n_heads, dropout))
+        self.norm1 = LayerNorm()
 
-        dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
-        self.residual_dense = Residual(dense_relu_dense, norm=True, dropout=dropout)
+        dense_relu_dense = [DenseStack([filter_size, hidden_size], output_activation=None)]
+        if dropout is not None:
+            dense_relu_dense.append(tf.keras.layers.Dropout(dropout))
+        self.residual_dense = Residual(Stack(dense_relu_dense))
+        self.norm2 = LayerNorm()
 
     def call(self, inputs, self_attention_mask=None):
 
-        res_attn = self.residual_self_attention((inputs, inputs), mask=self_attention_mask)
-        output = self.residual_dense(res_attn)
+        res_attn = self.residual_self_attention(inputs, mask=self_attention_mask)
+        norm_res_attn = self.norm1(res_attn)
+        output = self.residual_dense(norm_res_attn)
+        norm_output = self.norm2(output)
 
-        return output
+        return norm_output
 
 class TransformerDecoderBlock(tf.keras.Model):
     """A decoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
@@ -153,28 +165,39 @@ class TransformerDecoderBlock(tf.keras.Model):
     :return: output: Tensor with same shape as decoder_inputs
     """
 
-    def __init__(self, n_heads, filter_size, hidden_size, dropout=None):
+    def __init__(self, 
+                 n_heads: int,
+                 filter_size: int,
+                 hidden_size: int,
+                 dropout: float = None):
         super().__init__()
-        self_attention = MultiHeadAttention(n_heads, dropout=dropout)
-        self.residual_self_attention = Residual(self_attention, norm=True, dropout=dropout)
 
-        multihead_attn = MultiHeadAttention(n_heads, dropout=dropout)
-        self.residual_multi_attention = Residual(multihead_attn, norm=True, dropout=dropout)
+        self.residual_self_attention = Residual(SelfAttention('scaled_dot', n_heads, dropout))
+        self.norm1 = LayerNorm()
 
-        dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
-        self.residual_dense = Residual(dense_relu_dense, norm=True, dropout=dropout)
+        self.residual_multi_attention = Residual(MultiHeadAttention('scaled_dot', n_heads, dropout))
+        self.norm2 = LayerNorm()
+
+        dense_relu_dense = [DenseStack([filter_size, hidden_size], output_activation=None)]
+        if dropout is not None:
+            dense_relu_dense.append(tf.keras.layers.Dropout(dropout))
+        self.residual_dense = Residual(Stack(dense_relu_dense))
+        self.norm3 = LayerNorm()
 
     def call(self, inputs, self_attention_mask=None, attention_mask=None, fast_decode=False):
         encoder_outputs, decoder_inputs = inputs
         target_attention_out = self.residual_self_attention(
-            (decoder_inputs, decoder_inputs),
+            decoder_inputs,
             # (decoder_inputs if not fast_decode else decoder_inputs[:, -1:], decoder_inputs),
             mask=self_attention_mask)
+        target_out_norm = self.norm1(target_attention_out)
 
-        encdec_attention_out = self.residual_multi_attention((target_attention_out, encoder_outputs),
+        encdec_attention_out = self.residual_multi_attention((target_out_norm, encoder_outputs),
                                                              mask=attention_mask)
-        output = self.residual_dense(encdec_attention_out)
-        return [encoder_outputs, output]
+        encdec_out_norm = self.norm2(encdec_attention_out)
+        output = self.residual_dense(encdec_out_norm)
+        norm_out = self.norm3(output)
+        return [encoder_outputs, norm_out]
 
 class TransformerEncoder(tf.keras.Model):
     """Stack of TransformerEncoderBlocks. Performs initial embedding to d_model dimensions,
@@ -183,20 +206,20 @@ class TransformerEncoder(tf.keras.Model):
 
     def __init__(self, 
                  discrete, 
+                 attention_options,
                  n_symbols_in=None, 
                  n_layers=6, 
-                 n_heads=8, 
                  d_model=512, 
                  d_filter=2048, 
                  dropout=0.1,
                  embeddings_initializer=None):
         super().__init__()
         self.input_embedding = PositionEmbedding(d_model, discrete, n_symbols_in, initializer=embeddings_initializer)
-        self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) for _ in range(n_layers)])
+        self.encoding_stack = Stack([TransformerEncoderBlock(attention_options, d_filter, d_model, dropout) for _ in range(n_layers)])
 
     # Mask here should just be a mask over padded positions
     def call(self, inputs, padding_mask=None):
-        input_embedding = self.input_embedding(inputs, mask=padding_mask)
+        input_embedding = self.input_embedding(inputs) # TODO: should we be passing padding_mask here?
         output = self.encoding_stack(input_embedding, self_attention_mask=padding_mask)
         return output
 
@@ -209,23 +232,23 @@ class TransformerDecoder(tf.keras.Model):
     # TODO: Not sure about beam search, other methods of decoding for NLP.
     def __init__(self, 
                  discrete, 
+                 attention_options,
                  n_symbols_out=None, 
                  n_layers=6, 
-                 n_heads=8, 
                  d_model=512, 
                  d_filter=2048, 
                  dropout=0.1,
                  embeddings_initializer=None):
         super().__init__()
         self.target_embedding = PositionEmbedding(d_model, discrete, n_symbols_out, initializer=embeddings_initializer)
-        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
+        self.decoding_stack = Stack([TransformerDecoderBlock(attention_options, d_filter, d_model, dropout)
                                     for _ in range(n_layers)])
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
     def call(self, inputs, padding_mask=None, mask_future=False, fast_decode=False):
         encoder_output, targets = inputs
-        target_embedding = self.target_embedding(targets, mask=padding_mask)
+        target_embedding = self.target_embedding(targets) # TODO: should we be passing padding_mask here?
         
         batch_size = tf.shape(target_embedding)[0]
         timesteps = target_embedding.shape.as_list()[1]
@@ -285,8 +308,11 @@ class Transformer(tf.keras.Model):
         self.d_filter = d_filter
         self.dropout = dropout
 
-        self.encoder = TransformerEncoder(discrete, n_symbols_in, n_layers, n_heads, d_model, d_filter, dropout)
-        self.decoder = TransformerDecoder(discrete, n_symbols_out, n_layers, n_heads, d_model, d_filter, dropout)
+        attention_options = AttentionOptions(filters=d_model, 
+                                             n_heads=n_heads)
+
+        self.encoder = TransformerEncoder(discrete, attention_options, n_symbols_in, n_layers, d_model, d_filter, dropout)
+        self.decoder = TransformerDecoder(discrete, attention_options, n_symbols_out, n_layers, d_model, d_filter, dropout)
 
         if not discrete:
             assert out_size is not None and out_size > 0, 'if not discrete, must specify output size'
@@ -336,7 +362,8 @@ class Transformer(tf.keras.Model):
         source_sequence, target_sequence = inputs
 
         encoder_output = self.encode_source_sequence(source_sequence, padding_mask=padding_mask)
-        decoder_output = self.decode_target_sequence((encoder_output, target_sequence),
+        decoder_output = self.decode_target_sequence(encoder_output, 
+                                                     target_sequence,
                                                      padding_mask=padding_mask,
                                                      shift_target_sequence_right=shift_target_sequence_right,
                                                      training=training)
