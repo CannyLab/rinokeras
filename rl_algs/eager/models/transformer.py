@@ -1,127 +1,44 @@
 import tensorflow as tf
 
-from rl_algs.eager.common.layers import Residual, Stack, DenseStack, LayerNorm
+from rl_algs.eager.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
 from rl_algs.eager.common.attention import MultiHeadAttention, SelfAttention
 
-class PositionEmbedding(tf.keras.Model):
+class TransformerSelfAttention(tf.keras.Model):
 
-    def __init__(self, hidden_size, discrete, n_symbols=None, initializer=None):
+    def __init__(self, n_heads: int, dropout: float):
         super().__init__()
-        assert hidden_size % 2 == 0, 'Hidden size must be even for sinusoidal encoding'
-        self.discrete = discrete
-        self.hidden_size = hidden_size
-        self.n_symbols = n_symbols
-        if discrete and initializer is None:
-            assert n_symbols is not None and n_symbols > 0, \
-                'Trying to predict a discrete value but received invalid n_symbols: {}'.format(n_symbols)
-            self.input_embedding = tf.keras.layers.Embedding(n_symbols + 1, hidden_size, mask_zero=True)
-        elif discrete and initializer is not None:
-            self.input_embedding = tf.keras.layers.Embedding(initializer.shape[0], initializer.shape[1], 
-                                                             weights=[initializer],
-                                                             mask_zero=True)
-        else:
-            self.input_embedding = tf.keras.layers.Dense(hidden_size)
+        selfattn = SelfAttention('scaled_dot', n_heads, dropout)
+        self.residual_self_attention = Residual(selfattn)
+        self.norm = LayerNorm()
 
-        power = tf.range(0, self.hidden_size, 2, dtype=tf.float32) / self.hidden_size
-        divisor = 10000 ** power
-        self._divisor = divisor
+    def call(self, inputs, mask):
+        resattn = self.residual_self_attention(inputs, mask=mask)
+        return self.norm(resattn)
 
-    def call(self, inputs, mask=None):
-        """An embedding of the input. Input can be a discrete or continuous variable.
+class TransformerMultiAttention(tf.keras.Model):
+    def __init__(self, n_heads: int, dropout: float):
+        super().__init__()
+        multiattn = MultiHeadAttention('scaled_dot', n_heads, dropout)
+        self.residual_multi_attention = Residual(multiattn)
+        self.norm = LayerNorm()
 
-            :param inputs: Either an int32 Tensor with shape [batch_size, sequence_length] or a float32
-                            Tensor with shape [batch_size, sequence_length, input_dim]
-            :param mask: None if discrete, otherwise a boolean Tensor with shape [batch_size, sequence_length]
+    def call(self, inputs, mask):
+        resattn = self.residual_multi_attention(inputs, mask=mask)
+        return self.norm(resattn)
 
-            :return embedding: float32 Tensor with shape [batch_size, sequence_length, hidden_size]
-        """
-        sequence_length = tf.shape(inputs)[1]
-
-        position_embedding = self.get_position_embedding(sequence_length)  # return [1, sequence_length, hidden_size]
-        embedding = self.input_embedding(inputs)  # return [batch_size, sequence_length, hidden_size]
-        embedding += position_embedding
-        if mask is not None:
-            embedding *= tf.cast(mask[:, :, None], tf.float32)
-        return embedding
-
-    def get_position_embedding(self, sequence_length):
-        """Sinusoid position encoding
-
-           Takes matrix of sequence positions and returns sinusoidal encoding. Sequence position "0"
-           should be reserved for padding.
-
-               :param sequence_length: an integer length of input sequence
-
-               :return position_embedding: float32 Tensor with shape [1, sequence_length, hidden_size]
-        """
-
-        seq_pos = tf.cast(tf.range(sequence_length)[None, :] + 1, tf.float32)
-        embedding = seq_pos[:, :, None] / self._divisor
-
-        sin_embedding = tf.sin(embedding)
-        cos_embedding = tf.cos(embedding)
-        position_embedding = tf.stack((sin_embedding, cos_embedding), -1)
-        position_shape = (1, sequence_length, self.hidden_size)
-        position_embedding = tf.reshape(position_embedding, position_shape)
-
-        return position_embedding
-
-class PositionEmbedding2D(tf.keras.Model):
-
-    def build(self, input_shape):
-        channels = input_shape[-1]
-        self.hidden_size = channels
-        assert self.hidden_size % 4 == 0, 'Hidden size must be multiple of four for 2D sinusoidal encoding'
-
-        power = tf.range(0, self.hidden_size, 4, dtype=tf.float32) / self.hidden_size
-        divisor = 10000 ** power
-        self._divisor = divisor
+class TransformerFeedForward(tf.keras.Model):
+    def __init__(self, filter_size: int, hidden_size: int, dropout: float):
+        super().__init__()
+        dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
+        if dropout is not None:
+            dropout = tf.keras.layers.Dropout(dropout)
+            dense_relu_dense = Stack([dense_relu_dense, dropout])
+        self.residual_dense = Residual(dense_relu_dense)
+        self.norm = LayerNorm()
 
     def call(self, inputs):
-        """An embedding of the input. Input can be a discrete or continuous variable.
-
-            :param inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]
-                            unlike in 1D position embedding, here we assume that the input has already been 
-                            embedded. Thus just adds the sinusoidal position embedding.
-        """
-
-        position_embedding = self.get_position_embedding(inputs.shape[1], inputs.shape[2])
-
-        return inputs + position_embedding
-
-    def get_position_embedding(self, width, height):
-        """Sinusoid position encoding
-
-           Takes matrix of sequence positions and returns sinusoidal encoding. Sequence position "0"
-           should be reserved for padding.
-
-               :param width: an integer width of input image
-               :param height: an integer height of input image
-
-               :return position_embedding: float32 Tensor with shape [1, width, height, hidden_size]
-               
-        """
-
-        width_pos = tf.cast(tf.range(width)[None, :] + 1, tf.float32)
-        height_pos = tf.cast(tf.range(height)[None, :] + 1, tf.float32)
-
-        width_embed = width_pos[:,:,None] / self._divisor
-        height_embed = height_pos[:,:,None] / self._divisor
-
-        width_embed = tf.tile(width_embed[:,:,None,:], (1, 1, height, 1))
-        height_embed = tf.tile(height_embed[:,None,:,:], (1, width, 1, 1))
-
-        width_sin_embed = tf.sin(width_embed)
-        width_cos_embed = tf.cos(width_embed)
-        height_sin_embed = tf.sin(height_embed)
-        height_cos_embed = tf.cos(height_embed)
-
-        pos_embed = tf.stack((width_sin_embed, width_cos_embed,
-                                height_sin_embed, height_cos_embed), -1)
-        pos_embed = tf.reshape(pos_embed, (-1, tf.shape(pos_embed)[1], tf.shape(pos_embed)[2], self.hidden_size))
-        
-        return pos_embed
-
+        dense_out = self.residual_dense(inputs)
+        return self.norm(dense_out)
 
 class TransformerEncoderBlock(tf.keras.Model):
     """An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
@@ -130,30 +47,20 @@ class TransformerEncoderBlock(tf.keras.Model):
 
     :return: output: Tensor with same shape as input
     """
-
     def __init__(self, 
                  n_heads: int, 
                  filter_size: int, 
                  hidden_size: int, 
                  dropout: float = None):
         super().__init__()
-        self.residual_self_attention = Residual(SelfAttention('scaled_dot', n_heads, dropout))
-        self.norm1 = LayerNorm()
-
-        dense_relu_dense = [DenseStack([filter_size, hidden_size], output_activation=None)]
-        if dropout is not None:
-            dense_relu_dense.append(tf.keras.layers.Dropout(dropout))
-        self.residual_dense = Residual(Stack(dense_relu_dense))
-        self.norm2 = LayerNorm()
+        self.self_attention = TransformerSelfAttention(n_heads, dropout)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
 
     def call(self, inputs, self_attention_mask=None):
 
-        res_attn = self.residual_self_attention(inputs, mask=self_attention_mask)
-        norm_res_attn = self.norm1(res_attn)
-        output = self.residual_dense(norm_res_attn)
-        norm_output = self.norm2(output)
-
-        return norm_output
+        res_attn = self.self_attention(inputs, mask=self_attention_mask)
+        output = self.feed_forward(res_attn)
+        return output
 
 class TransformerDecoderBlock(tf.keras.Model):
     """A decoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
@@ -164,65 +71,55 @@ class TransformerDecoderBlock(tf.keras.Model):
 
     :return: output: Tensor with same shape as decoder_inputs
     """
-
     def __init__(self, 
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
                  dropout: float = None):
         super().__init__()
-
-        self.residual_self_attention = Residual(SelfAttention('scaled_dot', n_heads, dropout))
-        self.norm1 = LayerNorm()
-
-        self.residual_multi_attention = Residual(MultiHeadAttention('scaled_dot', n_heads, dropout))
-        self.norm2 = LayerNorm()
-
-        dense_relu_dense = [DenseStack([filter_size, hidden_size], output_activation=None)]
-        if dropout is not None:
-            dense_relu_dense.append(tf.keras.layers.Dropout(dropout))
-        self.residual_dense = Residual(Stack(dense_relu_dense))
-        self.norm3 = LayerNorm()
+        self.self_attention = TransformerSelfAttention(n_heads, dropout)
+        self.multi_attention = TransformerMultiAttention(n_heads, dropout)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
 
     def call(self, inputs, self_attention_mask=None, attention_mask=None, fast_decode=False):
         encoder_outputs, decoder_inputs = inputs
-        target_attention_out = self.residual_self_attention(
-            decoder_inputs,
-            # (decoder_inputs if not fast_decode else decoder_inputs[:, -1:], decoder_inputs),
-            mask=self_attention_mask)
-        target_out_norm = self.norm1(target_attention_out)
-
-        encdec_attention_out = self.residual_multi_attention((target_out_norm, encoder_outputs),
-                                                             mask=attention_mask)
-        encdec_out_norm = self.norm2(encdec_attention_out)
-        output = self.residual_dense(encdec_out_norm)
-        norm_out = self.norm3(output)
-        return [encoder_outputs, norm_out]
+        target_selfattn = self.self_attention(decoder_inputs, mask=self_attention_mask)
+        encdec_attention = self.multi_attention((target_selfattn, encoder_outputs), mask=attention_mask)
+        output = self.feed_forward(encdec_attention)
+        return [encoder_outputs, output]
 
 class TransformerEncoder(tf.keras.Model):
-    """Stack of TransformerEncoderBlocks. Performs initial embedding to d_model dimensions,
-        then repeated self-attention. Defaults to 6 layers of self-attention.
+    """
+    Stack of TransformerEncoderBlocks. Performs repeated self-attention.
     """
 
     def __init__(self, 
-                 discrete, 
-                 attention_options,
-                 n_symbols_in=None, 
-                 n_layers=6, 
-                 d_model=512, 
-                 d_filter=2048, 
-                 dropout=0.1,
-                 embeddings_initializer=None):
+                 n_layers: int, 
+                 n_heads: int,
+                 d_model: int, 
+                 d_filter: int, 
+                 dropout: float = None):
         super().__init__()
-        self.input_embedding = PositionEmbedding(d_model, discrete, n_symbols_in, initializer=embeddings_initializer)
-        self.encoding_stack = Stack([TransformerEncoderBlock(attention_options, d_filter, d_model, dropout) for _ in range(n_layers)])
+        self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) 
+                                     for _ in range(n_layers)])
 
-    # Mask here should just be a mask over padded positions
-    def call(self, inputs, padding_mask=None):
-        input_embedding = self.input_embedding(inputs) # TODO: should we be passing padding_mask here?
-        output = self.encoding_stack(input_embedding, self_attention_mask=padding_mask)
+    def call(self, inputs, attention_mask=None):
+        """
+            Args:
+                inputs: a float32 Tensor with shape [batch_size, sequence_length, d_model]
+                attention_mask: a boolean Tensor with shape [batch_size, sequence_length, sequence_length]
+            Returns:
+                output: a Tensor with shape [batch_size, sequence_length, d_model]
+        """
+        assert inputs.ndim == 3, 'Input dimension incorrect: {}'.format(inputs.shape)
+        if attention_mask is not None:
+            assert attention_mask.ndim == 3, 'Mask dimension incorrect: {}'.format(attention_mask.shape)
+            assert attention_mask.shape[-1] == attention_mask.shape[-2], \
+                'Last two mask dimensions must match {}'.format(attention_mask.shape)
+            assert attention_mask.shape[-2] == inputs.shape[1], 'Mask sequence dimensions must match'
+
+        output = self.encoding_stack(inputs, self_attention_mask=attention_mask)
         return output
-
 
 class TransformerDecoder(tf.keras.Model):
     """Stack of TransformerDecoderBlocks. Performs initial embedding to d_model dimensions, then repeated self-attention
@@ -231,37 +128,56 @@ class TransformerDecoder(tf.keras.Model):
 
     # TODO: Not sure about beam search, other methods of decoding for NLP.
     def __init__(self, 
-                 discrete, 
-                 attention_options,
-                 n_symbols_out=None, 
-                 n_layers=6, 
-                 d_model=512, 
-                 d_filter=2048, 
-                 dropout=0.1,
-                 embeddings_initializer=None):
+                 n_layers: int, 
+                 n_heads: int,
+                 d_model: int, 
+                 d_filter: int, 
+                 dropout: float = None):
         super().__init__()
-        self.target_embedding = PositionEmbedding(d_model, discrete, n_symbols_out, initializer=embeddings_initializer)
-        self.decoding_stack = Stack([TransformerDecoderBlock(attention_options, d_filter, d_model, dropout)
-                                    for _ in range(n_layers)])
+        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
+                                     for _ in range(n_layers)])
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
-    def call(self, inputs, padding_mask=None, mask_future=False, fast_decode=False):
-        encoder_output, targets = inputs
-        target_embedding = self.target_embedding(targets) # TODO: should we be passing padding_mask here?
+    def call(self, inputs, attention_mask=None, mask_future=False, fast_decode=False):
+        """
+            Args:
+                inputs: a tuple of (encoder_output, target_embedding)
+                    encoder_output: a float32 Tensor with shape [batch_size, sequence_length, d_model]
+                    target_embedding: a float32 Tensor with shape [batch_size, target_length, d_model]
+                attention_mask: a boolean Tensor with shape [batch_size, target_length, sequence_length]
+                mask_future: a boolean for whether to mask future states in target self attention
+                fast_decode: Not Implemented
+
+            Returns:
+                a tuple of (encoder_output, output)
+                    output: a Tensor with shape [batch_size, sequence_length, d_model]
+        """
+        encoder_output, target_embedding = inputs
+
+        assert target_embedding.ndim == 3, 'Target dimension incorrect: {}'.format(target_embedding.shape)
+        assert encoder_output.ndim == 3, 'Encoder dimension incorrect: {}'.format(encoder_output.shape)
+        if attention_mask is not None:
+            assert attention_mask.ndim == 3, 'Mask dimension incorrect: {}'.format(attention_mask.shape)
+            assert attention_mask.shape[-1] == encoder_output.shape[1], \
+                'Attention mask and encoder output shape mismatch {}'.format(attention_mask.shape[-1], 
+                                                                             encoder_output.shape[1])
+            assert attention_mask.shape[-2] == target_embedding.shape[1], \
+                'Attention mask and target embedding shape mismatch ({}, {})'.format(attention_mask.shape[-2], 
+                                                                                     target_embedding.shape[1])
         
         batch_size = tf.shape(target_embedding)[0]
         timesteps = target_embedding.shape.as_list()[1]
-        future_and_padding_mask = self.get_future_mask(batch_size, timesteps, padding_mask) \
+        future_mask = self.get_future_mask(batch_size, timesteps) \
             if (mask_future and not fast_decode) else None
 
         _, output = self.decoding_stack((encoder_output, target_embedding),
-                                        self_attention_mask=future_and_padding_mask,
-                                        attention_mask=padding_mask,
+                                        self_attention_mask=future_mask,
+                                        attention_mask=attention_mask,
                                         fast_decode=fast_decode)
         return output
 
-    def get_future_mask(self, batch_size, sequence_length, padding_mask):
+    def get_future_mask(self, batch_size, sequence_length):
         """Mask future targets and padding
 
             :param batch_size: a TF Dimension
@@ -274,26 +190,65 @@ class TransformerDecoder(tf.keras.Model):
         xind = tf.tile(tf.range(sequence_length)[None, :], (sequence_length, 1))
         yind = tf.tile(tf.range(sequence_length)[:, None], (1, sequence_length))
         mask = yind >= xind
+        mask = tf.tile(mask[None], (batch_size, 1, 1))
 
-        if padding_mask is not None:
-            mask = tf.logical_and(padding_mask[:, :, None], mask[None, :, :])
-            mask = tf.logical_and(mask, padding_mask[:, None, :])
+        # if padding_mask is not None:
+        #     mask = tf.logical_and(padding_mask[:, :, None], mask[None, :, :])
+        #     mask = tf.logical_and(mask, padding_mask[:, None, :])
 
         return mask
+
+class TransformerInputEmbedding(tf.keras.Model):
+
+    def __init__(self,
+                 embed_size: int,
+                 discrete: bool,
+                 n_symbols: int = None,
+                 dropout: float = None,
+                 batch_norm: bool = False,
+                 embedding_initializer=None):
+        super().__init__()
+        if discrete:
+            assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
+            if embedding_initializer is not None:
+                assert embedding_initializer.shape[0] == n_symbols, 'n_symbols and initializer shape mismatch'
+                assert embedding_initializer.shape[1] == embed_size, 'embed_size, initializer shape mismatch'
+                self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
+                                                           weights=[embedding_initializer],
+                                                           mask_zero=True)
+            else:
+                self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size)
+        else:
+            assert n_symbols is None, 'n_symbols passed in but model set to continuous'
+            assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
+            self.embedding = tf.keras.layers.Dense(embed_size)
+        self.position_embedding = PositionEmbedding()
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.batch_norm = None if batch_norm is False else tf.keras.layers.BatchNormalization()
+
+    def call(self, inputs):
+        embedding = self.embedding(inputs)
+        if self.dropout:
+            embedding = self.dropout(embedding)
+        if self.batch_norm:
+            embedding = self.batch_norm(embedding)
+        embedding = self.position_embedding(embedding)
+        return embedding
 
 class Transformer(tf.keras.Model):
 
     def __init__(self, 
-                 discrete, 
-                 n_symbols_in=None,
-                 n_symbols_out=None, 
-                 out_size=None,
-                 output_activation=None,
-                 n_layers=6, 
-                 n_heads=8, 
-                 d_model=512, 
-                 d_filter=2048, 
-                 dropout=0.1):
+                 discrete: bool, 
+                 n_symbols_in: int = None,
+                 n_symbols_out: int = None, 
+                 out_size: int = None,
+                 output_activation: str = None,
+                 n_layers: int = 6, 
+                 n_heads: int = 8, 
+                 d_model: int = 512, 
+                 d_filter: int = 2048, 
+                 dropout: float = None,
+                 embedding_initializer=None):
         super().__init__()
         self.discrete = discrete
         if discrete:
@@ -304,18 +259,28 @@ class Transformer(tf.keras.Model):
         self.output_activation = output_activation
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.d_mode = d_model
+        self.d_model = d_model
         self.d_filter = d_filter
         self.dropout = dropout
 
-        attention_options = AttentionOptions(filters=d_model, 
-                                             n_heads=n_heads)
+        if not self.discrete:
+            assert n_symbols_in is None, 'n_symbols_in passed in but model set to continuous'
+            assert n_symbols_out is None, 'n_symbols_out passed in but model set to continuous'
+            assert out_size is not None and out_size > 0, 'out_size not passed in but model set to continuous'
+            assert embedding_initializer is None, 'embedding_initializer passed in but model set to continuous'
+        else:
+            assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
+            assert n_symbols_out is not None, 'n_symbols_out not passed in but model set to discrete'
+            assert out_size is None, 'out_size passed in but model set to discrete'
+            assert embedding_initializer is not None, 'embedding_initializer not passed in but model set to discrete'
 
-        self.encoder = TransformerEncoder(discrete, attention_options, n_symbols_in, n_layers, d_model, d_filter, dropout)
-        self.decoder = TransformerDecoder(discrete, attention_options, n_symbols_out, n_layers, d_model, d_filter, dropout)
+        self.input_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_in, dropout, 
+                                                         embedding_initializer=embedding_initializer)
+        self.target_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_out, dropout, 
+                                                          embedding_initializer=embedding_initializer)
 
-        if not discrete:
-            assert out_size is not None and out_size > 0, 'if not discrete, must specify output size'
+        self.encoder = TransformerEncoder(n_layers, n_heads, d_model, d_filter, dropout)
+        self.decoder = TransformerDecoder(n_layers, n_heads, d_model, d_filter, dropout)
 
         self.output_layer = tf.keras.layers.Dense(n_symbols_out if discrete else out_size, activation=output_activation)
 
@@ -336,14 +301,14 @@ class Transformer(tf.keras.Model):
             output_sequence.append(output[:, -1:])
         return tf.concat(output_sequence[1:], axis=1)
 
-    def encode_source_sequence(self, source_sequence, padding_mask):
-        encoder_output = self.encoder(source_sequence, padding_mask=padding_mask)
-        return encoder_output
+    def encode_source_sequence(self, source_sequence, attention_mask):
+        embedding = self.input_embedding(source_sequence)
+        return self.encoder(embedding, attention_mask=attention_mask)
 
     def decode_target_sequence(self, 
                                encoder_output, 
                                target_sequence, 
-                               padding_mask, 
+                               attention_mask, 
                                shift_target_sequence_right, 
                                training):
         if shift_target_sequence_right:
@@ -351,20 +316,45 @@ class Transformer(tf.keras.Model):
             first_zeros = tf.zeros((batch_size, 1, target_size))
             target_sequence = tf.concat((first_zeros, target_sequence[:, :-1]), axis=1)
 
-        decoder_output = self.decoder((encoder_output, target_sequence), 
-                                      padding_mask=padding_mask, 
+        target_embedding = self.target_embedding(target_sequence)
+        decoder_output = self.decoder((encoder_output, target_embedding), 
+                                      attention_mask=attention_mask, 
                                       mask_future=training, 
                                       fast_decode=not training)
         output = self.output_layer(decoder_output)
         return output
 
-    def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
+    def call(self, inputs, attention_mask=None, shift_target_sequence_right=True, training=True):
         source_sequence, target_sequence = inputs
 
-        encoder_output = self.encode_source_sequence(source_sequence, padding_mask=padding_mask)
+        if attention_mask is not None:
+            if attention_mask.ndim == 2:
+                encoder_mask = self._convert_padding_mask_to_attention_mask(source_sequence, attention_mask)
+                decoder_mask = self._convert_padding_mask_to_attention_mask(target_sequence, attention_mask)
+            elif attention_mask.ndim == 1:
+                encoder_mask = self._convert_seqlens_to_attention_mask(source_sequence, attention_mask)
+                decoder_mask = self._convert_seqlens_to_attention_mask(target_sequence, attention_mask)
+
+        encoder_output = self.encode_source_sequence(source_sequence, attention_mask=encoder_mask)
         decoder_output = self.decode_target_sequence(encoder_output, 
                                                      target_sequence,
-                                                     padding_mask=padding_mask,
+                                                     attention_mask=decoder_mask,
                                                      shift_target_sequence_right=shift_target_sequence_right,
                                                      training=training)
         return decoder_output
+
+    def _convert_padding_mask_to_attention_mask(self, inputs, mask):
+        assert mask.shape[0] == inputs.shape[0], 'Mask and input batch size must match'
+        assert mask.ndim == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
+        
+        seqlen = inputs.shape[1]
+        mask = tf.tile(mask[:, None, :], (1, seqlen, 1))
+        return mask
+
+    def _convert_seqlens_to_attention_mask(self, inputs, seqlens):
+        assert seqlens.shape[0] == inputs.shape[0], 'Seqlens and input batch size must match'
+        assert seqlens.ndim == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
+
+        indices = tf.tile(tf.range(inputs.shape[1])[None, :], (seqlens.shape[0], 1))
+        mask = indices < seqlens[:, None]
+        return mask

@@ -123,3 +123,96 @@ class Residual(tf.keras.Model):
         residual = inputs + layer_out
 
         return residual
+
+class PositionEmbedding(tf.keras.Model):
+    """
+    Adds positional embedding to an input embedding.
+
+    Based on https://arxiv.org/pdf/1706.03762.pdf.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def build(self, input_shape):
+        hidden_size = input_shape[-1]
+        assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
+        power = tf.range(0, hidden_size, 2, dtype=tf.float32) / hidden_size
+        divisor = 10000 ** power
+        self.divisor = divisor
+        self.hidden_size = hidden_size
+
+    def call(self, inputs):
+        """
+            Args:
+                inputs: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
+
+            Returns:
+                embedding: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
+        """
+        assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
+
+        sequence_length = tf.shape(inputs)[1]
+        seq_pos = tf.cast(tf.range(1, sequence_length + 1)[None, :], tf.float32)  # 1-index positions
+
+        index = seq_pos[:, :, None] / self.divisor
+
+        sin_embedding = tf.sin(index)
+        cos_embedding = tf.cos(index)
+
+        position_embedding = tf.stack((sin_embedding, cos_embedding), -1)
+        position_shape = (1, sequence_length, self.hidden_size)
+
+        position_embedding = tf.reshape(position_embedding, position_shape)
+
+        return inputs + position_embedding
+
+class PositionEmbedding2D(PositionEmbedding):
+    """
+    Adds a 2D positional embedding to an input embedding.
+
+    Based on https://arxiv.org/pdf/1706.03762.pdf.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def build(self, input_shape):
+        hidden_size = input_shape[-1]
+        assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
+
+        power = tf.range(0, self.hidden_size, 4, dtype=tf.float32) / self.hidden_size
+        divisor = 10000 ** power
+        self.divisor = divisor
+        self.hidden_size = hidden_size
+
+    def call(self, inputs):
+        """
+            Args:
+                inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]
+
+            Returns:
+                embedding: a float32 Tensor with shape [batch_size, Width, Height, Channels]
+        """
+        width, height, channels = inputs.shape[1:]
+        assert channels == self.hidden_size, 'Input final dim must match model hidden size'
+
+        width_pos = tf.cast(tf.range(1, width + 1)[None, :], tf.float32)
+        height_pos = tf.cast(tf.range(1, height + 1)[None, :], tf.float32)
+
+        width_embed = width_pos[:, :, None] / self.divisor
+        height_embed = height_pos[:, :, None] / self.divisor
+
+        width_embed = tf.tile(width_embed[:, :, None, :], (1, 1, height, 1))
+        height_embed = tf.tile(height_embed[:, None, :, :], (1, width, 1, 1))
+
+        width_sin_embed = tf.sin(width_embed)
+        width_cos_embed = tf.cos(width_embed)
+        height_sin_embed = tf.sin(height_embed)
+        height_cos_embed = tf.cos(height_embed)
+
+        position_embedding = tf.stack((width_sin_embed, width_cos_embed,
+                                       height_sin_embed, height_cos_embed), -1)
+        position_embedding = tf.reshape(position_embedding, (1, width, height, self.hidden_size))
+
+        return inputs + position_embedding

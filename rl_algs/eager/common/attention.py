@@ -209,7 +209,7 @@ class AttentionMap(tf.keras.Model):
             :return: output: Tensor with shape [batch_size, heads (optional), n_queries, depth_v]
         """
         queries, keys, values = inputs
-        similarity = self.similarity_metric(inputs)
+        similarity = self.similarity_metric((queries, keys))
         masked_similarity = self.apply_mask(similarity, mask=mask)
         weights = tf.nn.softmax(masked_similarity, axis=-1)  # (batch_size, heads, n_queries, n_keyval)
 
@@ -245,7 +245,7 @@ class MultiHeadAttentionMap(AttentionMap):
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split = super()((queries_split, keys_split, values_split), mask=mask)
+        attention_output_split = super().call((queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         return output
 
@@ -283,7 +283,6 @@ class MultiHeadAttention(tf.keras.Model):
         self.similarity_metric = similarity_metric
         self.n_heads = n_heads
 
-        self.compute_qkv = AttentionQKV()
         similarity_metric = ScaledDotProductSimilarity()
         self.attention_layer = MultiHeadAttentionMap(similarity_metric, n_heads, dropout)
 
@@ -293,7 +292,7 @@ class MultiHeadAttention(tf.keras.Model):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
         qa_channels = query_antecedent_shape[-1]
         ma_channels = memory_antecedent_shape[-1]
-        assert qa_channels % self.options.n_heads == 0 and ma_channels % self.options.n_heads == 0, \
+        assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
             'Feature size must be divisible by n_heads'
         assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
         self.compute_qkv = AttentionQKV(qa_channels, 
@@ -328,8 +327,11 @@ class SelfAttention(MultiHeadAttention):
                  dropout: float = None):
         super().__init__(similarity_metric, n_heads, dropout)
 
+    def build(self, input_shapes):
+        super().build((input_shapes, input_shapes))
+
     def call(self, inputs, mask=None):
-        return super()((inputs, inputs), mask=mask)
+        return super().call((inputs, inputs), mask=mask)
 
 class ContextQueryAttention(tf.keras.Model):
 
