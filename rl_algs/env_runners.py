@@ -1,4 +1,5 @@
 import types
+from functools import reduce
 
 import tensorflow as tf
 import numpy as np
@@ -41,9 +42,30 @@ class Rollout:
 
 class BatchRollout(Rollout):
     
-    def __init__(self, rollouts):
-        self.obs = np.array([roll.obs for roll in rollouts])
-        self.act = np.array([roll.act for roll in rollouts])
+    def __init__(self, rollouts, variable_length=False):
+        self.variable_length = variable_length
+        if not variable_length:
+            self.obs = np.array([roll.obs for roll in rollouts])
+            self.act = np.array([roll.act for roll in rollouts])
+        else:
+            assert all(roll.obs.ndim == rollouts[0].obs.ndim for roll in rollouts), \
+                'Cannot handle varying numbers of dimensions in observation'
+            assert all(roll.act.ndim == rollouts[0].act.ndim for roll in rollouts), \
+                'Cannot handle varying numbers of dimensions'
+            obs_dims = (len(rollouts),) + reduce(max, (roll.obs.shape for roll in rollouts))
+            act_dims = (len(rollouts),) + reduce(max, (roll.act.shape for roll in rollouts))
+
+            # Number of dimensions can't vary, but this code handles different sizes among those dimensions
+            self.obs = np.zeros(obs_dims)
+            self.act = np.zeros(act_dims)
+
+            for i, roll in enumerate(rollouts):
+                # Fancy python slicing for automatically assigning to the proper portion of things
+                obs_slice = [i] + [slice(0, dim) for dim in roll.obs.shape]
+                act_slice = [i] + [slice(0, dim) for dim in roll.act.shape]
+                self.obs[obs_slice] = roll.obs
+                self.act[act_slice] = roll.act
+
         self.rew = np.array([roll.rew for roll in rollouts])
         self.rew_in = np.array([roll.rew_in for roll in rollouts])
         self.val = None
@@ -53,7 +75,13 @@ class BatchRollout(Rollout):
     def extend(self, rollout):
         if not isinstance(rollout, BatchRollout):
             raise TypeError('extend expected BatchRollout, received {}'.format(type(rollout)))
-        self.obs = np.concatenate((self.obs, rollout.obs))
+        self.obs = np.concatenate((self.obs, rollout.obs), 0)
+        self.act = np.concatenate((self.act, rollout.act), 0)
+        self.rew = np.concatenate((self.rew, rollout.rew), 0)
+        self.rew_in = np.concatenate((self.rew_in, rollout.rew_in), 0)
+        if self.val is not None:
+            self.val = np.concatenate((self.val, rollout.val), 0)
+
 
 class PartialRollout:
 
