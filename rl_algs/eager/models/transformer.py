@@ -1,3 +1,5 @@
+from typing import Optional
+
 import tensorflow as tf
 
 from rl_algs.eager.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
@@ -5,7 +7,7 @@ from rl_algs.eager.common.attention import MultiHeadAttention, SelfAttention
 
 class TransformerSelfAttention(tf.keras.Model):
 
-    def __init__(self, n_heads: int, dropout: float):
+    def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
         super().__init__()
         selfattn = SelfAttention('scaled_dot', n_heads, dropout)
         self.residual_self_attention = Residual(selfattn)
@@ -16,7 +18,7 @@ class TransformerSelfAttention(tf.keras.Model):
         return self.norm(resattn)
 
 class TransformerMultiAttention(tf.keras.Model):
-    def __init__(self, n_heads: int, dropout: float):
+    def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
         super().__init__()
         multiattn = MultiHeadAttention('scaled_dot', n_heads, dropout)
         self.residual_multi_attention = Residual(multiattn)
@@ -27,7 +29,7 @@ class TransformerMultiAttention(tf.keras.Model):
         return self.norm(resattn)
 
 class TransformerFeedForward(tf.keras.Model):
-    def __init__(self, filter_size: int, hidden_size: int, dropout: float):
+    def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
         super().__init__()
         dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
         if dropout is not None:
@@ -51,7 +53,7 @@ class TransformerEncoderBlock(tf.keras.Model):
                  n_heads: int, 
                  filter_size: int, 
                  hidden_size: int, 
-                 dropout: float = None):
+                 dropout: Optional[float] = None) -> None:
         super().__init__()
         self.self_attention = TransformerSelfAttention(n_heads, dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
@@ -75,7 +77,7 @@ class TransformerDecoderBlock(tf.keras.Model):
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
-                 dropout: float = None):
+                 dropout: Optional[float] = None) -> None:
         super().__init__()
         self.self_attention = TransformerSelfAttention(n_heads, dropout)
         self.multi_attention = TransformerMultiAttention(n_heads, dropout)
@@ -98,12 +100,12 @@ class TransformerEncoder(tf.keras.Model):
                  n_heads: int,
                  d_model: int, 
                  d_filter: int, 
-                 dropout: float = None):
+                 dropout: Optional[float] = None) -> None:
         super().__init__()
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) 
                                      for _ in range(n_layers)])
 
-    def call(self, inputs, attention_mask=None):
+    def call(self, inputs, attention_mask=None) -> tf.Tensor:
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, d_model]
@@ -132,7 +134,7 @@ class TransformerDecoder(tf.keras.Model):
                  n_heads: int,
                  d_model: int, 
                  d_filter: int, 
-                 dropout: float = None):
+                 dropout: Optional[float] = None) -> None:
         super().__init__()
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
                                      for _ in range(n_layers)])
@@ -203,10 +205,10 @@ class TransformerInputEmbedding(tf.keras.Model):
     def __init__(self,
                  embed_size: int,
                  discrete: bool,
-                 n_symbols: int = None,
-                 dropout: float = None,
+                 n_symbols: Optional[int] = None,
+                 dropout: Optional[float] = None,
                  batch_norm: bool = False,
-                 embedding_initializer=None):
+                 embedding_initializer=None) -> None:
         super().__init__()
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -239,16 +241,16 @@ class Transformer(tf.keras.Model):
 
     def __init__(self, 
                  discrete: bool, 
-                 n_symbols_in: int = None,
-                 n_symbols_out: int = None, 
-                 out_size: int = None,
-                 output_activation: str = None,
+                 n_symbols_in: Optional[int] = None,
+                 n_symbols_out: Optional[int] = None, 
+                 out_size: Optional[int] = None,
+                 output_activation: Optional[str] = None,
                  n_layers: int = 6, 
                  n_heads: int = 8, 
                  d_model: int = 512, 
                  d_filter: int = 2048, 
-                 dropout: float = None,
-                 embedding_initializer=None):
+                 dropout: Optional[float] = None,
+                 embedding_initializer=None) -> None:
         super().__init__()
         self.discrete = discrete
         if discrete:

@@ -1,4 +1,6 @@
 import collections
+from typing import Optional
+
 import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
@@ -123,6 +125,47 @@ class Residual(tf.keras.Model):
         residual = inputs + layer_out
 
         return residual
+
+class Highway(tf.keras.Model):
+
+    def __init__(self, 
+                 convolution: bool = False,
+                 activation: str = 'relu',
+                 gate_bias: float = -3.0,
+                 dropout: Optional[float] = None) -> None:
+        super().__init__()
+        self._convolution = convolution
+        self.activation = activation
+        self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+
+    def build(self, input_shape) -> None:
+        units = input_shape[-1]
+        if self._convolution:
+            self.gate = tf.keras.layers.Conv1D(filters=units, 
+                                               kernel_size=1,
+                                               padding='same',
+                                               acitvation='sigmoid',
+                                               use_bias=True,
+                                               bias_initializer=self._gate_initializer)
+            self.layer = tf.keras.layers.Conv1D(filters=units,
+                                                kernel_size=1,
+                                                padding='same',
+                                                activation=self.activation)
+        else:
+            self.gate = tf.keras.layers.Dense(units=units,
+                                              activation=self.activation,
+                                              use_bias=True,
+                                              bias_initializer=self._gate_initializer)
+            self.layer = tf.keras.layers.Dense(units=units,
+                                               activation=self.activation)
+
+    def call(self, inputs):
+        gated = self.gate(inputs)
+        transformed = self.layer(inputs)
+        if self.dropout:
+            transformed = self.dropout(transformed)
+        return gated * transformed + (1 - gated) * inputs
 
 class PositionEmbedding(tf.keras.Model):
     """

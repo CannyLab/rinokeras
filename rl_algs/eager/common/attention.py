@@ -343,6 +343,7 @@ class ContextQueryAttention(tf.keras.Model):
         self.n_heads = n_heads
         self.attention_type = attention_type
         self.dropout = dropout
+        self.apply_mask = ApplyAttentionMask()
         self.trilinear_similarity = TrilinearSimilarity(output_depth)
 
     def call(self, inputs, mask=None):
@@ -359,9 +360,10 @@ class ContextQueryAttention(tf.keras.Model):
 
         # similarity -> Tensor with shape [batch_size, context_length, query_length]
         similarity = self.trilinear_similarity((query, context))
+        masked_similarity = self.apply_mask(similarity, mask=mask)
     
-        c2q_similarity = tf.nn.softmax(similarity, axis=-1)
-        q2c_similarity = tf.nn.softmax(similarity, axis=-2)
+        c2q_similarity = tf.nn.softmax(masked_similarity, axis=-1)
+        q2c_similarity = tf.nn.softmax(masked_similarity, axis=-2)
         
         # context_to_query -> Tensor with shape [batch_size, context_length, d_model]
         context_to_query = tf.matmul(c2q_similarity, query)
