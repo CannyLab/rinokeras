@@ -221,7 +221,7 @@ class TransformerInputEmbedding(tf.keras.Model):
         else:
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
-            self.embedding = tf.keras.layers.Dense(embed_size)
+            self.embedding = tf.keras.layers.Dense(embed_size, activation='relu')
         self.position_embedding = PositionEmbedding()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
         self.batch_norm = None if batch_norm is False else tf.keras.layers.BatchNormalization()

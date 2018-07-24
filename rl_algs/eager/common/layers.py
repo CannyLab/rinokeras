@@ -137,7 +137,7 @@ class PositionEmbedding(tf.keras.Model):
     def build(self, input_shape):
         hidden_size = input_shape[-1]
         assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
-        power = tf.range(0, hidden_size, 2, dtype=tf.float32) / hidden_size
+        power = tf.range(0, hidden_size.value, 2, dtype=tf.float32) / hidden_size.value
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
