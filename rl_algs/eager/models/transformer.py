@@ -105,7 +105,7 @@ class TransformerEncoder(tf.keras.Model):
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout) 
                                      for _ in range(n_layers)])
 
-    def call(self, inputs, attention_mask=None) -> tf.Tensor:
+    def call(self, inputs, attention_mask=None):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, d_model]
