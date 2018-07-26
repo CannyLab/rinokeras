@@ -287,13 +287,14 @@ class PGEnvironmentRunner(EnvironmentRunner):
 
 class VectorizedRunner:
 
-    def __init__(self, runners, agent, pass_reward_to_agent=False):
+    def __init__(self, runners, agent, pass_reward_to_agent=False, variable_length=False):
         self._runners = runners
         self._current_runners = None
         self._agent = agent
         self._pass_reward_to_agent = pass_reward_to_agent
         self._done = False
         self._episode_num = 0
+        self._variable_length = variable_length
         self.reset()
 
     def _prepareObs(self, obs, rew=None):
@@ -334,7 +335,12 @@ class VectorizedRunner:
         if self._pass_reward_to_agent:
             rew = np.array([runner._rew for runner in self._current_runners])
         obs = self._prepareObs(obs, rew)
-        action = self._agent.predict(obs)
+        if self._variable_length:
+            seqlens = np.array([runner._obs.shape[0] for runner in self._current_runners], dtype=np.int32)
+            seqlens = tf.constant(seqlens, dtype=tf.int32)
+            action = self._agent.predict(obs, padding_mask=seqlens)
+        else:
+            action = self._agent.predict(obs)
         action = [action[i] for i in range(len(self._current_runners))]
         return action
 
@@ -391,5 +397,3 @@ class VectorizedRunner:
     @property
     def isDone(self):
         return self._done
-    
-
