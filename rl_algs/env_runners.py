@@ -304,8 +304,7 @@ class VectorizedRunner:
                 dtype = tf.int32
             else:
                 dtype = tf.float32
-
-            obs = tf.constant(obs, dtype)
+            obs = tf.constant(obs, dtype=dtype)
 
         if rew is not None:
             if tf.executing_eagerly():
@@ -330,7 +329,7 @@ class VectorizedRunner:
         return self.stepEnv(actions)
 
     def getAction(self):
-        obs = np.array([runner._obs for runner in self._current_runners])
+        obs = np.stack([runner._obs for runner in self._current_runners], 0)
         rew = None
         if self._pass_reward_to_agent:
             rew = np.array([runner._rew for runner in self._current_runners])

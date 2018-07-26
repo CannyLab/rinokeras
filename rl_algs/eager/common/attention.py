@@ -150,7 +150,7 @@ class ScaledDotProductSimilarity(tf.keras.layers.Layer):
         queries, keys = inputs
         key_dim = tf.cast(tf.shape(keys)[-1], tf.float32)
 
-        similarity = tf.matmul(queries, keys, transpose_b=True) / np.sqrt(key_dim)
+        similarity = tf.matmul(queries, keys, transpose_b=True) / tf.sqrt(key_dim)
 
         return similarity
 
@@ -250,19 +250,21 @@ class MultiHeadAttentionMap(AttentionMap):
         return output
 
     def _split_heads(self, tensor):
-        shape = tensor.shape.as_list()
-        tensorlen = shape[1]
-        new_feature_size = shape[2] // self.n_heads
-        tensor = tf.reshape(tensor, (-1, tensorlen, self.n_heads, new_feature_size))
+        assert len(tensor.shape) == 3, 'Tensor dimension invalid. Expected 3, Received {}'.format(len(tensor.shape))
+        batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
+        feature_size = tensor.shape.as_list()[2]
+        new_feature_size = feature_size // self.n_heads
+        tensor = tf.reshape(tensor, (batch_size, tensorlen, self.n_heads, new_feature_size))
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         return tensor
 
     def _combine_heads(self, tensor):
+        assert len(tensor.shape) == 4, 'Tensor dimension invalid. Expected 4, Received {}'.format(len(tensor.shape))
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
-        shape = tensor.shape.as_list()
-        tensorlen = shape[1]
-        new_feature_size = shape[2] * shape[3]
-        tensor = tf.reshape(tensor, (-1, tensorlen, new_feature_size))
+        batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
+        feature_size = tensor.shape.as_list()[-1] 
+        new_feature_size = self.n_heads * feature_size
+        tensor = tf.reshape(tensor, (batch_size, tensorlen, new_feature_size))
         return tensor
 
 class MultiHeadAttention(tf.keras.Model):
