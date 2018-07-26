@@ -1,15 +1,15 @@
-from functools import reduce
-from operator import mul
-
-import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.eager as tfe
 
 from .Trainer import Trainer
 
 class PGTrainer(Trainer):
-    def __init__(self, model, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, scope='trainer'):
-        super().__init__(model, discrete)
+    def __init__(self, 
+                 model, 
+                 valuecoeff: float = 0.5, 
+                 entcoeff: float = 0.1, 
+                 max_grad_norm: float = 0.5, 
+                 scope: str = 'trainer') -> None:
+        super().__init__(model)
         self._valuecoeff = valuecoeff
         self._entcoeff = entcoeff
 
@@ -29,7 +29,6 @@ class PGTrainer(Trainer):
         mean, var = tf.nn.moments(advantages, [0])
         advantages = self._batch_norm(advantages, mean, var)
         return normed_values, advantages
-        
     
     def loss_function(self, obs, act, val):
         logits, pred_values = self._model(obs, is_training=True)

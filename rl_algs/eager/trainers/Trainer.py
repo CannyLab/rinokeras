@@ -1,11 +1,9 @@
 import tensorflow as tf
-import numpy as np
 
 class Trainer(object):
 
-    def __init__(self, model, discrete, optimizer='adam'):
+    def __init__(self, model, optimizer: str = 'adam') -> None:
         self._model = model
-        self._discrete = discrete
 
         self._num_param_updates = 0
         if optimizer == 'adam':
@@ -83,15 +81,7 @@ class Trainer(object):
         self._num_param_updates += 1
         return loss
 
-    def get_loss(self, batch):
-        if tf.executing_eagerly():
-            loss = self.loss_function(**batch)
-        else:
-            sess = tf.get_default_session()
-            if sess is None:
-                raise RuntimeError("Must be run inside of a session context when in non-eager mode.")
-
-    def setup_inputs(self, features, labels, *args, **kwargs):
+    def setup_from_placeholders(self, features, labels, *args, **kwargs):
         loss = self.loss_function(features, labels, *args, **kwargs)
         total_loss, losses = self._unpack_losses(loss)
         update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
@@ -104,6 +94,19 @@ class Trainer(object):
         self._loss = total_loss
         self._update_op = update_op
         self._inputs_setup = True
+
+    def setup_from_dataset(self, dataset):
+        handle = tf.placeholder(tf.string, shape=[])
+        iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
+        batch = iterator.get_next()
+        grads, loss = self.loss_function(**batch)
+        total_loss, losses = self._unpack_losses(loss)
+        update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
+
+        self._handle = handle
+        self._loss = total_loss
+        self._update_op = update_op
+
 
     @property
     def num_param_updates(self):

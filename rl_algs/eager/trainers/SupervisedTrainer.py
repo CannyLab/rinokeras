@@ -4,10 +4,8 @@ from .Trainer import Trainer
 
 class SupervisedTrainer(Trainer):
 
-    def __init__(self, model, discrete, optimizer='adam', loss_type=None):
-        super().__init__(model, discrete, optimizer)
-        if loss_type is None:
-            loss_type = 'mse' if not discrete else 'categorical_crossentropy'
+    def __init__(self, model, loss_type: str, optimizer: str = 'adam') -> None:
+        super().__init__(model, optimizer)
         self._loss_fn = tf.keras.losses.get(loss_type)
 
     def loss_function(self, features, labels):

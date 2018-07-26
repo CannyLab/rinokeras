@@ -3,12 +3,21 @@ from functools import reduce
 
 import tensorflow as tf
 import numpy as np
+from typing import List
 import scipy.signal
 
 # https://stackoverflow.com/questions/12201577/how-can-i-convert-an-rgb-image-into-grayscale-in-python
 def rgb2gray(rgb):
     img = np.dot(rgb[:, :, :3], [0.299, 0.587, 0.114])
     return np.expand_dims(img, -1)
+
+def pad_arrays(arrays: List) -> np.ndarray:
+    shape = (len(arrays),) + reduce(max, (arr.shape for arr in arrays))
+    padded = np.zeros(shape, dtype=arrays[0].dtype)
+    for i, arr in enumerate(arrays):
+        arr_slice = (i,) + tuple(slice(0, dim) for dim in arr.shape)  # type: ignore
+        padded[arr_slice] = arr
+    return padded
 
 class Rollout:
 
@@ -52,19 +61,8 @@ class BatchRollout(Rollout):
                 'Cannot handle varying numbers of dimensions in observation'
             assert all(roll.act.ndim == rollouts[0].act.ndim for roll in rollouts), \
                 'Cannot handle varying numbers of dimensions'
-            obs_dims = (len(rollouts),) + reduce(max, (roll.obs.shape for roll in rollouts))
-            act_dims = (len(rollouts),) + reduce(max, (roll.act.shape for roll in rollouts))
-
-            # Number of dimensions can't vary, but this code handles different sizes among those dimensions
-            self.obs = np.zeros(obs_dims)
-            self.act = np.zeros(act_dims)
-
-            for i, roll in enumerate(rollouts):
-                # Fancy python slicing for automatically assigning to the proper portion of things
-                obs_slice = [i] + [slice(0, dim) for dim in roll.obs.shape]
-                act_slice = [i] + [slice(0, dim) for dim in roll.act.shape]
-                self.obs[obs_slice] = roll.obs
-                self.act[act_slice] = roll.act
+            self.obs = pad_arrays(roll.obs for roll in rollouts)
+            self.act = pad_arrays(roll.act for roll in rollouts)
 
         self.rew = np.array([roll.rew for roll in rollouts])
         self.rew_in = np.array([roll.rew_in for roll in rollouts])
@@ -75,6 +73,8 @@ class BatchRollout(Rollout):
     def extend(self, rollout):
         if not isinstance(rollout, BatchRollout):
             raise TypeError('extend expected BatchRollout, received {}'.format(type(rollout)))
+        if self.variable_length:
+            raise NotImplementedError("Need to alter extend to work with variable lengths")
         self.obs = np.concatenate((self.obs, rollout.obs), 0)
         self.act = np.concatenate((self.act, rollout.act), 0)
         self.rew = np.concatenate((self.rew, rollout.rew), 0)

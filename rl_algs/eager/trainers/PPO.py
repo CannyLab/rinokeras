@@ -1,18 +1,19 @@
-from functools import reduce
-from operator import mul
-
-import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.eager as tfe
 
 from .PolicyGradient import PGTrainer
 
 class PPOTrainer(PGTrainer):
     
-    def __init__(self, model, discrete, valuecoeff=0.5, entcoeff=0.1, max_grad_norm=0.5, epsilon=0.2, scope='trainer'):
+    def __init__(self, 
+                 model, 
+                 valuecoeff: float = 0.5, 
+                 entcoeff: float = 0.1, 
+                 max_grad_norm: float = 0.5, 
+                 epsilon: float = 0.2, 
+                 scope: str = 'trainer') -> None:
         self._epsilon = epsilon
         self._old_model = model.make_copy()
-        super().__init__(model, discrete, valuecoeff, entcoeff, max_grad_norm, scope)
+        super().__init__(model, valuecoeff, entcoeff, max_grad_norm, scope)
 
     def loss_function(self, obs, act, val):
         logits, vpred = self._model(obs, is_training=True)
