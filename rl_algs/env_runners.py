@@ -12,6 +12,7 @@ def rgb2gray(rgb):
     return np.expand_dims(img, -1)
 
 def pad_arrays(arrays: List) -> np.ndarray:
+    arrays = list(arrays)
     shape = (len(arrays),) + reduce(max, (arr.shape for arr in arrays))
     padded = np.zeros(shape, dtype=arrays[0].dtype)
     for i, arr in enumerate(arrays):
@@ -63,6 +64,7 @@ class BatchRollout(Rollout):
                 'Cannot handle varying numbers of dimensions'
             self.obs = pad_arrays(roll.obs for roll in rollouts)
             self.act = pad_arrays(roll.act for roll in rollouts)
+            self.seqlens = np.array([roll.obs.shape[1] for roll in rollouts], dtype=np.int32)
 
         self.rew = np.array([roll.rew for roll in rollouts])
         self.rew_in = np.array([roll.rew_in for roll in rollouts])
@@ -230,7 +232,7 @@ class EnvironmentRunner:
         self._obs = self._modifyobs(obs)
         self._done = False
         self._act = None
-        self._rew = 0. if not self._initialize_reward_from_environment else self._env._get_reward()
+        self._rew = 0. if not self._initialize_reward_from_environment else self._env.get_reward()
         self._num_steps = 0
         self._rollout = PartialRollout()
 
@@ -330,18 +332,22 @@ class VectorizedRunner:
         return self.stepEnv(actions)
 
     def getAction(self):
-        obs = np.stack([runner._obs for runner in self._current_runners], 0)
+        if self._variable_length:
+            obs = pad_arrays(runner._obs for runner in self._current_runners)
+        else:
+            obs = np.stack([runner._obs for runner in self._current_runners], 0)
         rew = None
         if self._pass_reward_to_agent:
             rew = np.array([runner._rew for runner in self._current_runners])
         obs = self._prepareObs(obs, rew)
         if self._variable_length:
             seqlens = np.array([runner._obs.shape[0] for runner in self._current_runners], dtype=np.int32)
-            seqlens = tf.constant(seqlens, dtype=tf.int32)
-            action = self._agent.predict(obs, padding_mask=seqlens)
+            action = self._agent.predict(obs, padding_mask=tf.constant(seqlens, dtype=tf.int32))
         else:
             action = self._agent.predict(obs)
         action = [action[i] for i in range(len(self._current_runners))]
+        if self._variable_length:
+            action = [act[0, :seqlen] for act, seqlen in zip(action, seqlens)]
         return action
 
     def stepEnv(self, actions):
