@@ -7,8 +7,14 @@ from rl_algs.eager.common.attention import ContextQueryAttention, SelfAttention
 
 
 class QANetSelfAttention(tf.keras.Model):
-
     def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
+        """QANet Self-Attention block
+
+        Arguments:
+            n_heads {int} -- The number of heads in the attention block
+            dropout {Optional[float]} -- Optional dropout constant
+        """
+
         super().__init__()
         self.self_attention = SelfAttention('scaled_dot', n_heads, dropout)
         self.norm = LayerNorm()
@@ -21,6 +27,14 @@ class QANetSelfAttention(tf.keras.Model):
 
 class QANetFeedForward(tf.keras.Model):
     def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
+        """QANet Feed Forward block
+
+        Arguments:
+            filter_size {int} -- The size of the filter
+            hidden_size {int} -- The size of the hidden layer
+            dropout {Optional[float]} -- Optional dropout constant
+        """
+
         super().__init__()
         dense_relu_dense = DenseStack(
             [filter_size, hidden_size], output_activation=None)
@@ -44,6 +58,14 @@ class QANetConvBlock(tf.keras.Model):
     """
 
     def __init__(self, filters: int, kernel_size: int, dropout: Optional[float]) -> None:
+        """QANet Convolutional block
+
+        Arguments:
+            filters {int} -- The number of filters in the block
+            kernel_size {int} -- The size of the kernel for the block
+            dropout {Optional[float]} -- Optional dropout constant
+        """
+
         super().__init__()
         conv_layer = tf.keras.layers.SeparableConv1D(
             filters, kernel_size, padding='same')
@@ -78,6 +100,18 @@ class QANetInputEmbedding(tf.keras.Model):
                  char_embed_initializer: np.ndarray,
                  dropout: Optional[float] = None,
                  batch_norm: bool = False) -> None:
+        """QANet Imput embedding class
+
+        Arguments:
+            d_model {int} -- The model dimension
+            word_embed_initializer {np.ndarray} -- The word-level embedding matrix
+            char_embed_initializer {np.ndarray} -- The character-level embedding matrix
+
+        Keyword Arguments:
+            dropout {Optional[float]} -- Dropout constant in the embedding (default: {None})
+            batch_norm {bool} -- Use batch normalization in the embedding (default: {False})
+        """
+
         super().__init__()
         self.word_embedding = tf.keras.layers.Embedding(word_embed_initializer.shape[0],
                                                         word_embed_initializer.shape[1],
@@ -155,6 +189,18 @@ class QANetEncoderBlock(tf.keras.Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float] = None) -> None:
+        """QANet Encoder Block
+
+        Arguments:
+            n_conv {int} -- Number of convolutions in the encoder layer
+            n_heads {int} -- Number of heads in the self-attention
+            filter_size {int} -- Filter size in the feed-forward layer
+            hidden_size {int} -- Hidden layer size in the feed-forward layer/conv block
+
+        Keyword Arguments:
+            dropout {Optional[float]} -- Optional dropout constant (default: {None})
+        """
+
         super().__init__()
         self.conv_stack = Stack(
             [QANetConvBlock(hidden_size, 7, dropout) for _ in range(n_conv)])
@@ -180,9 +226,23 @@ class QANet(tf.keras.Model):
                  d_filter: int = 512,
                  char_limit: int = 16,
                  dropout: Optional[float] = None) -> None:
+        """QANet (Based on https://arxiv.org/abs/1804.09541)
+
+        Arguments:
+            word_embed_matrix {np.ndarray} -- Word-level embedding matrix
+            char_embed_matrix {np.ndarray} -- Character-level embedding matrix
+
+        Keyword Arguments:
+            n_heads {int} -- Number of self-attention heads (default: {8})
+            d_model {int} -- Internal dimension of the model (default: {128})
+            d_filter {int} -- internal dimension of the filters (default: {512})
+            char_limit {int} -- Character limit for each word (default: {16})
+            dropout {Optional[float]} -- Optional dropout constant (default: {None})
+        """
+
         super().__init__()
         self.n_symbols_in = word_embed_matrix.shape[0]
-        self.n_symbols_out = word_embed_matrix.shape[0]
+        self.n_symbols_out = word_embed_matrix.shape[0]  # TODO: Fix this bug?
         self.n_heads = n_heads
         self.d_model = d_model
         self.d_filter = d_filter
