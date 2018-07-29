@@ -99,8 +99,8 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
             Returns: None
         """
         query_shape, context_shape = input_shapes
-        query_channels = query_shape[-1]
-        context_channels = context_shape[-1]
+        query_channels = query_shape.as_list()[-1]
+        context_channels = context_shape.as_list()[-1]
 
         self.query_weights = self.add_weight('query_weights',
                                              shape=(query_channels, 1),
