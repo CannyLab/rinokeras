@@ -16,5 +16,5 @@ setup(
     author_email='roshan_rao@berkeley.edu',
     url='https://github.com/CannyLab/rl-algs',
     license=license,
-    packages=find_packages()  # exclude=('tests', 'docs')
+    packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )
