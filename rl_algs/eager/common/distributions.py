@@ -3,6 +3,7 @@ from operator import mul
 
 import tensorflow as tf
 
+
 class Pd(tf.keras.layers.Layer):
 
     def __init__(self, out_shape):
@@ -11,14 +12,14 @@ class Pd(tf.keras.layers.Layer):
         self.bias = self.add_variable('bias', self._out_dim)
 
     def build(self, inputs):
-        self.kernel = self.add_variable('kernel', (inputs[-1], self._out_dim), 
-                        dtype=tf.float32, initializer=tf.keras.initializer.glorot_uniform())
-        
+        self.kernel = self.add_variable('kernel', (inputs[-1], self._out_dim),
+                                        dtype=tf.float32, initializer=tf.keras.initializers.glorot_uniform())
 
     def call(self, inputs):
-        logits = tf.matmul(self.kernel * inputs) + self.bias
+        logits = tf.matmul(self.kernel, inputs) + self.bias
         logits = tf.reshape(logits, (-1,) + self._out_shape)
         return logits
+
 
 class CategoricalPd(Pd):
 
@@ -29,15 +30,17 @@ class CategoricalPd(Pd):
         else:
             return logits
 
+
 class DiagGaussianPd(tf.keras.layers.Layer):
 
     def __init__(self, out_shape, initial):
         super().__init__(out_shape)
         self._logstd = self.add_variable('logstd', out_shape, dtype=tf.float32,
-                                            initializer=tf.constant_initializer(initial))
+                                         initializer=tf.constant_initializer(initial))
+
     def call(self, inputs, sample=False):
         mean = super().call(inputs)
-        epsilon = tf.random_normal(self._out_shape)
+        epsilon = tf.random_normal(self.output_shape)
         return mean + epsilon * self.std
 
     @property

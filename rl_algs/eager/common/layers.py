@@ -2,7 +2,8 @@ import collections
 from typing import Optional
 
 import tensorflow as tf
-from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import backend as K  # pylint: disable=E0611
+
 
 class RandomNoise(tf.keras.layers.Layer):
 
@@ -25,6 +26,8 @@ class RandomNoise(tf.keras.layers.Layer):
         return tf.exp(self._logstd)
 
 # https://github.com/keras-team/keras/issues/3878
+
+
 class LayerNorm(tf.keras.layers.Layer):
 
     def __init__(self, axis=-1, eps=1e-6, **kwargs):
@@ -51,8 +54,10 @@ class LayerNorm(tf.keras.layers.Layer):
         std = K.std(inputs, axis=self.axis, keepdims=True)
         return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
 
-# I presume this is just how Sequential is added but at the moment Sequential 
+# I presume this is just how Sequential is added but at the moment Sequential
 # requires input size to be specified at the begining
+
+
 class Stack(tf.keras.Model):
     def __init__(self, layers=None):
         super().__init__()
@@ -70,6 +75,7 @@ class Stack(tf.keras.Model):
             output = layer(output, **kwargs)
         return output
 
+
 class Conv2DStack(Stack):
 
     def __init__(self, layers, batch_norm=False, activation='relu', padding='same', flatten_output=True):
@@ -85,13 +91,14 @@ class Conv2DStack(Stack):
             self.add(tf.keras.layers.Activation(activation))
         self.add(tf.keras.layers.Flatten())
 
+
 class DenseStack(Stack):
 
     def __init__(self, layers, batch_norm=False, activation='relu', output_activation=None):
         super().__init__()
         if layers is None:
             layers = []
-        for i, layer in enumerate(layers[:-1]):
+        for _, layer in enumerate(layers[:-1]):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
             self.add(tf.keras.layers.Dense(*layer))
@@ -105,6 +112,7 @@ class DenseStack(Stack):
         self.add(tf.keras.layers.Dense(*out_layer))
         if output_activation is not None:
             self.add(tf.keras.layers.Activation(output_activation))
+
 
 class Residual(tf.keras.Model):
 
@@ -126,9 +134,10 @@ class Residual(tf.keras.Model):
 
         return residual
 
+
 class Highway(tf.keras.Model):
 
-    def __init__(self, 
+    def __init__(self,
                  convolution: bool = False,
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
@@ -137,12 +146,13 @@ class Highway(tf.keras.Model):
         self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
+            dropout)
 
     def build(self, input_shape) -> None:
         units = input_shape[-1]
         if self._convolution:
-            self.gate = tf.keras.layers.Conv1D(filters=units, 
+            self.gate = tf.keras.layers.Conv1D(filters=units,
                                                kernel_size=1,
                                                padding='same',
                                                acitvation='sigmoid',
@@ -167,6 +177,7 @@ class Highway(tf.keras.Model):
             transformed = self.dropout(transformed)
         return gated * transformed + (1 - gated) * inputs
 
+
 class PositionEmbedding(tf.keras.Model):
     """
     Adds positional embedding to an input embedding.
@@ -180,7 +191,8 @@ class PositionEmbedding(tf.keras.Model):
     def build(self, input_shape):
         hidden_size = input_shape[-1]
         assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
-        power = tf.range(0, hidden_size.value, 2, dtype=tf.float32) / hidden_size.value
+        power = tf.range(0, hidden_size.value, 2,
+                         dtype=tf.float32) / hidden_size.value
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
@@ -196,7 +208,8 @@ class PositionEmbedding(tf.keras.Model):
         assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
 
         sequence_length = tf.shape(inputs)[1]
-        seq_pos = tf.cast(tf.range(1, sequence_length + 1)[None, :], tf.float32)  # 1-index positions
+        seq_pos = tf.cast(tf.range(1, sequence_length + 1)
+                          [None, :], tf.float32)  # 1-index positions
 
         index = seq_pos[:, :, None] / self.divisor
 
@@ -209,6 +222,7 @@ class PositionEmbedding(tf.keras.Model):
         position_embedding = tf.reshape(position_embedding, position_shape)
 
         return inputs + position_embedding
+
 
 class PositionEmbedding2D(PositionEmbedding):
     """
@@ -224,7 +238,8 @@ class PositionEmbedding2D(PositionEmbedding):
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
-        power = tf.range(0, self.hidden_size, 4, dtype=tf.float32) / self.hidden_size
+        power = tf.range(0, self.hidden_size, 4,
+                         dtype=tf.float32) / self.hidden_size
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
@@ -256,6 +271,7 @@ class PositionEmbedding2D(PositionEmbedding):
 
         position_embedding = tf.stack((width_sin_embed, width_cos_embed,
                                        height_sin_embed, height_cos_embed), -1)
-        position_embedding = tf.reshape(position_embedding, (1, width, height, self.hidden_size))
+        position_embedding = tf.reshape(
+            position_embedding, (1, width, height, self.hidden_size))
 
         return inputs + position_embedding

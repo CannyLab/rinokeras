@@ -3,6 +3,8 @@ import tensorflow as tf
 from .attention import LuongAttention
 
 # LSTM Code from https://github.com/titu1994/tf-eager-examples/blob/master/notebooks/06_02_custom_rnn.ipynb
+
+
 class EagerLSTMCell(tf.keras.Model):
     def __init__(self, units, **kwargs):
         super().__init__(**kwargs)
@@ -14,10 +16,11 @@ class EagerLSTMCell(tf.keras.Model):
             return tf.keras.backend.concatenate([
                 tf.keras.initializers.Zeros()((self.units,), *args, **kwargs),  # input gate
                 tf.keras.initializers.Ones()((self.units,), *args, **kwargs),  # forget gate
-                tf.keras.initializers.Zeros()((self.units * 2,), *args, **kwargs)  # context and output gates
+                tf.keras.initializers.Zeros()((self.units * 2,), *args, **
+                                              kwargs)  # context and output gates
             ])
         self.kernel = tf.keras.layers.Dense(4 * units, use_bias=False)
-        self.recurrent_kernel = tf.keras.layers.Dense(4 * units, 
+        self.recurrent_kernel = tf.keras.layers.Dense(4 * units,
                                                       kernel_initializer='glorot_uniform',
                                                       bias_initializer=bias_initializer)
 
@@ -45,6 +48,7 @@ class EagerLSTMCell(tf.keras.Model):
 
         return h_state, (h_state, c_state)
 
+
 class EagerLSTM(tf.keras.Model):
     def __init__(self, units, return_sequences=False, return_state=False, return_all_states=False, **kwargs):
         super().__init__(**kwargs)
@@ -61,7 +65,8 @@ class EagerLSTM(tf.keras.Model):
             h_state = tf.zeros((inputs.shape[0], self.units))
             c_state = tf.zeros((inputs.shape[0], self.units))
         else:
-            assert len(initial_state) == 2, "Must pass a list of 2 states when passing 'initial_state'"
+            assert len(
+                initial_state) == 2, "Must pass a list of 2 states when passing 'initial_state'"
             h_state, c_state = initial_state
 
         h_list = []
@@ -79,6 +84,8 @@ class EagerLSTM(tf.keras.Model):
         hidden_outputs = tf.stack(h_list, axis=1)
         hidden_states = tf.stack(c_list, axis=1)
 
+        # TODO: Fix the hidden_output confusion (output != hidden output)
+
         if self.return_all_states:
             return hidden_outputs, hidden_outputs, hidden_states
         if self.return_state and self.return_sequences:
@@ -89,6 +96,7 @@ class EagerLSTM(tf.keras.Model):
             return hidden_outputs
         else:
             return h_state
+
 
 class EagerBidirectionalLSTM(tf.keras.Model):
 

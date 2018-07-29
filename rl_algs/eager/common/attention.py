@@ -1,6 +1,6 @@
 import tensorflow as tf
-from tensorflow.python.keras import backend as K
-import numpy as np
+from tensorflow.python.keras import backend as K  # pylint: disable=E0611
+
 
 class LuongAttention(tf.keras.layers.Layer):
 
@@ -12,30 +12,37 @@ class LuongAttention(tf.keras.layers.Layer):
 
     def build(self, inputs):
         self.attention_weights = self.add_variable('attention_weights',
-                                                   (inputs[0][-1] + inputs[1][-1], inputs[1][-1]),
+                                                   (inputs[0][-1] + inputs[1]
+                                                    [-1], inputs[1][-1]),
                                                    initializer=tf.initializers.variance_scaling())
 
     def call(self, inputs, t=None):
         target_hidden, source_hidden_sequence = inputs
         # source hidden sequence shape -> (None, None, encoder_cell_size)
         # target hidden shape -> (None, decoder_cell_size)
-        score = tf.matmul(source_hidden_sequence, tf.expand_dims(target_hidden, -1))
+        score = tf.matmul(source_hidden_sequence,
+                          tf.expand_dims(target_hidden, -1))
         alignment = tf.nn.softmax(score, 1)
         weights = alignment
 
         if self.local:
             if t is None:
                 raise TypeError("Must pass in position for local attention")
-            relative_position = tf.cast(tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
-            position_weighting = tf.exp(-tf.square(relative_position) / (2 * tf.square(self.stddev)))
+            relative_position = tf.cast(
+                tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
+            position_weighting = tf.exp(-1. * tf.square(relative_position) /
+                                        (2 * tf.square(self.stddev)))
             weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
-            
-        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1)  # will broadcast over third dimension
+
+        # will broadcast over third dimension
+        weighted = tf.reduce_sum(source_hidden_sequence * weights, 1)
         concatenated = tf.concat((target_hidden, weighted), 1)
         output = tf.tanh(tf.matmul(concatenated, self.attention_weights))
         return output
 
 # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/common_attention.py
+
+
 class AttentionQKV(tf.keras.Model):
     """Computes query, key, and value from antecedents
 
@@ -43,9 +50,9 @@ class AttentionQKV(tf.keras.Model):
             :param value_depth: integer depth of values
     """
 
-    def __init__(self, 
-                 key_depth: int, 
-                 value_depth: int = None):
+    def __init__(self,
+                 key_depth: int,
+                 value_depth: int = None) -> None:
         super().__init__()
         if value_depth is None:
             value_depth = key_depth
@@ -69,16 +76,18 @@ class AttentionQKV(tf.keras.Model):
 
         return [queries, keys, values]
 
+
 class TrilinearSimilarity(tf.keras.layers.Layer):
     """
-    Computes Trilinear similarity between query and context tensors. 
+    Computes Trilinear similarity between query and context tensors.
 
     Based on https://arxiv.org/pdf/1611.01603.pdf.
     """
 
     def __init__(self, dropout=None):
         super().__init__()
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
+            dropout)
 
     def build(self, input_shapes):
         """
@@ -93,14 +102,15 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
         query_channels = query_shape[-1]
         context_channels = context_shape[-1]
 
-        self.query_weights = self.add_weight('query_weights', 
+        self.query_weights = self.add_weight('query_weights',
                                              shape=(query_channels, 1),
                                              initializer=tf.keras.initializers.glorot_uniform())
-        self.context_weights = self.add_weight('context_weights', 
+        self.context_weights = self.add_weight('context_weights',
                                                shape=(context_channels, 1),
                                                initializer=tf.keras.initializers.glorot_uniform())
         self.dot_weights = self.add_weight('dot_weights',
-                                           shape=(context_channels, context_channels),
+                                           shape=(context_channels,
+                                                  context_channels),
                                            initializer=tf.keras.initializers.glorot_uniform())
 
     def call(self, inputs):
@@ -122,13 +132,16 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
         context_weighted = K.dot(context, self.context_weights)
 
         # query_weighted -> Tensor with shape [batch_size, 1, query_length]
-        query_weighted = tf.transpose(K.dot(query, self.query_weights), (0, 2, 1))
+        query_weighted = tf.transpose(
+            K.dot(query, self.query_weights), (0, 2, 1))
 
         # weighted_context_query -> Tensor with shape [batch_size, context_length, query_length]
-        weighted_context_query = tf.matmul(K.dot(context, self.dot_weights), query, transpose_b=True)
+        weighted_context_query = tf.matmul(
+            K.dot(context, self.dot_weights), query, transpose_b=True)
 
         similarity = weighted_context_query + context_weighted + query_weighted
         return similarity
+
 
 class ScaledDotProductSimilarity(tf.keras.layers.Layer):
     """
@@ -150,9 +163,11 @@ class ScaledDotProductSimilarity(tf.keras.layers.Layer):
         queries, keys = inputs
         key_dim = tf.cast(tf.shape(keys)[-1], tf.float32)
 
-        similarity = tf.matmul(queries, keys, transpose_b=True) / tf.sqrt(key_dim)
+        similarity = tf.matmul(
+            queries, keys, transpose_b=True) / tf.sqrt(key_dim)
 
         return similarity
+
 
 class ApplyAttentionMask(tf.keras.layers.Layer):
     """
@@ -171,7 +186,8 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         if mask is None:
             return similarity
 
-        assert similarity.ndim in [3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
+        assert similarity.ndim in [
+            3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
         assert mask.ndim == 3, 'Mask must be a 3 dimensional Tensor'
 
         # There are so many different reasons a mask might be constructed a particular manner.
@@ -187,16 +203,18 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         masked_similarity = similarity + bias
         return masked_similarity
 
+
 class AttentionMap(tf.keras.Model):
     """
     Computes attention based on provided similarity metric.
     """
 
-    def __init__(self, similarity_metric, dropout: float = None):
+    def __init__(self, similarity_metric, dropout: float = None) -> None:
         super().__init__()
         self.similarity_metric = similarity_metric
         self.apply_mask = ApplyAttentionMask()
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
+            dropout)
 
     def call(self, inputs, mask=None):
         """Fast scaled dot product attention.
@@ -211,19 +229,28 @@ class AttentionMap(tf.keras.Model):
         queries, keys, values = inputs
         similarity = self.similarity_metric((queries, keys))
         masked_similarity = self.apply_mask(similarity, mask=mask)
-        weights = tf.nn.softmax(masked_similarity, axis=-1)  # (batch_size, heads, n_queries, n_keyval)
+        # (batch_size, heads, n_queries, n_keyval)
+        weights = tf.nn.softmax(masked_similarity, axis=-1)
 
         if self.dropout is not None:
             weights = self.dropout(weights)
         output = tf.matmul(weights, values)
         return output
 
+
 class MultiHeadAttentionMap(AttentionMap):
 
-    def __init__(self, 
-                 similarity_metric, 
-                 n_heads: int, 
-                 dropout: float = None):
+    def __init__(self, similarity_metric, n_heads: int, dropout: float = None) -> None:
+        """Map the multi-headed attention across the map
+
+        Arguments:
+            similarity_metric {[type]} -- The metric that should be used for the similarity
+            n_heads {int} -- The number of heads in the attention map
+
+        Keyword Arguments:
+            dropout {float} -- Dropout parameter (default: {None})
+        """
+
         super().__init__(similarity_metric, dropout)
         self.n_heads = n_heads
 
@@ -241,54 +268,62 @@ class MultiHeadAttentionMap(AttentionMap):
         :return: output: Tensor with shape [batch_size, n_queries, depth_v]
         """
         queries, keys, values = inputs
-        
+
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split = super().call((queries_split, keys_split, values_split), mask=mask)
+        attention_output_split = super().call(
+            (queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         return output
 
     def _split_heads(self, tensor):
-        assert len(tensor.shape) == 3, 'Tensor dimension invalid. Expected 3, Received {}'.format(len(tensor.shape))
+        assert len(tensor.shape) == 3, 'Tensor dimension invalid. Expected 3, Received {}'.format(
+            len(tensor.shape))
         batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
         feature_size = tensor.shape.as_list()[2]
         new_feature_size = feature_size // self.n_heads
-        tensor = tf.reshape(tensor, (batch_size, tensorlen, self.n_heads, new_feature_size))
+        tensor = tf.reshape(tensor, (batch_size, tensorlen,
+                                     self.n_heads, new_feature_size))
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         return tensor
 
     def _combine_heads(self, tensor):
-        assert len(tensor.shape) == 4, 'Tensor dimension invalid. Expected 4, Received {}'.format(len(tensor.shape))
+        assert len(tensor.shape) == 4, 'Tensor dimension invalid. Expected 4, Received {}'.format(
+            len(tensor.shape))
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
-        feature_size = tensor.shape.as_list()[-1] 
+        feature_size = tensor.shape.as_list()[-1]
         new_feature_size = self.n_heads * feature_size
         tensor = tf.reshape(tensor, (batch_size, tensorlen, new_feature_size))
         return tensor
 
+
 class MultiHeadAttention(tf.keras.Model):
     """
-    Fast multi-head attention. Based on the Attention is All You Need paper. 
+    Fast multi-head attention. Based on the Attention is All You Need paper.
 
     https://arxiv.org/pdf/1706.03762.pdf
     """
 
-    def __init__(self, 
-                 similarity_metric: str, 
-                 n_heads: int, 
-                 dropout: float = None):
+    def __init__(self,
+                 similarity_metric: str,
+                 n_heads: int,
+                 dropout: float = None) -> None:
         super().__init__()
         if similarity_metric != "scaled_dot":
-            raise NotImplementedError("Haven't got around to implementing other attention types yet!")
+            raise NotImplementedError(
+                "Haven't got around to implementing other attention types yet!")
 
         self.similarity_metric = similarity_metric
         self.n_heads = n_heads
 
         similarity_metric = ScaledDotProductSimilarity()
-        self.attention_layer = MultiHeadAttentionMap(similarity_metric, n_heads, dropout)
+        self.attention_layer = MultiHeadAttentionMap(
+            similarity_metric, n_heads, dropout)
 
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
+            dropout)
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
@@ -297,7 +332,7 @@ class MultiHeadAttention(tf.keras.Model):
         assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
             'Feature size must be divisible by n_heads'
         assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
-        self.compute_qkv = AttentionQKV(qa_channels, 
+        self.compute_qkv = AttentionQKV(qa_channels,
                                         ma_channels)
         self.output_layer = tf.keras.layers.Dense(ma_channels, use_bias=False)
 
@@ -316,17 +351,18 @@ class MultiHeadAttention(tf.keras.Model):
             output = self.dropout(output)
         return output
 
+
 class SelfAttention(MultiHeadAttention):
     """
-    Fast multi-head self attention. Based on the Attention is All You Need paper. 
+    Fast multi-head self attention. Based on the Attention is All You Need paper.
 
     https://arxiv.org/pdf/1706.03762.pdf
     """
 
-    def __init__(self, 
-                 similarity_metric: str, 
-                 n_heads: int, 
-                 dropout: float = None):
+    def __init__(self,
+                 similarity_metric: str,
+                 n_heads: int,
+                 dropout: float = None) -> None:
         super().__init__(similarity_metric, n_heads, dropout)
 
     def build(self, input_shapes):
@@ -335,12 +371,14 @@ class SelfAttention(MultiHeadAttention):
     def call(self, inputs, mask=None):
         return super().call((inputs, inputs), mask=mask)
 
+
 class ContextQueryAttention(tf.keras.Model):
 
     def __init__(self, n_heads, output_depth, attention_type="trilinear", dropout=None):
         super().__init__()
         if attention_type != "trilinear":
-            raise NotImplementedError("Haven't got around to implementing other attention types yet!")
+            raise NotImplementedError(
+                "Haven't got around to implementing other attention types yet!")
 
         self.n_heads = n_heads
         self.attention_type = attention_type
@@ -363,15 +401,17 @@ class ContextQueryAttention(tf.keras.Model):
         # similarity -> Tensor with shape [batch_size, context_length, query_length]
         similarity = self.trilinear_similarity((query, context))
         masked_similarity = self.apply_mask(similarity, mask=mask)
-    
+
         c2q_similarity = tf.nn.softmax(masked_similarity, axis=-1)
         q2c_similarity = tf.nn.softmax(masked_similarity, axis=-2)
-        
+
         # context_to_query -> Tensor with shape [batch_size, context_length, d_model]
         context_to_query = tf.matmul(c2q_similarity, query)
         # query_to_context -> Tensor with shape [batch_size, context_length, d_model]
-        query_to_context = tf.matmul(tf.matmul(c2q_similarity, q2c_similarity, transpose_b=True), context)
+        query_to_context = tf.matmul(
+            tf.matmul(c2q_similarity, q2c_similarity, transpose_b=True), context)
 
         # outputs -> Tensor with shape [batch_size, context_length, 4 * d_model]
-        outputs = [context, context_to_query, context * context_to_query, context * query_to_context]
+        outputs = [context, context_to_query, context *
+                   context_to_query, context * query_to_context]
         return tf.concat(outputs, axis=-1)
