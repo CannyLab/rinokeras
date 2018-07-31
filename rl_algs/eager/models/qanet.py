@@ -54,7 +54,6 @@ class QANetConvBlock(tf.keras.Model):
                 mask: a float32 Tensor with shape [batch_size, seqlen, seqlen]
         """
         norm_input = self.norm(inputs)
-
         if mask is not None:
             mask = tf.cast(mask[:, 0, :], tf.float32)
             norm_input = norm_input * mask[:, :, None]
@@ -147,8 +146,8 @@ class QANetEncoderBlock(tf.keras.Model):
         self.feed_forward = QANetFeedForward(filter_size, hidden_size, dropout)
 
     def call(self, inputs, self_attention_mask=None, padding_mask=None):
-        if self_attention_mask is not None and padding_mask is None:
-            padding_mask = self_attention_mask
+        # if self_attention_mask is not None and padding_mask is None:
+            # padding_mask = self_attention_mask
         conv_out = self.conv_stack(inputs, mask=padding_mask)
         res_attn = self.self_attention(conv_out, mask=self_attention_mask)
         output = self.feed_forward(res_attn)
