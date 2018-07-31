@@ -1,40 +1,48 @@
 import collections
-from typing import Optional
+from typing import Optional, Sequence, Any, Union, Callable, AbstractSet
 
 import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
 class RandomNoise(tf.keras.layers.Layer):
+    """
+    Adds gaussian random noise to input with trainable standard deviation.
+    """
 
-    def __init__(self, shape, initial):
+    def __init__(self, shape: Sequence[int], initial: float) -> None:
         super().__init__()
         self._shape = shape
         self._logstd = self.add_variable('logstd', shape, dtype=tf.float32,
                                          initializer=tf.constant_initializer(initial))
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         epsilon = tf.random_normal(self._shape)
         return inputs + epsilon * tf.exp(self._logstd)
 
     @property
-    def logstd(self):
+    def logstd(self) -> tf.Tensor:
         return self._logstd
 
     @property
-    def std(self):
+    def std(self) -> tf.Tensor:
         return tf.exp(self._logstd)
 
 # https://github.com/keras-team/keras/issues/3878
 class LayerNorm(tf.keras.layers.Layer):
+    """
+    Does layer normalization from https://arxiv.org/abs/1607.06450.
+    """
 
-    def __init__(self, axis=-1, eps=1e-6, **kwargs):
-        self.axis = axis
+    def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, **kwargs) -> None:
+        if isinstance(axis, collections.Sequence):
+            self.axis: Sequence[int] = axis
+        else:
+            self.axis: Sequence[int] = (axis,)
         self.eps = eps
         super().__init__(**kwargs)
 
-    def build(self, input_shape):
-        shape = input_shape[self.axis] if not isinstance(self.axis, tuple) \
-            else [input_shape[axis] for axis in self.axis]
+    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
+        shape = [input_shape[axis] for axis in self.axis]
 
         self.gamma = self.add_variable(name='gamma',
                                        shape=shape,
@@ -46,7 +54,7 @@ class LayerNorm(tf.keras.layers.Layer):
                                       trainable=True)
         super().build(input_shape)
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         mean = K.mean(inputs, axis=self.axis, keepdims=True)
         std = K.std(inputs, axis=self.axis, keepdims=True)
         return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
@@ -54,14 +62,17 @@ class LayerNorm(tf.keras.layers.Layer):
 # I presume this is just how Sequential is added but at the moment Sequential 
 # requires input size to be specified at the begining
 class Stack(tf.keras.Model):
-    def __init__(self, layers=None):
+    """
+    A re-implementation of Keras's Sequential layer to work well with tf eager.
+    """
+    def __init__(self, layers: Optional[Sequence[Any]] = None) -> None:
         super().__init__()
         self._call = None
         if layers is not None:
             for layer in layers:
                 self.add(layer)
 
-    def add(self, layer):
+    def add(self, layer: Callable[[tf.Tensor], tf.Tensor]) -> None:
         self._layers.append(layer)
 
     def call(self, inputs, **kwargs):
@@ -71,8 +82,15 @@ class Stack(tf.keras.Model):
         return output
 
 class Conv2DStack(Stack):
-
-    def __init__(self, layers, batch_norm=False, activation='relu', padding='same', flatten_output=True):
+    """
+    A stack of convolutional layers. Can optionally do batch normalization after each layer.
+    """
+    def __init__(self, 
+                 layers: Sequence[tuple], 
+                 batch_norm: bool = False, 
+                 activation: str = 'relu', 
+                 padding: str = 'same', 
+                 flatten_output: bool = True) -> None:
         super().__init__()
         if layers is None:
             layers = []
@@ -86,8 +104,14 @@ class Conv2DStack(Stack):
         self.add(tf.keras.layers.Flatten())
 
 class DenseStack(Stack):
-
-    def __init__(self, layers, batch_norm=False, activation='relu', output_activation=None):
+    """
+    A stack of fully connected layers. Can do batch norm and specify an alternate output activation.
+    """
+    def __init__(self, 
+                 layers: Sequence[Union[tuple, int]], 
+                 batch_norm: bool = False, 
+                 activation: str = 'relu', 
+                 output_activation: Optional[str] = None) -> None:
         super().__init__()
         if layers is None:
             layers = []
@@ -107,18 +131,15 @@ class DenseStack(Stack):
             self.add(tf.keras.layers.Activation(output_activation))
 
 class Residual(tf.keras.Model):
-
-    def __init__(self, layer):
+    """
+    Adds a residual connection between layers. If input to layer is a tuple, adds output to the first element
+    of the tuple.
+    """
+    def __init__(self, layer: Callable) -> None:
         super().__init__()
         self.layer = layer
 
-    def call(self, inputs, *args, **kwargs):
-        """Implements residual connection
-
-            :param inputs: A Tensor
-
-                implements -> output = x + layer(x)
-        """
+    def call(self, inputs: tf.Tensor, *args, **kwargs) -> tf.Tensor:
         layer_out = self.layer(inputs, *args, **kwargs)
         if isinstance(inputs, tuple):
             inputs = inputs[0]
@@ -127,7 +148,11 @@ class Residual(tf.keras.Model):
         return residual
 
 class Highway(tf.keras.Model):
+    """
+    Implementation of a highway layer. Can use convolutional or fully connected layer. 
 
+    From the paper: https://arxiv.org/abs/1607.06450
+    """
     def __init__(self, 
                  convolution: bool = False,
                  activation: str = 'relu',
@@ -139,7 +164,7 @@ class Highway(tf.keras.Model):
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
 
-    def build(self, input_shape) -> None:
+    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
         units = input_shape[-1]
         if self._convolution:
             self.gate = tf.keras.layers.Conv1D(filters=units, 
@@ -154,13 +179,13 @@ class Highway(tf.keras.Model):
                                                 activation=self.activation)
         else:
             self.gate = tf.keras.layers.Dense(units=units,
-                                              activation=self.activation,
+                                              activation='sigmoid',
                                               use_bias=True,
                                               bias_initializer=self._gate_initializer)
             self.layer = tf.keras.layers.Dense(units=units,
                                                activation=self.activation)
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         gated = self.gate(inputs)
         transformed = self.layer(inputs)
         if self.dropout:
@@ -173,11 +198,10 @@ class PositionEmbedding(tf.keras.Model):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-
     def __init__(self):
         super().__init__()
 
-    def build(self, input_shape):
+    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
         hidden_size = input_shape[-1]
         assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
         power = tf.range(0, hidden_size.value, 2, dtype=tf.float32) / hidden_size.value
@@ -185,7 +209,7 @@ class PositionEmbedding(tf.keras.Model):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
@@ -216,11 +240,10 @@ class PositionEmbedding2D(PositionEmbedding):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-
     def __init__(self):
         super().__init__()
 
-    def build(self, input_shape):
+    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
@@ -229,7 +252,7 @@ class PositionEmbedding2D(PositionEmbedding):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs):
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]
