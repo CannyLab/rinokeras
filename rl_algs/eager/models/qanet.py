@@ -307,16 +307,16 @@ class QANet(tf.keras.Model):
             (question, question_characters))
 
         context_encoding = self.embedding_encoder(
-            context_embedding, self_attention_mask=context_mask)
+            context_embedding, self_attention_mask=context_mask, padding_mask=context_mask)
         question_encoding = self.embedding_encoder(
-            question_embedding, self_attention_mask=question_mask)
+            question_embedding, self_attention_mask=question_mask, padding_mask=question_mask)
 
         context_query_attention = self.context_query_attention((question_encoding, context_encoding),
                                                                mask=context_query_mask)
         context_query_projection = self.model_encoder_projection(
             context_query_attention)
         output = self.model_encoder(
-            context_query_projection, self_attention_mask=context_mask)
+            context_query_projection, self_attention_mask=context_mask, padding_mask=context_mask)
 
         return output
 
