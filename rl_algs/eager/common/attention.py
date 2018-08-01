@@ -186,17 +186,17 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         if mask is None:
             return similarity
 
-        assert similarity.ndim in [
+        assert len(similarity.shape) in [
             3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
-        assert mask.ndim == 3, 'Mask must be a 3 dimensional Tensor'
+        assert len(mask.shape) == 3, 'Mask must be a 3 dimensional Tensor'
 
         # There are so many different reasons a mask might be constructed a particular manner.
         # Because of this we don't want to infer a particular construction.
-        assert mask.shape[0] == similarity.shape[0], 'Batch size mismatch between mask and similarity'
-        assert mask.shape[-2] == similarity.shape[-2], 'Mismatch in dimension -2 between mask and similarity'
-        assert mask.shape[-1] == similarity.shape[-1], 'Mismatch in dimension -1 between mask and similarity'
+        assert (mask.shape[0] == similarity.shape[0]) in [None, True], 'Batch size mismatch between mask and similarity'
+        assert (mask.shape[-2] == similarity.shape[-2]) in [None, True], 'Mismatch in dimension -2 between mask and similarity'
+        assert (mask.shape[-1] == similarity.shape[-1]) in [None, True], 'Mismatch in dimension -1 between mask and similarity'
 
-        if mask.ndim != similarity.ndim:
+        if len(mask.shape) != len(similarity.shape):
             mask = tf.expand_dims(mask, 1)
 
         bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)

@@ -92,7 +92,6 @@ class QANetConvBlock(tf.keras.Model):
 
 class QANetInputEmbedding(tf.keras.Model):
 
-    # TODO: Add character level embedding
     def __init__(self,
                  d_model: int,
                  word_embed_initializer: np.ndarray,
@@ -144,6 +143,8 @@ class QANetInputEmbedding(tf.keras.Model):
             embedding: an embedding of the input with shape (batch_size, input_length, d_model)
         """
         words, chars = inputs
+        batch_size = tf.shape(words)[0]
+        input_length = tf.shape(words)[1]
         # word_embedding -> Tensor with shape (batch_size, input_length, 300)
         word_embedding = self.word_embedding(words)
         # char_embedding -> Tensor with shape (batch_size, input_length, 16, 200)
@@ -152,15 +153,15 @@ class QANetInputEmbedding(tf.keras.Model):
             word_embedding = self.dropout(word_embedding)
             char_embedding = self.dropout(char_embedding)
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, 200)
-        char_embedding = tf.reshape(char_embedding, (char_embedding.shape[0] * char_embedding.shape[1],
-                                                     char_embedding.shape[2],
+        char_embedding = tf.reshape(char_embedding, (batch_size * input_length,
+                                                     char_embedding.shape[2],  # These .shapes stay b/c they're constants
                                                      char_embedding.shape[3]))
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, n_filters)
         char_embedding = self.char_conv(char_embedding)
         # char_embedding -> Tensor with shape (batch_size, input_length, n_filters)
         char_embedding = tf.reduce_max(char_embedding, -2)
-        char_embedding = tf.reshape(char_embedding, (word_embedding.shape[0],
-                                                     word_embedding.shape[1],
+        char_embedding = tf.reshape(char_embedding, (batch_size,
+                                                     input_length,
                                                      char_embedding.shape[-1]))
         # embedding -> Tensor with shape (batch_size, input_length, 300 + n_filters)
         embedding = tf.concat((word_embedding, char_embedding), -1)
@@ -321,19 +322,18 @@ class QANet(tf.keras.Model):
         return output
 
     def _convert_padding_mask_to_attention_mask(self, inputs, mask):
-        assert mask.shape[0] == inputs.shape[0], 'Mask and input batch size must match'
-        assert mask.ndim == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
+        assert (mask.shape[0] == inputs.shape[0]) in [None, True], 'Mask and input batch size must match'
+        assert len(mask.shape) == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
 
-        seqlen = inputs.shape[1]
-        mask = tf.tile(mask[:, None, :], (1, seqlen, 1))
+        mask = tf.tile(mask[:, None, :], (1, tf.shape(inputs)[1], 1))
         return mask
 
     def _convert_seqlens_to_attention_mask(self, inputs, seqlens):
-        assert seqlens.shape[0] == inputs.shape[0], 'Seqlens and input batch size must match'
-        assert seqlens.ndim == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
+        assert (seqlens.shape[0] == inputs.shape[0]) in [None, True], 'Seqlens and input batch size must match'
+        assert len(seqlens.shape) == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
 
-        indices = tf.tile(tf.range(inputs.shape[1])[
-                          None, :], (seqlens.shape[0], 1))
+        indices = tf.tile(tf.range(tf.shape(inputs)[1])[
+                          None, :], (tf.shape(seqlens)[0], 1))
         mask = indices < seqlens[:, None]
         return mask
 
