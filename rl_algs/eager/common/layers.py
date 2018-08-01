@@ -43,7 +43,7 @@ class LayerNorm(tf.keras.layers.Layer):
         self.eps = eps
         super().__init__(**kwargs)
 
-    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
+    def build(self, input_shape):
         shape = [input_shape[axis] for axis in self.axis]
 
         self.gamma = self.add_variable(name='gamma',
@@ -56,7 +56,7 @@ class LayerNorm(tf.keras.layers.Layer):
                                       trainable=True)
         super().build(input_shape)
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+    def call(self, inputs):
         mean = K.mean(inputs, axis=self.axis, keepdims=True)
         std = K.std(inputs, axis=self.axis, keepdims=True)
         return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
@@ -76,7 +76,7 @@ class Stack(tf.keras.Model):
             for layer in layers:
                 self.add(layer)
 
-    def add(self, layer: Callable[[tf.Tensor], tf.Tensor]) -> None:
+    def add(self, layer):
         self._layers.append(layer)
 
     def call(self, inputs, **kwargs):
@@ -146,7 +146,7 @@ class Residual(tf.keras.Model):
         super().__init__()
         self.layer = layer
 
-    def call(self, inputs: tf.Tensor, *args, **kwargs) -> tf.Tensor:
+    def call(self, inputs, *args, **kwargs):
         layer_out = self.layer(inputs, *args, **kwargs)
         if isinstance(inputs, tuple):
             inputs = inputs[0]
@@ -173,7 +173,7 @@ class Highway(tf.keras.Model):
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
 
-    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
+    def build(self, input_shape):
         units = input_shape[-1]
         if self._convolution:
             self.gate = tf.keras.layers.Conv1D(filters=units,
@@ -194,7 +194,7 @@ class Highway(tf.keras.Model):
             self.layer = tf.keras.layers.Dense(units=units,
                                                activation=self.activation)
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+    def call(self, inputs):
         gated = self.gate(inputs)
         transformed = self.layer(inputs)
         if self.dropout:
@@ -208,10 +208,10 @@ class PositionEmbedding(tf.keras.Model):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
+    def build(self, input_shape):
         hidden_size = input_shape[-1]
         assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
         power = tf.range(0, hidden_size.value, 2,
@@ -220,7 +220,7 @@ class PositionEmbedding(tf.keras.Model):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+    def call(self, inputs):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
@@ -256,7 +256,7 @@ class PositionEmbedding2D(PositionEmbedding):
     def __init__(self):
         super().__init__()
 
-    def build(self, input_shape: Sequence[tf.Dimension]) -> None:
+    def build(self, input_shape):
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
@@ -266,7 +266,7 @@ class PositionEmbedding2D(PositionEmbedding):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+    def call(self, inputs):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]
