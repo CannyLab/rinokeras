@@ -126,15 +126,15 @@ class TransformerEncoder(tf.keras.Model):
             Returns:
                 output: a Tensor with shape [batch_size, sequence_length, d_model]
         """
-        assert inputs.ndim == 3, 'Input dimension incorrect: {}'.format(
+        assert len(inputs.shape) == 3, 'Input dimension incorrect: {}'.format(
             inputs.shape)
         if attention_mask is not None:
-            assert attention_mask.ndim == 3, 'Mask dimension incorrect: {}'.format(
+            assert len(attention_mask.shape) == 3, 'Mask dimension incorrect: {}'.format(
                 attention_mask.shape)
-            assert attention_mask.shape[-1] == attention_mask.shape[-2], \
+            assert (attention_mask.shape[-1] == attention_mask.shape[-2]) in [None, True], \
                 'Last two mask dimensions must match {}'.format(
                     attention_mask.shape)
-            assert attention_mask.shape[-2] == inputs.shape[1], 'Mask sequence dimensions must match'
+            assert (attention_mask.shape[-2] == inputs.shape[1]) in [None, True], 'Mask sequence dimensions must match'
 
         output = self.encoding_stack(
             inputs, self_attention_mask=attention_mask)
@@ -175,17 +175,17 @@ class TransformerDecoder(tf.keras.Model):
         """
         encoder_output, target_embedding = inputs
 
-        assert target_embedding.ndim == 3, 'Target dimension incorrect: {}'.format(
+        assert len(target_embedding.shape) == 3, 'Target dimension incorrect: {}'.format(
             target_embedding.shape)
-        assert encoder_output.ndim == 3, 'Encoder dimension incorrect: {}'.format(
+        assert len(encoder_output.shape) == 3, 'Encoder dimension incorrect: {}'.format(
             encoder_output.shape)
         if attention_mask is not None:
-            assert attention_mask.ndim == 3, 'Mask dimension incorrect: {}'.format(
+            assert len(attention_mask.shape) == 3, 'Mask dimension incorrect: {}'.format(
                 attention_mask.shape)
-            assert attention_mask.shape[-1] == encoder_output.shape[1], \
+            assert (attention_mask.shape[-1] == encoder_output.shape[1]) in [None, True], \
                 'Attention mask and encoder output shape mismatch ({}, {})'.format(attention_mask.shape[-1],
                                                                                    encoder_output.shape[1])
-            assert attention_mask.shape[-2] == target_embedding.shape[1], \
+            assert (attention_mask.shape[-2] == target_embedding.shape[1]) in [None, True], \
                 'Attention mask and target embedding shape mismatch ({}, {})'.format(attention_mask.shape[-2],
                                                                                      target_embedding.shape[1])
 
@@ -237,8 +237,8 @@ class TransformerInputEmbedding(tf.keras.Model):
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
             if embedding_initializer is not None:
-                assert embedding_initializer.shape[0] == n_symbols, 'n_symbols and initializer shape mismatch'
-                assert embedding_initializer.shape[1] == embed_size, 'embed_size, initializer shape mismatch'
+                assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
+                assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
                 self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
                                                            weights=[
                                                                embedding_initializer],
@@ -362,16 +362,16 @@ class Transformer(tf.keras.Model):
         output = self.output_layer(decoder_output)
         return output
 
-    def call(self, inputs, attention_mask=None, shift_target_sequence_right=True, training=True):
+    def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
         source_sequence, target_sequence = inputs
 
         if attention_mask is not None:
-            if attention_mask.ndim == 2:
+            if len(attention_mask.shape) == 2:
                 encoder_mask = self._convert_padding_mask_to_attention_mask(
                     source_sequence, attention_mask)
                 decoder_mask = self._convert_padding_mask_to_attention_mask(
                     target_sequence, attention_mask)
-            elif attention_mask.ndim == 1:
+            elif len(attention_mask.shape) == 1:
                 encoder_mask = self._convert_seqlens_to_attention_mask(
                     source_sequence, attention_mask)
                 decoder_mask = self._convert_seqlens_to_attention_mask(
@@ -387,18 +387,17 @@ class Transformer(tf.keras.Model):
         return decoder_output
 
     def _convert_padding_mask_to_attention_mask(self, inputs, mask):
-        assert mask.shape[0] == inputs.shape[0], 'Mask and input batch size must match'
-        assert mask.ndim == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
+        assert (mask.shape[0] == inputs.shape[0]) in [None, True], 'Mask and input batch size must match'
+        assert (len(mask.shape) == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
 
-        seqlen = inputs.shape[1]
-        mask = tf.tile(mask[:, None, :], (1, seqlen, 1))
+        mask = tf.tile(mask[:, None, :], (1, tf.shape(inputs)[1], 1))
         return mask
 
     def _convert_seqlens_to_attention_mask(self, inputs, seqlens):
-        assert seqlens.shape[0] == inputs.shape[0], 'Seqlens and input batch size must match'
-        assert seqlens.ndim == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
+        assert (seqlens.shape[0] == inputs.shape[0]) in [None, True], 'Seqlens and input batch size must match'
+        assert len(seqlens.shape) == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
 
-        indices = tf.tile(tf.range(inputs.shape[1])[
-                          None, :], (seqlens.shape[0], 1))
+        indices = tf.tile(tf.range(tf.shape(inputs)[1])[
+                          None, :], (tf.shape(seqlens)[0], 1))
         mask = indices < seqlens[:, None]
         return mask
