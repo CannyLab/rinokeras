@@ -27,13 +27,13 @@ if args.eager:
     tf.enable_eager_execution()
 
 if not args.eager:
-    from rl_algs.policies import StandardPolicy, LSTMPolicy, RandomPolicy
-    from rl_algs.trainers import DQNTrainer, PGTrainer, PPOTrainer
+    from rinokeras.rl.policies import StandardPolicy, LSTMPolicy, RandomPolicy
+    from rinokeras.rl.trainers import DQNTrainer, PGTrainer, PPOTrainer
 else:
-    from rl_algs.eager.policies import StandardPolicy, LSTMPolicy
-    from rl_algs.eager.trainers import PGTrainer, PPOTrainer
-from rl_algs.utils import ReplayBuffer, PiecewiseSchedule
-from rl_algs.env_runners import PGEnvironmentRunner, DQNEnvironmentRunner
+    from rinokeras.rl.eager.policies import StandardPolicy, LSTMPolicy
+    from rinokeras.rl.eager.trainers import PGTrainer, PPOTrainer
+from rinokeras.rl.utils import ReplayBuffer, PiecewiseSchedule
+from rinokeras.rl.env_runners import PGEnvironmentRunner, DQNEnvironmentRunner
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(args.device)
@@ -120,7 +120,7 @@ if args.alg == 'dqn':
 
     for t in itertools.count():
         if trainer.num_param_updates == args.max_learning_steps:
-            from rl_algs.trainers.PPO import PPOTrainer
+            from rinokeras.rl.trainers.PPO import PPOTrainer
             break
         if benchmark_file and trainer.num_param_updates % 1000 == 0:
             with open(benchmark_file, 'wb') as f:

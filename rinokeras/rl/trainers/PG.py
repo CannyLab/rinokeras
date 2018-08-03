@@ -149,3 +149,4 @@ class PPOTrainer(PGTrainer):
             _, loss, value_loss = sess.run([self._update_op, self._surr_loss, self._value_loss], feed_dict=feed_dict)
         self._num_param_updates += 1
         return loss, value_loss
+

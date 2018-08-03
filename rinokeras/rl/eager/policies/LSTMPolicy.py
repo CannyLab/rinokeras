@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from rl_algs.eager.common.rnn import EagerLSTM
+from rinokeras.common.rnn import EagerLSTM
 from .StandardPolicy import StandardPolicy
 
 class LSTMPolicy(StandardPolicy):

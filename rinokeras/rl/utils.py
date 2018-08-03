@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 
 # Modified from an implementation from Deepmind
 class ReplayBuffer(object):
@@ -335,8 +336,3 @@ def read_tfrecord(dataformat, filename):
     dataset = dataset.map(_parse_function)
 
     return dataset
-
-
-
-
-

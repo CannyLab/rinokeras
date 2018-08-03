@@ -151,7 +151,7 @@ class StandardPolicy(TFPolicy):
 
     def step(self, obs, states, dones):
         sess = self._get_session()
-        actions, values, neglogpac = sess.run([self._action, self._value, self._neglogpac], feed_dict = {self.sy_obs : obs})
+        actions, values, neglogpac = sess.run([self._action, self._value, self._neglogpac], feed_dict = {self.sy_obs : obs}) # TODO: Instance of 'StandardPolicy' has no '_neglogpac' member
         return actions, values, None, neglogpac
 
     def predict_value(self, obs, dummy, dummy1):

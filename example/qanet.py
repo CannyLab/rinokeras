@@ -2,8 +2,8 @@
 import numpy as np
 import tensorflow as tf
 
-from dataflow.datasets.nlp.newslens import NLQA  # Get the NLQA dataset
-from rl_algs.eager.models.qanet import QANet  # Get the QANet keras model
+from flux.datasets.nlp.newslens import NLQA  # Get the NLQA dataset
+from rinokeras.models.qanet import QANet  # Get the QANet keras model
 
 # Enable eager execution in tensorflow
 tf.enable_eager_execution()

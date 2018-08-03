@@ -79,5 +79,3 @@ class TFPolicy(Policy):
     # rather than on host.
     def feed_dict_extras(self, batch):
         return {}
-
-

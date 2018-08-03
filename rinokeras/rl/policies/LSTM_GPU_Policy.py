@@ -40,7 +40,7 @@ class LSTMPolicy(StandardPolicy):
                 func = slim.conv2d if self._use_conv else slim.fully_connected
                 for layer in self._embedding_architecture:
                     out = func(out, *layer)
-                    self._layers.append(tf.contrib.layers.flatten(out))
+                    self._layers.append(tf.contrib.layers.flatten(out)) #TODO: Instance of 'dict' has no 'append' member
                 out = self._layers[-1]
                 embedding_size = tf.shape(out)[1]
                 out = tf.reshape(out, (batch_size, num_timesteps, embedding_size))
@@ -70,7 +70,7 @@ class LSTMPolicy(StandardPolicy):
 
             lstm_c, lstm_h = lstm_state
             self._embedding = tf.reshape(lstm_outputs, [-1, self._lstm_cell_size])
-            self._layers.append(self._embedding)
+            self._layers.append(self._embedding)  #TODO: Instance of 'dict' has no 'append' member
 
             # All this stuff is only needed when collecting rollouts, so can hardcode [0, :]
             # self._state_out = [lstm_c[:1,:], lstm_h[:1,:]] # doing it like this does keepdims automatically I think
@@ -110,6 +110,3 @@ class LSTMPolicy(StandardPolicy):
                 # self._state_in[1] : np.tile(self._state_init[1], (batch_size, 1))
         # }
         # return extras
-
-
-        

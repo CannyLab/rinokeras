@@ -103,6 +103,7 @@ ENV/
 # Vim files
 *.swp
 *.swo
+.vscode/
 
 benchmark
 benchmark/*

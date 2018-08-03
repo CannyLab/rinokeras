@@ -398,7 +398,7 @@ class VectorizedRunner:
 
     @property
     def summary(self):
-        return '\t' + ', '.join(self._get_printstr())
+        return '\t' + ', '.join(self._get_printstr()) #TODO: VectorizedRunner has no '_get_printstr' member
 
     @property
     def isDone(self):

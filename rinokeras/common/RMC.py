@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from rl_algs.eager.common.attention import MultiHeadAttentionMap, ScaledDotProductSimilarity
+from rinokeras.common.attention import MultiHeadAttentionMap, ScaledDotProductSimilarity
 
 
 # https://arxiv.org/pdf/1806.01822.pdf

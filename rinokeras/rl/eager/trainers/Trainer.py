@@ -2,14 +2,14 @@ import tensorflow as tf
 
 class Trainer(object):
 
-    def __init__(self, model, optimizer: str = 'adam') -> None:
+    def __init__(self, model, optimizer: str = 'adam', learning_rate: float = 1e-3) -> None:
         self._model = model
 
         self._num_param_updates = 0
         if optimizer == 'adam':
-            self._optimizer = tf.train.AdamOptimizer()
+            self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         elif optimizer == 'rmsprop':
-            self._optimizer = tf.train.RMSPropOptimizer()
+            self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 

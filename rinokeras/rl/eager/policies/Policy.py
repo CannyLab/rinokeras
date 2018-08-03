@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+
 class Policy(tf.keras.Model):
     def __init__(self, obs_shape, ac_shape, discrete):
         super().__init__()

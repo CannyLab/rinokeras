@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 from .Policy import Policy
-from rl_algs.eager.common.layers import Stack, Conv2DStack, DenseStack, RandomNoise
+from rinokeras.common.layers import Stack, Conv2DStack, DenseStack, RandomNoise
 
 class StandardPolicy(Policy):
 

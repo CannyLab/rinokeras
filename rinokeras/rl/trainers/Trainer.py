@@ -35,3 +35,4 @@ class Trainer(object):
     @property
     def num_param_updates(self):
         return self._num_param_updates
+

@@ -2,8 +2,8 @@ from typing import Optional
 
 import tensorflow as tf
 
-from rl_algs.eager.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
-from rl_algs.eager.common.attention import MultiHeadAttention, SelfAttention
+from rinokeras.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
+from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 
 
 class TransformerSelfAttention(tf.keras.Model):
@@ -362,7 +362,7 @@ class Transformer(tf.keras.Model):
         output = self.output_layer(decoder_output)
         return output
 
-    def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
+    def call(self, inputs, attention_mask=None, shift_target_sequence_right=True, training=True):
         source_sequence, target_sequence = inputs
 
         if attention_mask is not None:
@@ -388,7 +388,7 @@ class Transformer(tf.keras.Model):
 
     def _convert_padding_mask_to_attention_mask(self, inputs, mask):
         assert (mask.shape[0] == inputs.shape[0]) in [None, True], 'Mask and input batch size must match'
-        assert (len(mask.shape) == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
+        assert (len(mask.shape) == 2), 'Can only convert dimension 2 masks to dimension 3 masks'
 
         mask = tf.tile(mask[:, None, :], (1, tf.shape(inputs)[1], 1))
         return mask

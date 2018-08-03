@@ -73,3 +73,4 @@ class DQNTrainer(Trainer):
         sess.run(self._update_target_fn)
         # self._old_policy.copy_other_to_self()
         # self._policy.update_target_network()
+        
