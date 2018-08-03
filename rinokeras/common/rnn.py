@@ -84,8 +84,6 @@ class EagerLSTM(tf.keras.Model):
         hidden_outputs = tf.stack(h_list, axis=1)
         hidden_states = tf.stack(c_list, axis=1)
 
-        # TODO: Fix the hidden_output confusion (output != hidden output)
-
         if self.return_all_states:
             return hidden_outputs, hidden_outputs, hidden_states
         if self.return_state and self.return_sequences:
