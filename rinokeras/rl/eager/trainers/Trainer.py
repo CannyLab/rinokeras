@@ -61,13 +61,16 @@ class Trainer(ABC):
 
         return total_loss, losses
 
-    def _train_eager(self, *args, **kwargs):
+    def _run_eager(self, do_training: bool, *args, **kwargs):
         assert tf.executing_eagerly(), "Cannot call Trainer._train_eager() when not in tf eager mode."
-        grads, loss = self.grads_function(*args, **kwargs)
-        self._optimizer.apply_gradients(zip(grads, self._model.variables))
+        if do_training:
+            grads, loss = self.grads_function(*args, **kwargs)
+            self._optimizer.apply_gradients(zip(grads, self._model.variables))
+        else:
+            loss = self.loss_function(*args, **kwargs)
         return loss
 
-    def _train_graph_placeholders(self, *args, **kwargs):
+    def _run_graph_placeholders(self, do_training: bool, *args, **kwargs):
         assert self._has_placeholders, "Cannot call Trainer._train_graph_placeholders without setting up placeholders."
 
         sess = tf.get_default_session()
@@ -93,10 +96,13 @@ class Trainer(ABC):
             except KeyError:
                 raise KeyError("Expected keyword argument '{}'".format(kw))
 
-        _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        if do_training:
+            _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+        else:
+            loss = sess.run(self._loss, feed_dict=feed_dict)
         return loss
 
-    def _train_graph_handle(self, data_handle: bytes):
+    def _run_graph_handle(self, do_training: bool, data_handle: bytes):
         assert self._has_dataset_handle, "Cannot call Trainer._train_graph_handle without setting up dataset handles."
         if not isinstance(data_handle, bytes):
             raise TypeError("Data handle must be a bytes object")
@@ -105,32 +111,40 @@ class Trainer(ABC):
         if sess is None:
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
 
-        _, loss = sess.run([self._update_op, self._loss], feed_dict={self._handle: data_handle})
+        if do_training:
+            _, loss = sess.run([self._update_op, self._loss], feed_dict={self._handle: data_handle})
+        else:
+            loss = sess.run(self._loss, feed_dict={self._handle: data_handle})
         return loss
 
-    def _train_on_batch(self, 
-                        *args, 
-                        learning_rate: float = 1e-3, 
-                        input_data_format: Optional[str] = None, 
-                        **kwargs):
+    def _run_on_batch(self, 
+                      do_training: bool,
+                      *args, 
+                      learning_rate: float = 1e-3, 
+                      input_data_format: Optional[str] = None, 
+                      **kwargs):
         self._optimizer._lr = learning_rate
         assert input_data_format in [None, 'placeholders', 'handle'], \
             "<input_data_format> must be one of [None, 'placeholders', 'handle']"
         if tf.executing_eagerly():
-            loss = self._train_eager(*args, **kwargs)
+            loss = self._run_eager(do_training, *args, **kwargs)
         elif self._has_placeholders and input_data_format != 'handle':
-            loss = self._train_graph_placeholders(*args, **kwargs)
+            loss = self._run_graph_placeholders(do_training, *args, **kwargs)
         elif self._has_dataset_handle and input_data_format != 'placeholders':
             # This will fail if you pass in the wrong arguments.
             # Not sure if we should catch this error specifically or not.
-            loss = self._train_graph_handle(*args, **kwargs)
+            loss = self._run_graph_handle(do_training, *args, **kwargs)
         else:
             raise ValueError("Either placeholders/handle not set up, or input_data_format incorrectly specified.")
         return loss
 
     def train(self, *args, learning_rate: float = 1e-3, **kwargs):
-        loss = self._train_on_batch(*args, learning_rate=learning_rate, **kwargs)
+        loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
         self._num_param_updates += 1
+        return loss
+
+    def loss(self, *args, **kwargs):
+        loss = self._run_on_batch(False, *args, **kwargs)
         return loss
 
     def setup_from_placeholders(self, *args, **kwargs) -> None:
