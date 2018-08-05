@@ -5,10 +5,62 @@ import tensorflow as tf
 
 class Trainer(ABC):
 
-    """
-    A trainer that automatically applies a loss function to a model. Designed to work in both eager and non-eager mode.
+    """A trainer that automatically applies a loss function to a model. Designed to work in both eager and non-eager 
+    mode. This is an abstract class. To use it, subclass it and implement Trainer.loss_function(...). You shouldn't need
+    to signficantly alter any other functions (except for certain algorithms like PPO where the loss function gets
+    updated as you iterate over a batch).
+    
+    Usage:
+        Eager Mode: 
+            The trainer is designed to be extremely easy to use in Eager mode. Once you define the loss 
+            function, just call Trainer.train(...) or Trainer.loss(...) using the same arguments you defined in 
+            loss_function(...). As an example, suppose we define the loss function like
 
-    Has support for using TFDatasets.
+                def loss_function(features, labels):
+                    ...
+
+            Then we would call any of the following:
+
+                loss = trainer.train(batch_features, batch_labels)
+                loss = trainer.train(features=batch_features, labels=batch_labels)
+
+                batch = {'features', 'labels'}
+                loss = trainer.train(**batch)
+
+            In eager mode, Trainer.loss is just an alias to loss_function.
+
+        Placeholders:
+            In non-eager mode, when training with placeholders, the usage is designed to be extremely similar
+            to eager mode. However, instead of calling Trainer.train(...) right away, you have to call
+            Trainer.setup_from_placeholders(...). As an example, we would say
+
+                feature_ph = tf.placeholder(...)
+                label_ph = tf.placeholder(...)
+                trainer.setup_from_placeholders(feature_ph, label_ph)
+                trainer.train(batch_features, batch_labels)
+
+            A few notes. Trainer.setup_from_placeholders(...) only needs to be called once. Also, while you can
+            set up placeholders in any way, you must follow the same signature afterwards when you call train.
+            In other words, if you pass in placeholders as non-keyword arguments, you must pass in batches
+            as non-keyword arguments and vice versa. A TODO is to fix this, possibly using getfullargspec.
+
+        Datasets:
+            Training with tf datasets is a little different, although arguably easier. To do so, you must
+            first call Trainer.setup_from_dataset(<my_dataset>), passing in your tf.data.Dataset. That 
+            is the only setup required. At train time, get the iterator for your dataset, then get the
+            string handle via
+
+                data_handle = sess.run(iterator.string_handle())
+
+            You then pass this handle in to Trainer.train(...) or Trainer.loss(...), and that's it!
+            The only tricky thing about this is that it passes inputs from the dataset to your loss function
+            like so:
+
+                batch = iterator.get_next()
+                loss = trainer.loss_function(*batch) or trainer.loss_function(**batch)
+
+            This means that your dataset should parse examples into either a tuple with the same ordering
+            as the arguments to loss_function or a dict with the same keys as the loss function has variable names.
     """
     
     def __init__(self, 
@@ -18,7 +70,7 @@ class Trainer(ABC):
         super().__init__()
         self._model = model
 
-        self._num_param_updates = 0
+        self._num_param_updates: int = 0
         if optimizer == 'adam':
             self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         elif optimizer == 'rmsprop':
@@ -26,8 +78,8 @@ class Trainer(ABC):
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
-        self._has_placeholders = False
-        self._has_dataset_handle = False
+        self._has_placeholders: bool = False
+        self._has_dataset_handle: bool = False
 
     def _batch_norm(self, array, mean, var):
         array = array - mean
@@ -39,6 +91,16 @@ class Trainer(ABC):
         raise NotImplementedError("Must implement a loss function.")
 
     def grads_function(self, *args, **kwargs):
+        """Computes the gradient of the loss function wrt model parameters.
+        
+        Args:
+            *args: Positional arguments to loss_function
+            **kwargs: Key word arguments to loss function
+        
+        Returns:
+            grads (List[tf.Tensor]): Gradients of the model parameters
+            losses: Different losses returned by loss_function
+        """
         if tf.executing_eagerly():
             with tf.GradientTape() as tape:
                 loss = self.loss_function(*args, **kwargs)
@@ -62,6 +124,16 @@ class Trainer(ABC):
         return total_loss, losses
 
     def _run_eager(self, do_training: bool, *args, **kwargs):
+        """Runs the model in eager mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
         assert tf.executing_eagerly(), "Cannot call Trainer._train_eager() when not in tf eager mode."
         if do_training:
             grads, loss = self.grads_function(*args, **kwargs)
@@ -71,6 +143,16 @@ class Trainer(ABC):
         return loss
 
     def _run_graph_placeholders(self, do_training: bool, *args, **kwargs):
+        """Runs the model with placeholders in graph mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
         assert self._has_placeholders, "Cannot call Trainer._train_graph_placeholders without setting up placeholders."
 
         sess = tf.get_default_session()
@@ -103,6 +185,15 @@ class Trainer(ABC):
         return loss
 
     def _run_graph_handle(self, do_training: bool, data_handle: bytes):
+        """Runs the model with a tf.data.Dataset in graph mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            data_handle (bytes): Handle to a tf.data.Iterator
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
         assert self._has_dataset_handle, "Cannot call Trainer._train_graph_handle without setting up dataset handles."
         if not isinstance(data_handle, bytes):
             raise TypeError("Data handle must be a bytes object")
@@ -123,6 +214,23 @@ class Trainer(ABC):
                       learning_rate: float = 1e-3, 
                       input_data_format: Optional[str] = None, 
                       **kwargs):
+        """Runs the model on an input batch, automatically choosing which method to run with.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or just evaluate the loss.
+            *args: Positional arguments to loss function or a handle to a tf.data.Iterator
+            learning_rate (float, optional): Learning rate for optimizer
+            input_data_format (Optional[str], optional): If model set up for placeholder and dataset training, 
+                                                         allows you to choose the input data format.
+            **kwargs: Keyword arguments to loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        
+        Raises:
+            ValueError: If run in graph mode and no placeholders/handles are set up, or if you specify a type 
+                        with input_data_format that the trainer is not set up for.
+        """
         self._optimizer._lr = learning_rate
         assert input_data_format in [None, 'placeholders', 'handle'], \
             "<input_data_format> must be one of [None, 'placeholders', 'handle']"
@@ -139,15 +247,41 @@ class Trainer(ABC):
         return loss
 
     def train(self, *args, learning_rate: float = 1e-3, **kwargs):
+        """Trains model on an input batch. Can specify the learning rate. 
+        See the class docstring for full usage instructions.
+        
+        Args:
+            *args: Positional arguments to loss function
+            learning_rate (float, optional): Learning rate for optimizer
+            **kwargs: Keyword arguments to loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
         loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
         self._num_param_updates += 1
         return loss
 
     def loss(self, *args, **kwargs):
+        """Evaluates loss function on an input batch. See the class docstring for full usage instructions.
+        
+        Args:
+            *args: Positional arguments to loss function
+            **kwargs: Keyword arguments to loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
         loss = self._run_on_batch(False, *args, **kwargs)
         return loss
 
     def setup_from_placeholders(self, *args, **kwargs) -> None:
+        """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+        
+        Args:
+            *args: Placeholders for positional arguments to loss function
+            **kwargs: Placeholders for keyword arguments to loss function
+        """
         loss = self.loss_function(*args, **kwargs)
         total_loss, losses = self._unpack_losses(loss)
         update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
@@ -160,6 +294,12 @@ class Trainer(ABC):
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
+        """Sets up dataset handles so that you can call trainer.train or trainer.loss and just pass in the 
+        iterator handle.
+        
+        Args:
+            dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
+        """
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
@@ -179,5 +319,9 @@ class Trainer(ABC):
         self._has_dataset_handle = True
 
     @property
-    def num_param_updates(self):
+    def num_param_updates(self) -> int:
+        """
+        Returns:
+            int: Number of times the train(...) function has been called.
+        """
         return self._num_param_updates
