@@ -342,7 +342,9 @@ class VectorizedRunner:
         obs = self._prepareObs(obs, rew)
         if self._variable_length:
             seqlens = np.array([runner._obs.shape[0] for runner in self._current_runners], dtype=np.int32)
-            action = self._agent.predict(obs, padding_mask=tf.constant(seqlens, dtype=tf.int32))
+            if tf.executing_eagerly():
+                seqlens = tf.constant(seqlens, dtype=tf.int32)
+            action = self._agent.predict(obs, padding_mask=seqlens)
         else:
             action = self._agent.predict(obs)
         action = [action[i] for i in range(len(self._current_runners))]
