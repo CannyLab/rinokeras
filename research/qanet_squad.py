@@ -5,6 +5,7 @@ import sys
 import os
 
 from flux.datasets.nlp.squad import Squad  # Get the Squad dataset
+from flux.processing.nlp.embedding.glove import GloveEmbedding
 from rinokeras.models.qanet import QANet  # Get the QANet keras model
 
 # Enable eager execution in tensorflow
@@ -18,7 +19,7 @@ VAL_ITERS = 50
 MAX_WORD_LEN = 766
 
 # Construct the dataset
-dataset = Squad()
+dataset = Squad(nohashcheck=True)
 print(dataset.info())
 
 # construct the networks
@@ -60,7 +61,7 @@ def compute_accuracy(logits, labels_st, labels_et):
 
 
 # Build the embedding matrices
-word_embedding_matrix = np.random.random(size=(dataset.word_vocab_size, 300))
+word_embedding_matrix = GloveEmbedding().GenerateMatrix(dataset.dictionary.word_dictionary)  # np.random.random(size=(dataset.word_vocab_size, 300))
 char_embedding_matrix = np.random.random(size=(dataset.char_vocab_size, 200))
 
 print(word_embedding_matrix.shape, char_embedding_matrix.shape)
@@ -79,7 +80,7 @@ checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
 # Build the DB for the records
 train_db = dataset.train_db.shuffle(
     buffer_size=3000).repeat().batch(BATCH_SIZE)
-val_db = dataset.dev_db.shuffle(buffer_size=3000).repeat().batch(BATCH_SIZE)
+val_db = dataset.val_db.shuffle(buffer_size=3000).repeat().batch(BATCH_SIZE)
 train_iterator = tf.contrib.eager.Iterator(train_db)
 val_iterator = tf.contrib.eager.Iterator(val_db)
 
