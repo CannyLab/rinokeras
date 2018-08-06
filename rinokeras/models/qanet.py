@@ -293,8 +293,10 @@ class QANet(tf.keras.Model):
         question_mask = question_mask[:, :question_maxlen]
         context_characters = context_characters[:, :context_maxlen]
         question_characters = question_characters[:, :question_maxlen]
-        answer_index1 = answer_index1[:, :context_maxlen]
-        answer_index2 = answer_index2[:, :context_maxlen]
+
+        # TODO: Compute something useful with the answer indices
+        # answer_index1 = answer_index1[:, :context_maxlen]
+        # answer_index2 = answer_index2[:, :context_maxlen]
 
         context_query_mask = self._convert_padding_masks_to_context_query_mask(
             question_mask, context_mask)
