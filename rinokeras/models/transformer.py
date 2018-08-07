@@ -249,8 +249,8 @@ class TransformerInputEmbedding(tf.keras.Model):
         else:
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
-            self.embedding = tf.keras.layers.Dense(
-                embed_size, activation='relu')
+            self.embedding = tf.keras.layers.Dense(embed_size, activation='relu')
+            
         self.position_embedding = PositionEmbedding()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
@@ -348,11 +348,15 @@ class Transformer(tf.keras.Model):
                                shift_target_sequence_right,
                                training):
         if shift_target_sequence_right:
-            batch_size, target_size = tf.shape(target_sequence)[
-                0], target_sequence.shape.as_list()[-1]
-            first_zeros = tf.zeros((batch_size, 1, target_size))
-            target_sequence = tf.concat(
-                (first_zeros, target_sequence[:, :-1]), axis=1)
+            if self.discrete:
+                batch_size, target_size = tf.shape(target_sequence)[0], tf.shape(target_sequence)[1]
+                first_zeros = tf.zeros((batch_size, 1, target_size))
+            else:
+                batch_size, target_size = tf.shape(target_sequence)[0], target_sequence.shape.as_list()[-1]
+                first_zeros = tf.zeros((batch_size, 1, target_size))
+
+            first_zeros = tf.cast(first_zeros, target_sequence.dtype)
+            target_sequence = tf.concat((first_zeros, target_sequence[:, :-1]), axis=1)
 
         target_embedding = self.target_embedding(target_sequence)
         decoder_output = self.decoder((encoder_output, target_embedding),
@@ -362,20 +366,28 @@ class Transformer(tf.keras.Model):
         output = self.output_layer(decoder_output)
         return output
 
-    def call(self, inputs, attention_mask=None, shift_target_sequence_right=True, training=True):
+    def call(self, inputs, encoder_mask=None, decoder_mask=None, shift_target_sequence_right=True, training=True):
         source_sequence, target_sequence = inputs
 
-        if attention_mask is not None:
-            if len(attention_mask.shape) == 2:
+        if encoder_mask is not None:
+            if len(encoder_mask.shape) == 2:
                 encoder_mask = self._convert_padding_mask_to_attention_mask(
-                    source_sequence, attention_mask)
-                decoder_mask = self._convert_padding_mask_to_attention_mask(
-                    target_sequence, attention_mask)
-            elif len(attention_mask.shape) == 1:
+                    source_sequence, encoder_mask)
+            elif len(encoder_mask.shape) == 1:
                 encoder_mask = self._convert_seqlens_to_attention_mask(
-                    source_sequence, attention_mask)
+                    source_sequence, encoder_mask)
+
+        if decoder_mask is not None:
+            if len(decoder_mask.shape) == 2:
+                decoder_mask = self._convert_padding_mask_to_attention_mask(
+                    target_sequence, decoder_mask)
+            elif len(decoder_mask.shape) == 1:
                 decoder_mask = self._convert_seqlens_to_attention_mask(
-                    target_sequence, attention_mask)
+                    target_sequence, decoder_mask)
+
+        # Make sure that the encoder/decoder masks are of the right type (probably bool)
+        encoder_mask = tf.cast(encoder_mask, tf.bool)
+        decoder_mask = tf.cast(decoder_mask, tf.bool)
 
         encoder_output = self.encode_source_sequence(
             source_sequence, attention_mask=encoder_mask)
@@ -397,7 +409,6 @@ class Transformer(tf.keras.Model):
         assert (seqlens.shape[0] == inputs.shape[0]) in [None, True], 'Seqlens and input batch size must match'
         assert len(seqlens.shape) == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
 
-        indices = tf.tile(tf.range(tf.shape(inputs)[1])[
-                          None, :], (tf.shape(seqlens)[0], 1))
+        indices = tf.tile(tf.range(tf.shape(inputs)[1])[None, :], (tf.shape(seqlens)[0], 1))
         mask = indices < seqlens[:, None]
-        return mask
+        return self._convert_padding_mask_to_attention_mask(inputs, mask)
