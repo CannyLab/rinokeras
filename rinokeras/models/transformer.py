@@ -35,7 +35,7 @@ class TransformerFeedForward(tf.keras.Model):
     def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
         super().__init__()
         dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
-        self.dropout=None
+        self.dropout = None
         if dropout is not None:
             self.dropout = tf.keras.layers.Dropout(dropout)
         self.residual_dense = Residual(dense_relu_dense)
