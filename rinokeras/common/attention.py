@@ -163,8 +163,7 @@ class ScaledDotProductSimilarity(tf.keras.layers.Layer):
         queries, keys = inputs
         key_dim = tf.cast(tf.shape(keys)[-1], tf.float32)
 
-        similarity = tf.matmul(
-            queries, keys, transpose_b=True) / tf.sqrt(key_dim)
+        similarity = tf.matmul(queries, keys, transpose_b=True) / tf.sqrt(key_dim)
 
         return similarity
 
@@ -186,8 +185,7 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         if mask is None:
             return similarity
 
-        assert len(similarity.shape) in [
-            3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
+        assert len(similarity.shape) in [3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
         assert len(mask.shape) == 3, 'Mask must be a 3 dimensional Tensor'
 
         # There are so many different reasons a mask might be constructed a particular manner.
@@ -199,6 +197,9 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         if len(mask.shape) != len(similarity.shape):
             mask = tf.expand_dims(mask, 1)
 
+        # We know that we're passing this through a softmax later, thus just add a relatively large negative
+        # value to mask the output avoids a hadamard product (though I think that technically it's not 
+        # any more efficient to do it this way operations wise)
         bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
         masked_similarity = similarity + bias
         return masked_similarity
@@ -272,8 +273,7 @@ class MultiHeadAttentionMap(AttentionMap):
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split = super().call(
-            (queries_split, keys_split, values_split), mask=mask)
+        attention_output_split = super().call((queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         return output
 
