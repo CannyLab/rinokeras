@@ -295,7 +295,7 @@ class TransformerInputEmbedding(tf.keras.Model):
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
             self.embedding = tf.keras.layers.Dense(
-                embed_size, activation='relu')
+                embed_size, activation='relu', dtype=tf.float32)
 
         self.position_encoding = PositionEmbedding()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
@@ -473,7 +473,7 @@ class Transformer(tf.keras.Model):
                 first_zeros = tf.zeros((batch_size, 1))
             else:
                 batch_size, target_size = tf.shape(target_sequence)[0], target_sequence.shape.as_list()[-1]
-                first_zeros = tf.zeros((batch_size, 1, target_size))
+                first_zeros = tf.zeros((batch_size, 1, target_size),dtype=target_sequence.dtype)
 
             first_zeros = tf.cast(first_zeros, target_sequence.dtype)
             target_sequence = tf.concat(
