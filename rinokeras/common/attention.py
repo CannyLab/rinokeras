@@ -5,7 +5,7 @@ from tensorflow.python.keras import backend as K  # pylint: disable=E0611
 class LuongAttention(tf.keras.layers.Layer):
 
     def __init__(self, local=False, stddev=1.0):
-        super().__init__()
+        super(LuongAttention, self).__init__()
         self.local = local
         if self.local:
             self.stddev = stddev
@@ -53,7 +53,7 @@ class AttentionQKV(tf.keras.Model):
     def __init__(self,
                  key_depth: int,
                  value_depth: int = None) -> None:
-        super().__init__()
+        super(AttentionQKV, self).__init__()
         if value_depth is None:
             value_depth = key_depth
 
@@ -85,7 +85,7 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
     """
 
     def __init__(self, dropout=None):
-        super().__init__()
+        super(TrilinearSimilarity, self).__init__()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
 
@@ -149,6 +149,8 @@ class ScaledDotProductSimilarity(tf.keras.layers.Layer):
 
     Based on https://arxiv.org/abs/1706.03762.
     """
+    def __init__(self,):
+        super(ScaledDotProductSimilarity, self).__init__()
 
     def call(self, inputs):
         """
@@ -172,6 +174,8 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
     """
     Applies a mask to the attention similarities.
     """
+    def __init__(self, ):
+        super(ApplyAttentionMask, self).__init__()
 
     def call(self, similarity, mask=None):
         """
@@ -211,7 +215,7 @@ class AttentionMap(tf.keras.Model):
     """
 
     def __init__(self, similarity_metric, dropout: float = None) -> None:
-        super().__init__()
+        super(AttentionMap, self).__init__()
         self.similarity_metric = similarity_metric
         self.apply_mask = ApplyAttentionMask()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
@@ -239,7 +243,7 @@ class AttentionMap(tf.keras.Model):
         return output
 
 
-class MultiHeadAttentionMap(AttentionMap):
+class MultiHeadAttentionMap(tf.keras.Model):
 
     def __init__(self, similarity_metric, n_heads: int, dropout: float = None) -> None:
         """Map the multi-headed attention across the map
@@ -252,7 +256,8 @@ class MultiHeadAttentionMap(AttentionMap):
             dropout {float} -- Dropout parameter (default: {None})
         """
 
-        super().__init__(similarity_metric, dropout)
+        super(MultiHeadAttentionMap, self).__init__()
+        self.attention_map = AttentionMap(similarity_metric, dropout)
         self.n_heads = n_heads
 
     def build(self, input_shape):
@@ -273,7 +278,7 @@ class MultiHeadAttentionMap(AttentionMap):
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split = super().call((queries_split, keys_split, values_split), mask=mask)
+        attention_output_split = self.attention_map((queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         return output
 
@@ -310,7 +315,7 @@ class MultiHeadAttention(tf.keras.Model):
                  similarity_metric: str,
                  n_heads: int,
                  dropout: float = None) -> None:
-        super().__init__()
+        super(MultiHeadAttention, self).__init__()
         if similarity_metric != "scaled_dot":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")
@@ -318,9 +323,9 @@ class MultiHeadAttention(tf.keras.Model):
         self.similarity_metric = similarity_metric
         self.n_heads = n_heads
 
-        similarity_metric = ScaledDotProductSimilarity()
+        self.similarity_metric = ScaledDotProductSimilarity()
         self.attention_layer = MultiHeadAttentionMap(
-            similarity_metric, n_heads, dropout)
+            self.similarity_metric, n_heads, dropout)
 
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
@@ -352,7 +357,7 @@ class MultiHeadAttention(tf.keras.Model):
         return output
 
 
-class SelfAttention(MultiHeadAttention):
+class SelfAttention(tf.keras.Model):
     """
     Fast multi-head self attention. Based on the Attention is All You Need paper.
 
@@ -363,19 +368,20 @@ class SelfAttention(MultiHeadAttention):
                  similarity_metric: str,
                  n_heads: int,
                  dropout: float = None) -> None:
-        super().__init__(similarity_metric, n_heads, dropout)
+        super(SelfAttention, self).__init__()
+        self.multi_attention = MultiHeadAttention(similarity_metric, n_heads, dropout)
 
-    def build(self, input_shapes):
-        super().build((input_shapes, input_shapes))
+    # def build(self, input_shapes):
+    #     self.multi_attention.build((input_shapes, input_shapes))
 
     def call(self, inputs, mask=None):
-        return super().call((inputs, inputs), mask=mask)
+        return self.multi_attention((inputs, inputs), mask=mask)
 
 
 class ContextQueryAttention(tf.keras.Model):
 
     def __init__(self, n_heads, output_depth, attention_type="trilinear", dropout=None):
-        super().__init__()
+        super(ContextQueryAttention, self).__init__()
         if attention_type != "trilinear":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")

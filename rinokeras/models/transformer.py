@@ -9,7 +9,7 @@ from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 class TransformerSelfAttention(tf.keras.Model):
 
     def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
-        super().__init__()
+        super(TransformerSelfAttention, self).__init__()
         selfattn = SelfAttention('scaled_dot', n_heads, dropout)
         self.residual_self_attention = Residual(selfattn)
         self.norm = LayerNorm()
@@ -21,7 +21,7 @@ class TransformerSelfAttention(tf.keras.Model):
 
 class TransformerMultiAttention(tf.keras.Model):
     def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
-        super().__init__()
+        super(TransformerMultiAttention, self).__init__()
         multiattn = MultiHeadAttention('scaled_dot', n_heads, dropout)
         self.residual_multi_attention = Residual(multiattn)
         self.norm = LayerNorm()
@@ -33,7 +33,7 @@ class TransformerMultiAttention(tf.keras.Model):
 
 class TransformerFeedForward(tf.keras.Model):
     def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
-        super().__init__()
+        super(TransformerFeedForward, self).__init__()
         dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
         self.dropout = None
         if dropout is not None:
@@ -61,7 +61,7 @@ class TransformerEncoderBlock(tf.keras.Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float] = None) -> None:
-        super().__init__()
+        super(TransformerEncoderBlock, self).__init__()
         self.self_attention = TransformerSelfAttention(n_heads, dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
 
@@ -88,7 +88,7 @@ class TransformerDecoderBlock(tf.keras.Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float] = None) -> None:
-        super().__init__()
+        super(TransformerDecoderBlock, self).__init__()
         self.self_attention = TransformerSelfAttention(n_heads, dropout)
         self.multi_attention = TransformerMultiAttention(n_heads, dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
@@ -124,11 +124,11 @@ class TransformerEncoder(tf.keras.Model):
                  d_model: int,
                  d_filter: int,
                  dropout: Optional[float] = None) -> None:
-        super().__init__()
+        super(TransformerEncoder, self).__init__()
 
         # The encoding stack is a stack of transformer encoder blocks
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout)
-                                     for _ in range(n_layers)])
+                                      for _ in range(n_layers)])
 
     def call(self, inputs, encoder_mask=None, training=True):
         """
@@ -170,9 +170,9 @@ class TransformerDecoder(tf.keras.Model):
                  d_model: int,
                  d_filter: int,
                  dropout: Optional[float] = None) -> None:
-        super().__init__()
+        super(TransformerDecoder, self).__init__()
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
-                                     for _ in range(n_layers)])
+                                    for _ in range(n_layers)])
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
@@ -276,7 +276,7 @@ class TransformerInputEmbedding(tf.keras.Model):
                  dropout: Optional[float] = None,
                  batch_norm: bool = False,
                  embedding_initializer=None) -> None:
-        super().__init__()
+        super(TransformerInputEmbedding, self).__init__()
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
             if embedding_initializer is not None:
@@ -337,7 +337,7 @@ class Transformer(tf.keras.Model):
                  d_filter: int = 2048,
                  dropout: Optional[float] = None,
                  embedding_initializer=None) -> None:
-        super().__init__()
+        super(Transformer, self).__init__()
 
         # Not sure if we need to have the discrete/non-discrete versions
         # Working through this.
