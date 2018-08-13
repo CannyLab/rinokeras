@@ -128,7 +128,7 @@ class TransformerEncoder(tf.keras.Model):
 
         # The encoding stack is a stack of transformer encoder blocks
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout)
-                                      for _ in range(n_layers)])
+                                    for _ in range(n_layers)])
 
     def call(self, inputs, encoder_mask=None, training=True):
         """
@@ -280,10 +280,8 @@ class TransformerInputEmbedding(tf.keras.Model):
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
             if embedding_initializer is not None:
-                assert (embedding_initializer.shape[0] == n_symbols) in [
-                    None, True], 'n_symbols and initializer shape mismatch'
-                assert (embedding_initializer.shape[1] == embed_size) in [
-                    None, True], 'embed_size, initializer shape mismatch'
+                assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
+                assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
                 self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
                                                            weights=[
                                                                embedding_initializer],
@@ -336,7 +334,10 @@ class Transformer(tf.keras.Model):
                  d_model: int = 512,
                  d_filter: int = 2048,
                  dropout: Optional[float] = None,
-                 embedding_initializer=None) -> None:
+                 embedding_initializer=None,
+                 use_preembedded_vectors=False,
+                 multiply_wtih_embedding_transpose=False,
+                 share_source_target_embedding=False) -> None:
         super(Transformer, self).__init__()
 
         # Not sure if we need to have the discrete/non-discrete versions
@@ -354,6 +355,9 @@ class Transformer(tf.keras.Model):
         self.d_model = d_model
         self.d_filter = d_filter
         self.dropout = dropout
+        self.preembedded = use_preembedded_vectors
+        self.mtranspose = multiply_wtih_embedding_transpose
+        self.share_source_target_embedding = share_source_target_embedding
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -368,17 +372,28 @@ class Transformer(tf.keras.Model):
             assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
             assert n_symbols_out is not None, 'n_symbols_out not passed in but model set to discrete'
             assert out_size is None, 'out_size passed in but model set to discrete'
-            assert embedding_initializer is not None, 'embedding_initializer not passed in but model set to discrete'
+            if not self.preembedded:
+                assert embedding_initializer is not None, 'embedding_initializer not passed in but model set to discrete'
+                if self.share_source_target_embedding:
+                    assert n_symbols_in == n_symbols_out, 'n_symbols_in != n_symbols_out but share_source_target_embedding set'
 
         # Compute the input and target embedding layers.
         # This happens in both settings. If we're discrete, the embedding initializer
         # is None, while otherwise we initialize the embedding with the passed in weights.
         # In practice, we need to be able to freeze the embedding weights, which is a feature that we will have
         # to add soon.
-        self.input_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_in, dropout,
-                                                         embedding_initializer=embedding_initializer)
-        self.target_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_out, dropout,
-                                                          embedding_initializer=embedding_initializer)
+
+        self.input_embedding: Optional[TransformerInputEmbedding] = None
+        self.target_embedding: Optional[TransformerInputEmbedding] = None
+
+        if not self.preembedded:
+            self.input_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_in, dropout,
+                                                             embedding_initializer=embedding_initializer)
+            if not self.share_source_target_embedding:
+                self.target_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_out, dropout,
+                                                                  embedding_initializer=embedding_initializer)
+            else:
+                self.target_embedding = self.input_embedding
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
@@ -389,9 +404,11 @@ class Transformer(tf.keras.Model):
             n_layers, n_heads, d_model, d_filter, dropout)
 
         # Build the output layer of the model
-        # TODO: Add support for inverted output layer
-        self.output_layer = tf.keras.layers.Dense(
-            n_symbols_out if discrete else out_size, activation=output_activation)
+        if self.mtranspose:
+            self.output_layer = None
+        else:
+            self.output_layer = tf.keras.layers.Dense(
+                n_symbols_out if discrete else out_size, activation=output_activation)
 
     # Test decoding. Does not use the fast-decode method (which would make this much more effective)
     def test_decode(self, inputs, max_seq_len, encoder_mask=None):
@@ -450,7 +467,10 @@ class Transformer(tf.keras.Model):
         # First, extract the input embedding. This takes a source sequence
         # of shape [batch_size x source_length x input_feature_shape] and
         # produces an output of [batch_size x source_length x d_model]
-        embedding = self.input_embedding(source_sequence, training=training)
+        if not self.preembedded:
+            embedding = self.input_embedding(source_sequence, training=training)
+        else:
+            embedding = source_sequence
 
         # Then actually run it through the embedded decoder which should
         # take a source of shape [batch_size x source_length x d_model] and
@@ -479,14 +499,28 @@ class Transformer(tf.keras.Model):
             target_sequence = tf.concat(
                 (first_zeros, target_sequence[:, :-1]), axis=1)
 
-        target_embedding = self.target_embedding(target_sequence,training=training)
+        if not self.preembedded:
+            target_embedding = self.target_embedding(target_sequence,training=training)
+        else:
+            target_embedding = target_sequence
+
         decoder_output = self.decoder((encoder_output, target_embedding),
                                       encoder_mask=encoder_mask,
                                       decoder_mask=decoder_mask,
                                       mask_future=training,
                                       fast_decode=not training,
                                       training=training)
-        output = self.output_layer(decoder_output)
+
+        if self.mtranspose:
+            # Multiply by the transpose of the target embedding matrix
+            # instead of computing a new embedding
+            embed_mat = self.target_embedding.embedding.weights[0]
+            decoder_output_batchsize = tf.shape(decoder_output)[0]
+            decoder_output = tf.reshape(decoder_output, (-1, tf.shape(embed_mat)[1]))
+            output = tf.matmul(decoder_output, tf.transpose(embed_mat, [1,0]))
+            output = tf.reshape(output, (decoder_output_batchsize, -1, tf.shape(embed_mat)[0]))
+        else:
+            output = self.output_layer(decoder_output)
         return output
 
     def call(self, inputs, encoder_mask=None, decoder_mask=None, shift_target_sequence_right=True, training=True):
@@ -525,6 +559,11 @@ class Transformer(tf.keras.Model):
         # After the end of the encoder and decoder generation phase, we have
         # Encoder Mask: [batch_size x source_length x source_length]
         # Decoder Mask: [batch_size x target_length x target_length]
+        if self.preembedded:
+            assert len(source_sequence.shape) == 3, "Dimensions Mismatch: Pre-Embedded set, but dimension of source sequence ({}) is not 3".format(len(source_sequence.shape))
+            assert len(target_sequence.shape) == 3, "Dimensions Mismatch: Pre-Embedded set, but dimension of target sequence ({}) is not 3".format(len(target_sequence.shape))
+            assert tf.shape(source_sequence)[2] == self.d_model, "Third dimension of pre-embedded input does not match model dimension."
+            assert tf.shape(target_sequence)[2] == self.d_model, "Third dimension of pre-embedded target does not match model dimension."
 
         # Next, we perform the encoding of the sentence. This should take
         # as input a tensor of shape [batch_size x source_length x input_feature_shape]
