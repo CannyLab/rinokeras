@@ -595,7 +595,7 @@ class Transformer(tf.keras.Model):
     # In the natural way, where the batch dimension remains the same, and the input lengths are
     # padded up to the original shape.
     def _convert_seqlens_to_attention_mask(self, inputs, sequence_lengths):
-        assert tf.shape(sequence_lengths)[0] == tf.shape(inputs)[0], \
+        assert sequence_lengths.get_shape()[0] == inputs.get_shape()[0], \
             'Batch size dimension of sequence_lengths and inputs should match ({}, {})'.format(tf.shape(sequence_lengths), tf.shape(inputs))
         assert len(sequence_lengths.get_shape()) == 1, 'Can only convert dimension 1 squence lengths to dimension 3 masks'
 
