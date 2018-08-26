@@ -411,7 +411,11 @@ class Transformer(tf.keras.Model):
                 n_symbols_out if discrete else out_size, activation=output_activation)
 
     # Test decoding. Does not use the fast-decode method (which would make this much more effective)
-    def test_decode(self, inputs, max_seq_len, encoder_mask=None):
+    def test_decode(self, inputs, max_seq_len, encoder_mask=None, preembed_hook=None):
+
+        if self.preembedded:
+            if preembed_hook is None:
+                raise ValueError('Need embedding hook for test-decode when using pre-embedded vectors')
 
         # Fist, initialize ouput_sequence with a 0-tensor which can be the initial target
         target_dtype = tf.int32 if self.discrete else tf.float32  # TODO: Replace this with something more robust
@@ -454,7 +458,11 @@ class Transformer(tf.keras.Model):
 
             # Append the last element of the decoding to the new sequence
             if self.discrete:
-                output_sequence.append(tf.cast(tf.argmax(output[:, -1:],axis=-1),tf.int32))
+                if self.preembedded:
+                    last_el = preembed_hook(tf.cast(tf.argmax(output[:, -1:],axis=-1),tf.int32))
+                    output_sequence.append(last_el)
+                else:
+                    output_sequence.append(tf.cast(tf.argmax(output[:, -1:],axis=-1),tf.int32))
             else:
                 output_sequence.append(output[:, -1:])
 
