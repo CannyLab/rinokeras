@@ -331,7 +331,7 @@ class Transformer(tf.keras.Model):
                  output_activation: Optional[str] = None,
                  n_layers: int = 6,
                  n_heads: int = 8,
-                 d_model: int = 512,
+                 d_model: int = 12,
                  d_filter: int = 2048,
                  dropout: Optional[float] = None,
                  embedding_initializer=None,
@@ -496,7 +496,7 @@ class Transformer(tf.keras.Model):
                                training):
 
         if shift_target_sequence_right:
-            if self.discrete:
+            if self.discrete and not self.preembedded:
                 batch_size = tf.shape(target_sequence)[0]
                 first_zeros = tf.zeros((batch_size, 1))
             else:
@@ -570,8 +570,8 @@ class Transformer(tf.keras.Model):
         if self.preembedded:
             assert len(source_sequence.shape) == 3, "Dimensions Mismatch: Pre-Embedded set, but dimension of source sequence ({}) is not 3".format(len(source_sequence.shape))
             assert len(target_sequence.shape) == 3, "Dimensions Mismatch: Pre-Embedded set, but dimension of target sequence ({}) is not 3".format(len(target_sequence.shape))
-            assert tf.shape(source_sequence)[2] == self.d_model, "Third dimension of pre-embedded input does not match model dimension."
-            assert tf.shape(target_sequence)[2] == self.d_model, "Third dimension of pre-embedded target does not match model dimension."
+            assert source_sequence.get_shape()[2] == self.d_model, "Third dimension of pre-embedded input does not match model dimension."
+            assert target_sequence.get_shape()[2] == self.d_model, "Third dimension of pre-embedded target does not match model dimension."
 
         # Next, we perform the encoding of the sentence. This should take
         # as input a tensor of shape [batch_size x source_length x input_feature_shape]
