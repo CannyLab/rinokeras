@@ -324,7 +324,7 @@ class TransformerInputEmbedding(tf.keras.Model):
 class Transformer(tf.keras.Model):
 
     def __init__(self,
-                 discrete: bool,
+                 discrete: bool = True,
                  n_symbols_in: Optional[int] = None,
                  n_symbols_out: Optional[int] = None,
                  out_size: Optional[int] = None,
@@ -369,10 +369,10 @@ class Transformer(tf.keras.Model):
             assert out_size is not None and out_size > 0, 'out_size not passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continuous'
         else:
-            assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
             assert n_symbols_out is not None, 'n_symbols_out not passed in but model set to discrete'
             assert out_size is None, 'out_size passed in but model set to discrete'
             if not self.preembedded:
+                assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
                 assert embedding_initializer is not None, 'embedding_initializer not passed in but model set to discrete'
                 if self.share_source_target_embedding:
                     assert n_symbols_in == n_symbols_out, 'n_symbols_in != n_symbols_out but share_source_target_embedding set'
