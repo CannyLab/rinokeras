@@ -17,7 +17,7 @@ setup(
     url='https://github.com/CannyLab/rl-algs',
     license=license,
     install_requires=[
-        'nose >= 1.3.7',
+        'pytest >= 3.7.0',
         'numpy >= 1.14.1',
         'tensorflow >= 1.9.0',
     ],
