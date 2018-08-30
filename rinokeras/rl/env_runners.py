@@ -373,7 +373,6 @@ class VectorizedRunner:
             if self._done:
                 self._episode_num += len(self._current_runners)
 
-        self._current_runners = None
         self._done = False
 
     @property

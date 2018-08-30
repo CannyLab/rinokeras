@@ -71,6 +71,9 @@ class Trainer(ABC):
         self._model = model
 
         self._num_param_updates: int = 0
+        self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, trainable=False, initializer=tf.zeros_initializer())
+        if not tf.executing_eagerly():
+            self._increment_step = tf.assign(self._num_param_updates_gpu, self._num_param_updates_gpu + 1)
         if optimizer == 'adam':
             self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         elif optimizer == 'rmsprop':
@@ -179,9 +182,9 @@ class Trainer(ABC):
                 raise KeyError("Expected keyword argument '{}'".format(kw))
 
         if do_training:
-            _, loss = sess.run([self._update_op, self._loss], feed_dict=feed_dict)
+            _, loss = sess.run([self._placeholder_update_op, self._placeholder_loss], feed_dict=feed_dict)
         else:
-            loss = sess.run(self._loss, feed_dict=feed_dict)
+            loss = sess.run(self._placeholder_loss, feed_dict=feed_dict)
         return loss
 
     def _run_graph_handle(self, do_training: bool, data_handle: bytes):
@@ -203,9 +206,9 @@ class Trainer(ABC):
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
 
         if do_training:
-            _, loss = sess.run([self._update_op, self._loss], feed_dict={self._handle: data_handle})
+            _, loss = sess.run([self._handle_update_op, self._handle_loss], feed_dict={self._handle: data_handle})
         else:
-            loss = sess.run(self._loss, feed_dict={self._handle: data_handle})
+            loss = sess.run(self._handle_loss, feed_dict={self._handle: data_handle})
         return loss
 
     def _run_on_batch(self, 
@@ -260,6 +263,13 @@ class Trainer(ABC):
         """
         loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
         self._num_param_updates += 1
+        if tf.executing_eagerly():
+            self._num_param_updates_gpu = self._num_param_updates_gpu + 1
+        else:
+            sess = tf.get_default_session()
+            if sess is None:
+                raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+            sess.run(self._increment_step)
         return loss
 
     def loss(self, *args, **kwargs):
@@ -289,8 +299,8 @@ class Trainer(ABC):
         self._args_in = args
         self._kwargs_in = kwargs
 
-        self._loss = total_loss
-        self._update_op = update_op
+        self._placeholder_loss = total_loss
+        self._placeholder_update_op = update_op
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
@@ -314,8 +324,8 @@ class Trainer(ABC):
         update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
 
         self._handle = handle
-        self._loss = total_loss
-        self._update_op = update_op
+        self._handle_loss = total_loss
+        self._handle_update_op = update_op
         self._has_dataset_handle = True
 
     @property
