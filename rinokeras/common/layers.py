@@ -11,7 +11,7 @@ class RandomNoise(tf.keras.layers.Layer):
     """
 
     def __init__(self, shape: Sequence[int], initial: float) -> None:
-        super().__init__()
+        super(RandomNoise, self).__init__()
         self._shape = shape
         self._logstd = self.add_variable('logstd', shape, dtype=tf.float32,
                                          initializer=tf.constant_initializer(initial))
@@ -41,7 +41,7 @@ class LayerNorm(tf.keras.layers.Layer):
         else:
             self.axis: Sequence[int] = (axis,)
         self.eps = eps
-        super().__init__(**kwargs)
+        super(LayerNorm, self).__init__(**kwargs)
 
     def build(self, input_shape):
         shape = [input_shape[axis] for axis in self.axis]
@@ -70,18 +70,19 @@ class Stack(tf.keras.Model):
     A re-implementation of Keras's Sequential layer to work well with tf eager.
     """
     def __init__(self, layers: Optional[Sequence[Any]] = None) -> None:
-        super().__init__()
+        super(Stack, self).__init__()
         self._call = None
+        self._layer_list = tf.contrib.checkpoint.List()
         if layers is not None:
             for layer in layers:
                 self.add(layer)
 
     def add(self, layer):
-        self._layers.append(layer)
+        self._layer_list.append(layer)
 
     def call(self, inputs, **kwargs):
         output = inputs
-        for layer in self._layers:
+        for layer in self._layer_list:
             output = layer(output, **kwargs)
         return output
 
@@ -96,7 +97,7 @@ class Conv2DStack(Stack):
                  activation: str = 'relu', 
                  padding: str = 'same', 
                  flatten_output: bool = True) -> None:
-        super().__init__()
+        super(Conv2DStack, self).__init__()
         if layers is None:
             layers = []
         for layer in layers:
@@ -118,7 +119,7 @@ class DenseStack(Stack):
                  batch_norm: bool = False, 
                  activation: str = 'relu', 
                  output_activation: Optional[str] = None) -> None:
-        super().__init__()
+        super(DenseStack, self).__init__()
         if layers is None:
             layers = []
         for _, layer in enumerate(layers[:-1]):
@@ -143,7 +144,7 @@ class Residual(tf.keras.Model):
     of the tuple.
     """
     def __init__(self, layer: Callable) -> None:
-        super().__init__()
+        super(Residual, self).__init__()
         self.layer = layer
 
     def call(self, inputs, *args, **kwargs):
@@ -166,7 +167,7 @@ class Highway(tf.keras.Model):
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
                  dropout: Optional[float] = None) -> None:
-        super().__init__()
+        super(Highway, self).__init__()
         self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
@@ -209,7 +210,7 @@ class PositionEmbedding(tf.keras.Model):
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
     def __init__(self) -> None:
-        super().__init__()
+        super(PositionEmbedding, self).__init__()
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
@@ -254,7 +255,7 @@ class PositionEmbedding2D(PositionEmbedding):
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
     def __init__(self):
-        super().__init__()
+        super(PositionEmbedding2D, self).__init__()
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
