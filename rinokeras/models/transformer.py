@@ -394,6 +394,9 @@ class Transformer(tf.keras.Model):
                                                                   embedding_initializer=embedding_initializer)
             else:
                 self.target_embedding = self.input_embedding
+        else:
+            self.positional_encoding = PositionEmbedding()
+
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
@@ -478,7 +481,7 @@ class Transformer(tf.keras.Model):
         if not self.preembedded:
             embedding = self.input_embedding(source_sequence, training=training)
         else:
-            embedding = source_sequence
+            embedding = self.positional_encoding(source_sequence)
 
         # Then actually run it through the embedded decoder which should
         # take a source of shape [batch_size x source_length x d_model] and
@@ -501,7 +504,7 @@ class Transformer(tf.keras.Model):
                 first_zeros = tf.zeros((batch_size, 1))
             else:
                 batch_size, target_size = tf.shape(target_sequence)[0], target_sequence.shape.as_list()[-1]
-                first_zeros = tf.zeros((batch_size, 1, target_size),dtype=target_sequence.dtype)
+                first_zeros = 1e-10* tf.ones((batch_size, 1, target_size),dtype=target_sequence.dtype)
 
             first_zeros = tf.cast(first_zeros, target_sequence.dtype)
             target_sequence = tf.concat(
@@ -510,7 +513,7 @@ class Transformer(tf.keras.Model):
         if not self.preembedded:
             target_embedding = self.target_embedding(target_sequence,training=training)
         else:
-            target_embedding = target_sequence
+            target_embedding = self.positional_encoding(target_sequence)
 
         decoder_output = self.decoder((encoder_output, target_embedding),
                                       encoder_mask=encoder_mask,
