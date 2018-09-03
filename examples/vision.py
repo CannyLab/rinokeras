@@ -120,8 +120,11 @@ if __name__ == '__main__':
 
     moving_average = float('inf')
     itr = 0
+
+    train_iter = train_data.make_one_shot_iterator()
+
     while moving_average > 0.01:
-        x_batch, y_batch = train_data.get_next()
+        x_batch, y_batch = train_iter.get_next()
         loss = run_iteration(trainer, x_batch, y_batch, istraining=True)
         if itr == 0:
             moving_average = loss
@@ -132,7 +135,10 @@ if __name__ == '__main__':
 
     moving_average = 0
     itr = 0
-    for xbatch, ybatch in test_data:
+
+    test_iter = test_data.make_one_shot_iterator()
+
+    for xbatch, ybatch in test_iter:
         moving_average += run_iteration(trainer, x_batch, y_batch, istraining=False)
         itr += 1
 
