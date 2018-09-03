@@ -92,18 +92,18 @@ class Conv2DStack(Stack):
     A stack of convolutional layers. Can optionally do batch normalization after each layer.
     """
     def __init__(self, 
-                 layers: Sequence[tuple], 
+                 filters: Sequence[int],
+                 kernel_size: Sequence[int],
+                 strides: Sequence[int],
                  batch_norm: bool = False, 
                  activation: str = 'relu', 
                  padding: str = 'same', 
-                 flatten_output: bool = True) -> None:
+                 flatten_output: bool = True,
+                 **kwargs) -> None:
         super(Conv2DStack, self).__init__()
-        if layers is None:
-            layers = []
-        for layer in layers:
-            if not isinstance(layer, collections.Iterable):
-                layer = (layer,)
-            self.add(tf.keras.layers.Conv2D(*layer, padding=padding))
+        assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
+        for fsize, ks, stride in zip(filters, kernel_size, strides):
+            self.add(tf.keras.layers.Conv2D(filters, kernel_size, strides, padding=padding, **kwargs))
             if batch_norm:
                 self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))

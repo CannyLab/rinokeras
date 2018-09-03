@@ -11,8 +11,3 @@ class SupervisedTrainer(Trainer):
     def loss_function(self, features, labels):
         predictions = self._model(features)
         return tf.reduce_mean(self._loss_fn(y_true=labels, y_pred=predictions))
-
-    def train(self, batch, learning_rate=1e-3):
-        loss = self._train_on_batch(batch['features'], batch['labels'], learning_rate=learning_rate)
-        self._num_param_updates += 1
-        return loss
