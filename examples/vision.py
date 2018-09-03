@@ -1,11 +1,14 @@
+from typing import Optional
+
 import tensorflow as tf
 
-from rinokeras.common.layers import Conv2DStack, DenseStack
+from rinokeras.common.layers import Conv2DStack, DenseStack, PositionEmbedding2D
+from rinokeras.models.transformer import TransformerEncoder
 from rinokeras.trainers import SupervisedTrainer
 
 class ImageClassifier(tf.keras.Model):
 
-    def __init__(self, n_classes: int):
+    def __init__(self, n_classes: int) -> None:
         super(ImageClassifier, self).__init__()
         self.convstack = Conv2DStack(filters=(32, 64, 128), 
                                      kernel_size=(8, 4, 3), 
@@ -16,19 +19,87 @@ class ImageClassifier(tf.keras.Model):
         self.densestack = DenseStack(layers=(300, n_classes))
 
     def call(self, inputs):
+        """
+        Args:
+            inputs: a uint8/float32 Tensor with shape [batch_size, width, height, channels]
+
+        Returns:
+            output: a float32 Tensor with shape [batch_size, n_classes]
+        """
         if len(inputs.shape) == 3:
             inputs = tf.expand_dims(inputs, -1)
         filters = self.convstack(inputs)
         output = self.densestack(filters)
         return output
 
-def run_iteration(trainer, x_batch, y_batch, istraining):
-    xbatch = tf.cast(xbatch, tf.float32)
-    ybatch = tf.cast(ybatch, tf.int32)
 
-    loss = trainer.train(xbatch, ybatch) if istraining else trainer.loss(xbatch, ybatch)
+class ImageTransformer(tf.keras.Model):
+
+    def __init__(self, 
+                 n_classes: int,
+                 n_layers: int,
+                 n_heads: int,
+                 dropout: Optional[float] = None) -> None:
+        super(ImageTransformer, self).__init__()
+        self.n_classes = n_classes
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.dropout = dropout
+        self.d_model = d_model = 128
+        self.d_filter = d_filter = 4 * d_model
+
+        self.convstack = Conv2DStack(filters=(32, 64, d_model),
+                                     kernel_size=(8, 4, 3),
+                                     strides=(4, 2, 1),
+                                     activation='relu',
+                                     padding='same',
+                                     flatten_output=False)
+        self.pos_embed_2d = PositionEmbedding2D()
+        self.transformer = TransformerEncoder(
+            n_layers, n_heads, d_model, d_filter, dropout)
+
+        self.flatten = tf.keras.layers.Flatten()
+        self.densestack = DenseStack(layers=(300, n_classes))
+
+    def call(self, inputs):
+        """
+        Args:
+            inputs: a uint8/float32 Tensor with shape [batch_size, width, height, channels]
+
+        Returns:
+            output: a float32 Tensor with shape [batch_size, n_classes]
+        """
+        if len(inputs.shape) == 3:
+            inputs = tf.expand_dims(inputs, -1)
+
+        # filters: Tensor with shape [batch_size, width / something, height / something, self.d_model]
+        filters = self.convstack(inputs)
+        # embedded: Tensor with shape [batch_size, width / something, height / something, self.d_model]
+        embedded = self.pos_embed_2d(filters)
+
+        batch_size, new_width, new_height = (tf.shape(embedded)[i] for i in range(3))
+
+        # transformer_input: Tensor with shape [batch_size, width / something * height / something, self.d_model]
+        transformer_input = tf.reshape(embedded, (batch_size, new_width * new_height, self.d_model))
+
+        # transformer_output: Tensor with shape [batch_size, width / something * height / something, self.d_model]
+        transformer_output = self.transformer(transformer_input, encoder_mask=None)
+
+        # logits: Tensor with shape [batch_size, width / something * height / something * self.d_model)]
+        transformer_output_flat = self.flatten(transformer_output)
+        output = self.densestack(transformer_output_flat)
+
+        return output
+
+
+def run_iteration(trainer, x_batch, y_batch, istraining):
+    x_batch = tf.cast(x_batch, tf.float32)
+    y_batch = tf.cast(y_batch, tf.int32)
+
+    loss = trainer.train(x_batch, y_batch) if istraining else trainer.loss(x_batch, y_batch)
 
     return loss.numpy()
+
 
 if __name__ == '__main__':
     tf.enable_eager_execution()
@@ -56,7 +127,7 @@ if __name__ == '__main__':
             moving_average = loss
         else:
             moving_average = 0.99 * moving_average + 0.01 * loss
-        if itf % 10 == 0:
+        if itr % 10 == 0:
             print("Loss:", moving_average)
 
     moving_average = 0
@@ -66,4 +137,3 @@ if __name__ == '__main__':
         itr += 1
 
     print("Test Loss:", moving_average / itr)
-
