@@ -1,2 +1,3 @@
-from .PG import PGTrainer, PPOTrainer
-from .DQN import DQNTrainer
+from .Trainer import Trainer
+from .PolicyGradient import PGTrainer
+from .PPO import PPOTrainer
