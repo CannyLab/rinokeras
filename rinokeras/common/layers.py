@@ -103,11 +103,12 @@ class Conv2DStack(Stack):
         super(Conv2DStack, self).__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
         for fsize, ks, stride in zip(filters, kernel_size, strides):
-            self.add(tf.keras.layers.Conv2D(filters, kernel_size, strides, padding=padding, **kwargs))
+            self.add(tf.keras.layers.Conv2D(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
                 self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))
-        self.add(tf.keras.layers.Flatten())
+        if flatten_output:
+            self.add(tf.keras.layers.Flatten())
 
 
 class DenseStack(Stack):
@@ -261,8 +262,8 @@ class PositionEmbedding2D(PositionEmbedding):
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
-        power = tf.range(0, self.hidden_size, 4,
-                         dtype=tf.float32) / self.hidden_size
+        power = tf.range(0, hidden_size.value, 4,
+                         dtype=tf.float32) / hidden_size.value
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size

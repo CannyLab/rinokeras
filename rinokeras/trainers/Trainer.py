@@ -75,6 +75,8 @@ class Trainer(ABC):
             self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         elif optimizer == 'rmsprop':
             self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        elif optimizer == 'sgd':
+            self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
