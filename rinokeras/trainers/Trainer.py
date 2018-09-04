@@ -1,19 +1,20 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Tuple
 
 import tensorflow as tf
 
+
 class Trainer(ABC):
 
-    """A trainer that automatically applies a loss function to a model. Designed to work in both eager and non-eager 
+    """A trainer that automatically applies a loss function to a model. Designed to work in both eager and non-eager
     mode. This is an abstract class. To use it, subclass it and implement Trainer.loss_function(...). You shouldn't need
     to signficantly alter any other functions (except for certain algorithms like PPO where the loss function gets
     updated as you iterate over a batch).
-    
+
     Usage:
-        Eager Mode: 
-            The trainer is designed to be extremely easy to use in Eager mode. Once you define the loss 
-            function, just call Trainer.train(...) or Trainer.loss(...) using the same arguments you defined in 
+        Eager Mode:
+            The trainer is designed to be extremely easy to use in Eager mode. Once you define the loss
+            function, just call Trainer.train(...) or Trainer.loss(...) using the same arguments you defined in
             loss_function(...). As an example, suppose we define the loss function like
 
                 def loss_function(features, labels):
@@ -46,7 +47,7 @@ class Trainer(ABC):
 
         Datasets:
             Training with tf datasets is a little different, although arguably easier. To do so, you must
-            first call Trainer.setup_from_dataset(<my_dataset>), passing in your tf.data.Dataset. That 
+            first call Trainer.setup_from_dataset(<my_dataset>), passing in your tf.data.Dataset. That
             is the only setup required. At train time, get the iterator for your dataset, then get the
             string handle via
 
@@ -62,11 +63,13 @@ class Trainer(ABC):
             This means that your dataset should parse examples into either a tuple with the same ordering
             as the arguments to loss_function or a dict with the same keys as the loss function has variable names.
     """
-    
-    def __init__(self, 
-                 model: tf.keras.Model, 
-                 optimizer: str = 'adam', 
-                 learning_rate: float = 1e-3) -> None:
+
+    def __init__(self,
+                 model: tf.keras.Model,
+                 optimizer: str = 'adam',
+                 learning_rate: float = 1e-3,
+                 gradient_clipping: str = 'none',
+                 gradient_clipping_bounds: Tuple[float, ...] = (-1, 1)) -> None:
         super().__init__()
         self._model = model
 
@@ -79,6 +82,17 @@ class Trainer(ABC):
             self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
+
+        # Setup gradient clipping
+        if gradient_clipping == 'none':
+            self._use_gradient_clipping = False
+        else:
+            self._use_gradient_clipping = True
+            self._clipping_method = gradient_clipping
+            self._clipping_bounds = gradient_clipping_bounds
+            legal_clipping_values = ['value','norm', 'global_norm','average_norm']
+            if gradient_clipping not in legal_clipping_values:
+                raise ValueError("Unrecognized gradient clipping method: {}. Must be in {}".format(gradient_clipping, str(legal_clipping_values)))
 
         self._has_placeholders: bool = False
         self._has_dataset_handle: bool = False
@@ -94,28 +108,38 @@ class Trainer(ABC):
 
     def grads_function(self, *args, **kwargs):
         """Computes the gradient of the loss function wrt model parameters.
-        
+
         Args:
             *args: Positional arguments to loss_function
             **kwargs: Key word arguments to loss function
-        
+
         Returns:
             grads (List[tf.Tensor]): Gradients of the model parameters
             losses: Different losses returned by loss_function
         """
         if tf.executing_eagerly():
             with tf.GradientTape() as tape:
-                loss = self.loss_function(*args, **kwargs)
-        
-            total_loss, losses = self._unpack_losses(loss)
-            grads = tape.gradient(total_loss, self._model.variables)
+                loss_packed = self.loss_function(*args, **kwargs)
 
+            total_loss, _ = self._unpack_losses(loss_packed)
+            grads = tape.gradient(total_loss, self._model.variables)
         else:
-            loss = self.loss_function(*args, **kwargs)
-            total_loss, losses = self._unpack_losses(loss)
+            loss_packed = self.loss_function(*args, **kwargs)
+            total_loss, _ = self._unpack_losses(loss_packed)
             grads = self._optimizer.compute_gradients(total_loss, self._model.variables)
 
-        return grads, losses
+        # By default all of these norms use L2 TODO: Add additional norm types to the options
+        if self._use_gradient_clipping:
+            if self._clipping_method == 'value':
+                grads = [(tf.clip_by_value(g[0], self._clipping_bounds[0], self._clipping_bounds[1]), g[1]) for g in grads]
+            elif self._clipping_method == 'norm':
+                grads = [(tf.clip_by_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+            elif self._clipping_method == 'global_norm':
+                grads = [(tf.clip_by_global_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+            elif self._clipping_method == 'average_norm':
+                grads = [(tf.clip_by_average_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+
+        return grads, loss_packed
 
     def _unpack_losses(self, losses):
         if isinstance(losses, tuple) or isinstance(losses, list):
@@ -127,12 +151,12 @@ class Trainer(ABC):
 
     def _run_eager(self, do_training: bool, *args, **kwargs):
         """Runs the model in eager mode.
-        
+
         Args:
             do_training (bool): Whether to do a backwards pass or not.
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
         """
@@ -146,12 +170,12 @@ class Trainer(ABC):
 
     def _run_graph_placeholders(self, do_training: bool, *args, **kwargs):
         """Runs the model with placeholders in graph mode.
-        
+
         Args:
             do_training (bool): Whether to do a backwards pass or not.
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
         """
@@ -188,11 +212,11 @@ class Trainer(ABC):
 
     def _run_graph_handle(self, do_training: bool, data_handle: bytes):
         """Runs the model with a tf.data.Dataset in graph mode.
-        
+
         Args:
             do_training (bool): Whether to do a backwards pass or not.
             data_handle (bytes): Handle to a tf.data.Iterator
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
         """
@@ -210,27 +234,27 @@ class Trainer(ABC):
             loss = sess.run(self._loss, feed_dict={self._handle: data_handle})
         return loss
 
-    def _run_on_batch(self, 
+    def _run_on_batch(self,
                       do_training: bool,
-                      *args, 
-                      learning_rate: float = 1e-3, 
-                      input_data_format: Optional[str] = None, 
+                      *args,
+                      learning_rate: float = 1e-3,
+                      input_data_format: Optional[str] = None,
                       **kwargs):
         """Runs the model on an input batch, automatically choosing which method to run with.
-        
+
         Args:
             do_training (bool): Whether to do a backwards pass or just evaluate the loss.
             *args: Positional arguments to loss function or a handle to a tf.data.Iterator
             learning_rate (float, optional): Learning rate for optimizer
-            input_data_format (Optional[str], optional): If model set up for placeholder and dataset training, 
+            input_data_format (Optional[str], optional): If model set up for placeholder and dataset training,
                                                          allows you to choose the input data format.
             **kwargs: Keyword arguments to loss function
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
-        
+
         Raises:
-            ValueError: If run in graph mode and no placeholders/handles are set up, or if you specify a type 
+            ValueError: If run in graph mode and no placeholders/handles are set up, or if you specify a type
                         with input_data_format that the trainer is not set up for.
         """
         self._optimizer._lr = learning_rate
@@ -249,14 +273,14 @@ class Trainer(ABC):
         return loss
 
     def train(self, *args, learning_rate: float = 1e-3, **kwargs):
-        """Trains model on an input batch. Can specify the learning rate. 
+        """Trains model on an input batch. Can specify the learning rate.
         See the class docstring for full usage instructions.
-        
+
         Args:
             *args: Positional arguments to loss function
             learning_rate (float, optional): Learning rate for optimizer
             **kwargs: Keyword arguments to loss function
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
         """
@@ -266,11 +290,11 @@ class Trainer(ABC):
 
     def loss(self, *args, **kwargs):
         """Evaluates loss function on an input batch. See the class docstring for full usage instructions.
-        
+
         Args:
             *args: Positional arguments to loss function
             **kwargs: Keyword arguments to loss function
-        
+
         Returns:
             loss (Union[float, tf.EagerTensor]): Model loss on input batch
         """
@@ -279,45 +303,41 @@ class Trainer(ABC):
 
     def setup_from_placeholders(self, *args, **kwargs) -> None:
         """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
-        
+
         Args:
             *args: Placeholders for positional arguments to loss function
             **kwargs: Placeholders for keyword arguments to loss function
         """
-        loss = self.loss_function(*args, **kwargs)
-        total_loss, losses = self._unpack_losses(loss)
-        update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
+        self._grads, self._loss_packed = self.grads_function(*args, **kwargs)
+        self._loss, self._losses = self._unpack_losses(self._loss_packed)
 
+        self._update_op = self._optimizer.apply_gradients(self._grads)
         self._args_in = args
         self._kwargs_in = kwargs
-
-        self._loss = total_loss
-        self._update_op = update_op
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
-        """Sets up dataset handles so that you can call trainer.train or trainer.loss and just pass in the 
+        """Sets up dataset handles so that you can call trainer.train or trainer.loss and just pass in the
         iterator handle.
-        
+
         Args:
             dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
         """
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
-        if isinstance(batch, dict):
-            loss = self.loss_function(**batch)
-        elif isinstance(batch, list) or isinstance(batch, tuple):
-            loss = self.loss_function(*batch)
-        else:
-            loss = self.loss_function(batch)
 
-        total_loss, losses = self._unpack_losses(loss)
-        update_op = self._optimizer.minimize(total_loss, var_list=self._model.variables)
+        if isinstance(batch, dict):
+            self._grads, self._loss_packed = self.grads_function(**batch)
+        elif isinstance(batch, list) or isinstance(batch, tuple):
+            self._grads, self._loss_packed = self.grads_function(*batch)
+        else:
+            self._grads, self._loss_packed = self.grads_function(batch)
+
+        self._loss, self._losses = self._unpack_losses(self._loss_packed)
+        self._update_op = self._optimizer.apply_gradients(self._grads)
 
         self._handle = handle
-        self._loss = total_loss
-        self._update_op = update_op
         self._has_dataset_handle = True
 
     @property

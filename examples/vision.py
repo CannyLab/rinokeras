@@ -9,16 +9,17 @@ from rinokeras.common.layers import Conv2DStack, DenseStack, PositionEmbedding2D
 from rinokeras.models.transformer import TransformerEncoder
 from rinokeras.trainers import SupervisedTrainer
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1' 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 
 class ImageClassifier(tf.keras.Model):
 
     def __init__(self, n_classes: int) -> None:
         super(ImageClassifier, self).__init__()
-        self.convstack = Conv2DStack(filters=(32, 64, 128), 
-                                     kernel_size=(5, 3, 3), 
+        self.convstack = Conv2DStack(filters=(32, 64, 128),
+                                     kernel_size=(5, 3, 3),
                                      strides=(2, 1, 1),
                                      activation='relu',
                                      padding='same',
@@ -37,13 +38,13 @@ class ImageClassifier(tf.keras.Model):
             inputs = tf.expand_dims(inputs, -1)
         filters = self.convstack(inputs)
         output = self.densestack(filters)
-        
+
         return output
 
 
 class ImageTransformer(tf.keras.Model):
 
-    def __init__(self, 
+    def __init__(self,
                  n_classes: int,
                  n_layers: int = 3,
                  n_heads: int = 4,
@@ -100,6 +101,7 @@ class ImageTransformer(tf.keras.Model):
 
         return output
 
+
 def run_iteration(trainer, x_batch, y_batch, istraining):
     x_batch = tf.cast(x_batch, tf.float32)
     y_batch = tf.cast(y_batch, tf.int32)
@@ -131,7 +133,7 @@ if __name__ == '__main__':
     test_data = test_data.batch(64)
 
     model = ImageTransformer(100)
-    trainer = SupervisedTrainer(model, loss_type='sparse_categorical_crossentropy', optimizer='sgd')
+    trainer = SupervisedTrainer(model=model, loss_type='sparse_categorical_crossentropy', optimizer='sgd', gradient_clipping='value')
     trainer.setup_from_dataset(train_data)
 
     sess.run(tf.global_variables_initializer())
@@ -145,28 +147,28 @@ if __name__ == '__main__':
         train_handle = sess.run(train_iter.string_handle())
         test_iter = test_data.make_one_shot_iterator()
         test_handle = sess.run(test_iter.string_handle())
-        loss = 0
-        n_minibatches = 0
+        loss = 0.
+        n_minibatches = 0.
         with tqdm(total=data_len, desc='Epoch {:>3}'.format(epoch), leave=False, dynamic_ncols=True, smoothing=0) as progress_bar:
             try:
                 while True:
                     loss += trainer.train(train_handle)
                     n_minibatches += 1
                     progress_bar.update()
-                    progress_bar.set_postfix(Loss=loss / n_minibatches)
+                    progress_bar.set_postfix(Loss=float(loss / n_minibatches))
             except tf.errors.OutOfRangeError:
-                loss = loss / n_minibatches
+                loss = float(loss) / n_minibatches
                 data_len = n_minibatches
 
-        test_acc = 0
-        test_minibatches = 0
+        test_acc = 0.
+        test_minibatches = 0.
         try:
             while True:
-                curr_acc  = sess.run(trainer.accuracy, feed_dict={trainer._handle: test_handle})
+                curr_acc = sess.run(trainer.accuracy, feed_dict={trainer._handle: test_handle})
                 test_acc += curr_acc
                 # print(pred)
                 # test_loss += trainer.loss(test_handle)
-                test_minibatches += 1
+                test_minibatches += 1.
         except tf.errors.OutOfRangeError:
             test_acc /= test_minibatches
 
