@@ -80,6 +80,8 @@ class Trainer(ABC):
             self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
         elif optimizer == 'sgd':
             self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+        elif optimizer == 'momentum':
+            self._optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
@@ -123,6 +125,7 @@ class Trainer(ABC):
 
             total_loss, _ = self._unpack_losses(loss_packed)
             grads = tape.gradient(total_loss, self._model.variables)
+            grads = zip(grads, self._model.variables)
         else:
             loss_packed = self.loss_function(*args, **kwargs)
             total_loss, _ = self._unpack_losses(loss_packed)
