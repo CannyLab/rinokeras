@@ -260,8 +260,7 @@ class QANet(tf.keras.Model):
                                                           hidden_size=self.d_model,
                                                           dropout=self.dropout) for _ in range(1)])
 
-        self.context_query_attention = ContextQueryAttention(
-            None, self.d_model)
+        self.context_query_attention = ContextQueryAttention(self.d_model)
 
         self.model_encoder_projection = tf.keras.layers.Conv1D(filters=d_model,
                                                                kernel_size=1)

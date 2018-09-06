@@ -11,8 +11,7 @@ def test_transformer_preembedding():
     BATCH_SIZE = 16
     N_SYMBOLS_OUT = 512
     EMBED_SIZE = 300
-    EPOCHS = 20
-
+    EPOCHS = 5
     # Import the transformer
     from rinokeras.models.transformer import Transformer
 
@@ -56,12 +55,20 @@ def test_transformer_preembedding():
             for idx, pair in enumerate(grads_and_vars):
                 gradient = grads[idx]
                 variable = pair[1]
+                print("Gradient {}/{} has average magnitude {}".format(idx, len(grads), np.mean(gradient)), file=sys.stderr)
                 if (np.any(np.isnan(gradient))):
-                    weight_matrix = TF_SESSION.run(variable, feed_dict=feed)
-                    print(weight_matrix, file=sys.stderr)
-                    print(gradient, file=sys.stderr)
-                    assert not np.any(np.isnan(gradient)), "Gradient {} has a NaN: {}".format(idx, variable.name)
+                    # weight_matrix = TF_SESSION.run(variable, feed_dict=feed)
+                    # print(weight_matrix, file=sys.stderr)
+                    # print(gradient, file=sys.stderr)
+                    print("Gradient {}/{} has a NaN: {}".format(idx, len(grads), variable.name), file=sys.stderr)
+                if (np.any(np.isinf(gradient))):
+                    # weight_matrix = TF_SESSION.run(variable, feed_dict=feed)
+                    # print(weight_matrix, file=sys.stderr)
+                    # print(gradient, file=sys.stderr)
+                    print("Gradient {}/{} has an inf: {}".format(idx, len(grads), variable.name), file=sys.stderr)
+                assert not np.any(np.isnan(gradient)), "Gradient {} has a NaN: {}".format(idx, variable.name)
                 assert not np.any(np.isinf(gradient)), "Gradient {} has an inf: {}".format(idx, variable.name)
+            # assert False
 
             # Compute the result/loss
             result, loss = TF_SESSION.run([transformer_out, loss_fn], feed_dict=feed)

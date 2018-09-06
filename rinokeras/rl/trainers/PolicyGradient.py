@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from .Trainer import Trainer
+from rinokeras.trainers import Trainer
 
 class PGTrainer(Trainer):
     def __init__(self, 

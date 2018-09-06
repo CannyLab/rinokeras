@@ -1,3 +1,5 @@
+from typing import Optional
+
 import tensorflow as tf
 from tensorflow.python.keras import backend as K  # pylint: disable=E0611
 
@@ -30,8 +32,7 @@ class LuongAttention(tf.keras.layers.Layer):
                 raise TypeError("Must pass in position for local attention")
             relative_position = tf.cast(
                 tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
-            position_weighting = tf.exp(-1. * tf.square(relative_position) /
-                                        (2 * tf.square(self.stddev)))
+            position_weighting = tf.exp(-1. * tf.square(relative_position) / (2 * tf.square(self.stddev)))
             weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
 
         # will broadcast over third dimension
@@ -380,27 +381,26 @@ class SelfAttention(tf.keras.Model):
 
 class ContextQueryAttention(tf.keras.Model):
 
-    def __init__(self, n_heads, output_depth, attention_type="trilinear", dropout=None):
+    def __init__(self, output_depth: int, attention_type: str = "trilinear", dropout: Optional[float] = None) -> None:
         super(ContextQueryAttention, self).__init__()
         if attention_type != "trilinear":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")
 
-        self.n_heads = n_heads
         self.attention_type = attention_type
         self.dropout = dropout
         self.apply_mask = ApplyAttentionMask()
-        self.trilinear_similarity = TrilinearSimilarity(output_depth)
+        self.trilinear_similarity = TrilinearSimilarity(dropout)
 
     def call(self, inputs, mask=None):
         """
-            Args:
-                (query, context) ->
-                      query: a Tensor with shape [batch_size, query_length, d_model]
-                      context: a Tensor with shape [batch_size, context_length, d_model]
+        Args:
+            (query, context) ->
+                  query: a Tensor with shape [batch_size, query_length, d_model]
+                  context: a Tensor with shape [batch_size, context_length, d_model]
 
-            Returns:
-                outputs: a Tensor with shape [batch_size, context_length, 4 * d_model]
+        Returns:
+            outputs: a Tensor with shape [batch_size, context_length, 4 * d_model]
         """
         query, context = inputs
 
@@ -418,6 +418,8 @@ class ContextQueryAttention(tf.keras.Model):
             tf.matmul(c2q_similarity, q2c_similarity, transpose_b=True), context)
 
         # outputs -> Tensor with shape [batch_size, context_length, 4 * d_model]
-        outputs = [context, context_to_query, context *
-                   context_to_query, context * query_to_context]
-        return tf.concat(outputs, axis=-1)
+        outputs = [context, context_to_query, context * context_to_query, context * query_to_context]
+        outputs = tf.concat(outputs, axis=-1)
+        if self.dropout is not None:
+            outputs = self.dropout(outputs)
+        return outputs

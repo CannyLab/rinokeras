@@ -91,23 +91,24 @@ class Conv2DStack(Stack):
     """
     A stack of convolutional layers. Can optionally do batch normalization after each layer.
     """
-    def __init__(self, 
-                 layers: Sequence[tuple], 
+    def __init__(self,
+                 filters: Sequence[int],
+                 kernel_size: Sequence[int],
+                 strides: Sequence[int],
                  batch_norm: bool = False, 
                  activation: str = 'relu', 
                  padding: str = 'same', 
-                 flatten_output: bool = True) -> None:
+                 flatten_output: bool = True,
+                 **kwargs) -> None:
         super(Conv2DStack, self).__init__()
-        if layers is None:
-            layers = []
-        for layer in layers:
-            if not isinstance(layer, collections.Iterable):
-                layer = (layer,)
-            self.add(tf.keras.layers.Conv2D(*layer, padding=padding))
+        assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
+        for fsize, ks, stride in zip(filters, kernel_size, strides):
+            self.add(tf.keras.layers.Conv2D(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
                 self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))
-        self.add(tf.keras.layers.Flatten())
+        if flatten_output:
+            self.add(tf.keras.layers.Flatten())
 
 
 class DenseStack(Stack):
@@ -261,8 +262,8 @@ class PositionEmbedding2D(PositionEmbedding):
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
-        power = tf.range(0, self.hidden_size, 4,
-                         dtype=tf.float32) / self.hidden_size
+        power = tf.range(0, hidden_size.value, 4,
+                         dtype=tf.float32) / hidden_size.value
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
