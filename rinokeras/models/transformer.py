@@ -266,7 +266,7 @@ class TransformerDecoder(tf.keras.Model):
 
             return cross_attention_mask
 
-
+# TODO: Split this into a discrete/continuous embedding rather than handle the logic here
 class TransformerInputEmbedding(tf.keras.Model):
 
     def __init__(self,
@@ -275,10 +275,12 @@ class TransformerInputEmbedding(tf.keras.Model):
                  n_symbols: Optional[int] = None,
                  dropout: Optional[float] = None,
                  batch_norm: bool = False,
+                 n_embed_layers: int = 1,
                  embedding_initializer=None) -> None:
         super(TransformerInputEmbedding, self).__init__()
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
+            assert n_embed_layers == 1, 'discrete models can only have one embedding layer'
             if embedding_initializer is not None:
                 assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
                 assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
@@ -292,8 +294,7 @@ class TransformerInputEmbedding(tf.keras.Model):
         else:
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
-            self.embedding = tf.keras.layers.Dense(
-                embed_size, activation='relu', dtype=tf.float32)
+            self.embedding = DenseStack([embed_size] * n_embed_layers, output_activation='relu')
 
         self.position_encoding = PositionEmbedding()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
