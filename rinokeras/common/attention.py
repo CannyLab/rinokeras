@@ -381,7 +381,7 @@ class SelfAttention(tf.keras.Model):
 
 class ContextQueryAttention(tf.keras.Model):
 
-    def __init__(self, output_depth: int, attention_type: str = "trilinear", dropout: Optional[float] = None) -> None:
+    def __init__(self, attention_type: str = "trilinear", dropout: Optional[float] = None) -> None:
         super(ContextQueryAttention, self).__init__()
         if attention_type != "trilinear":
             raise NotImplementedError(
@@ -414,8 +414,7 @@ class ContextQueryAttention(tf.keras.Model):
         # context_to_query -> Tensor with shape [batch_size, context_length, d_model]
         context_to_query = tf.matmul(c2q_similarity, query)
         # query_to_context -> Tensor with shape [batch_size, context_length, d_model]
-        query_to_context = tf.matmul(
-            tf.matmul(c2q_similarity, q2c_similarity, transpose_b=True), context)
+        query_to_context = tf.matmul(tf.matmul(c2q_similarity, q2c_similarity, transpose_b=True), context)
 
         # outputs -> Tensor with shape [batch_size, context_length, 4 * d_model]
         outputs = [context, context_to_query, context * context_to_query, context * query_to_context]
