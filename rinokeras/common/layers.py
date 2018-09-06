@@ -91,7 +91,7 @@ class Conv2DStack(Stack):
     """
     A stack of convolutional layers. Can optionally do batch normalization after each layer.
     """
-    def __init__(self, 
+    def __init__(self,
                  filters: Sequence[int],
                  kernel_size: Sequence[int],
                  strides: Sequence[int],

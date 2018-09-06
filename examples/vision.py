@@ -54,10 +54,10 @@ class ImageTransformer(tf.keras.Model):
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.dropout = dropout
-        self.d_model = d_model = 128
+        self.d_model = d_model = 512
         self.d_filter = d_filter = 4 * d_model
 
-        self.convstack = Conv2DStack(filters=(32, 64, d_model),
+        self.convstack = Conv2DStack(filters=(64, 128, d_model),
                                      kernel_size=(5, 3, 3),
                                      strides=(2, 1, 1),
                                      activation='relu',
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     test_data = test_data.map(cast_data)
 
     train_data = train_data.shuffle(1000)
-    train_data = train_data.batch(64)
+    train_data = train_data.batch(128)
     train_data = train_data.prefetch(2)
 
     test_data = test_data.batch(64)
@@ -157,7 +157,7 @@ if __name__ == '__main__':
                     progress_bar.update()
                     progress_bar.set_postfix(Loss=float(loss / n_minibatches))
             except tf.errors.OutOfRangeError:
-                loss = float(loss) / n_minibatches
+                loss = loss / n_minibatches
                 data_len = n_minibatches
 
         test_acc = 0.
