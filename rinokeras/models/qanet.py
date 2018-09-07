@@ -7,34 +7,51 @@ from rinokeras.common.attention import ContextQueryAttention, SelfAttention
 
 
 class QANetSelfAttention(tf.keras.Model):
+    """QANet Self Attention Block
+
+    :param n_heads: The number of heads in the self attention block
+    :type n_heads: int
+    :param dropout: Dropout weight
+    :type dropout: Optional[float]
+
+    """
+
     def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
-        """QANet Self-Attention block
-
-        Arguments:
-            n_heads {int} -- The number of heads in the attention block
-            dropout {Optional[float]} -- Optional dropout constant
-        """
-
         super().__init__()
         self.self_attention = SelfAttention('scaled_dot', n_heads, dropout)
         self.norm = LayerNorm()
 
     def call(self, inputs, mask):
+        """Calls the Self-Attention module on the provided inputs
+        
+        [description]
+        
+        :param inputs: The inputs to the self-attention module
+        :type inputs: tf.Tensor
+        :param mask: The self-attention mask
+        :type mask: tf.Tensor
+        :return: The self-attended inputs
+        :rtype: tf.Tensor
+        """
+
         norm_input = self.norm(inputs)
         attention = self.self_attention(norm_input, mask=mask)
         return attention + inputs  # Just do the residual connection manually
 
 
 class QANetFeedForward(tf.keras.Model):
+    """QANet Feed Forward Block
+
+    :param filter_size: The size of the input filter
+    :type filter_size: int
+    :param hidden_size: The size of the hidden layer
+    :type hidden_size: int
+    :param dropout: Dropout Weight
+    :type dropout: Optional[float]
+
+    """
+
     def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
-        """QANet Feed Forward block
-
-        Arguments:
-            filter_size {int} -- The size of the filter
-            hidden_size {int} -- The size of the hidden layer
-            dropout {Optional[float]} -- Optional dropout constant
-        """
-
         super().__init__()
         dense_relu_dense = DenseStack(
             [filter_size, hidden_size], output_activation=None)
@@ -45,27 +62,34 @@ class QANetFeedForward(tf.keras.Model):
         self.norm = LayerNorm()
 
     def call(self, inputs):
+        """Compute a feed-forward pass on the inputs
+        
+        :param inputs: Input tensor
+        :type inputs: tf.Tensor
+        :return: Feed-Forward Output
+        :rtype: tf.Tensor
+        """
+
         norm_input = self.norm(inputs)
         dense_out = self.feed_forward(norm_input)
         return dense_out + inputs
 
 
 class QANetConvBlock(tf.keras.Model):
-    """
-    Layered depth-wise separable convolutions.
+    """QANet Convolutional Block
+        
+    Layered depth-wise separable convolutions. Based on https://arxiv.org/pdf/1804.09541.pdf.
+    
+    :param filters: The number of filters in the convolution
+    :type filters: int
+    :param kernel_size: The size of the convolutional kernel
+    :type kernel_size: int
+    :param dropout: Dropout weight
+    :type dropout: Optional[float]
 
-    Based on https://arxiv.org/pdf/1804.09541.pdf.
     """
 
     def __init__(self, filters: int, kernel_size: int, dropout: Optional[float]) -> None:
-        """QANet Convolutional block
-
-        Arguments:
-            filters {int} -- The number of filters in the block
-            kernel_size {int} -- The size of the kernel for the block
-            dropout {Optional[float]} -- Optional dropout constant
-        """
-
         super().__init__()
         conv_layer = tf.keras.layers.SeparableConv1D(
             filters, kernel_size, padding='same')
@@ -76,11 +100,15 @@ class QANetConvBlock(tf.keras.Model):
         self.norm = LayerNorm()
 
     def call(self, inputs, mask):
+        """        
+        :param inputs: a float32 Tensor with shape [batch_size, seqlen, d_model]
+        :type inputs: tf.Tensor
+        :param mask: a float32 Tensor with shape [batch_size, seqlen, seqlen]
+        :type mask: tf.Tensor
+        :return: a float32 Tensor with shape  [TODO (roshan_rao@berkeley.edu)]
+        :rtype: tf.Tensor
         """
-            Args:
-                inputs: a float32 Tensor with shape [batch_size, seqlen, d_model]
-                mask: a float32 Tensor with shape [batch_size, seqlen, seqlen]
-        """
+
         norm_input = self.norm(inputs)
         if mask is not None:
             mask = tf.cast(mask[:, 0, :], tf.float32)
@@ -91,25 +119,29 @@ class QANetConvBlock(tf.keras.Model):
 
 
 class QANetInputEmbedding(tf.keras.Model):
+    """QANet Input Embedding Class
+        
+    Perform an embedding of the input vector based on the words and characters.
+    
+    :param d_model: The dimension of the model (Output dim)
+    :type d_model: int
+    :param word_embed_initializer: Initialization matrix of size [word vocab size x d_model]
+    :type word_embed_initializer: np.ndarray
+    :param char_embed_initializer: Initialization matrix of size [char vocab size x d_model]
+    :type char_embed_initializer: np.ndarray
+    :param dropout: The dropout weight, defaults to None
+    :param dropout: Optional[float], optional
+    :param batch_norm: Use batch normalization, defaults to False
+    :param batch_norm: bool, optional
 
+    """
+    
     def __init__(self,
                  d_model: int,
                  word_embed_initializer: np.ndarray,
                  char_embed_initializer: np.ndarray,
                  dropout: Optional[float] = None,
                  batch_norm: bool = False) -> None:
-        """QANet Imput embedding class
-
-        Arguments:
-            d_model {int} -- The model dimension
-            word_embed_initializer {np.ndarray} -- The word-level embedding matrix
-            char_embed_initializer {np.ndarray} -- The character-level embedding matrix
-
-        Keyword Arguments:
-            dropout {Optional[float]} -- Dropout constant in the embedding (default: {None})
-            batch_norm {bool} -- Use batch normalization in the embedding (default: {False})
-        """
-
         super().__init__()
         self.word_embedding = tf.keras.layers.Embedding(word_embed_initializer.shape[0],
                                                         word_embed_initializer.shape[1],
@@ -134,14 +166,17 @@ class QANetInputEmbedding(tf.keras.Model):
         self.batch_norm = None if batch_norm is False else tf.keras.layers.BatchNormalization()
 
     def call(self, inputs):
+        """Calls the input embedding on the new inputs
+        
+        Computes a set of table lookups with the passed in word and character embeddings. This also
+        computes the positional embedding of the inputs.
+        
+        :param inputs: Tuple of (Words, Characters)
+        :type inputs: Tuple[tf.Tensor, tf.Tensor]
+        :return: Embedded Inputs
+        :rtype: tf.Tensor
         """
-        Args:
-            words: a Tensor with shape (batch_size, input_length)
-            chars: a Tensor with shape (batch_size, input_length, 16)
 
-        Returns:
-            embedding: an embedding of the input with shape (batch_size, input_length, d_model)
-        """
         words, chars = inputs
         batch_size = tf.shape(words)[0]
         input_length = tf.shape(words)[1]
@@ -176,11 +211,21 @@ class QANetInputEmbedding(tf.keras.Model):
 
 
 class QANetEncoderBlock(tf.keras.Model):
-    """An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
+    """QANet Encoder Block
 
-    :param inputs: Tensor with shape [batch_size, sequence_length, channels]
+    An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf)
+    
+    :param n_conv: Number of convolutions in the encoding layer
+    :type n_conv: int
+    :param n_heads: Number of heads to use for self attention
+    :type n_heads: int
+    :param filter_size: The filter size in the feed-forward layer
+    :type filter_size: int
+    :param hidden_size: The number of neurons in the hidden layer/conv block
+    :type hidden_size: int
+    :param dropout: Dropout weight, defaults to None
+    :param dropout: Optional[float], optional
 
-    :return: output: Tensor with same shape as input
     """
 
     def __init__(self,
@@ -189,18 +234,6 @@ class QANetEncoderBlock(tf.keras.Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float] = None) -> None:
-        """QANet Encoder Block
-
-        Arguments:
-            n_conv {int} -- Number of convolutions in the encoder layer
-            n_heads {int} -- Number of heads in the self-attention
-            filter_size {int} -- Filter size in the feed-forward layer
-            hidden_size {int} -- Hidden layer size in the feed-forward layer/conv block
-
-        Keyword Arguments:
-            dropout {Optional[float]} -- Optional dropout constant (default: {None})
-        """
-
         super().__init__()
         self.conv_stack = Stack(
             [QANetConvBlock(hidden_size, 7, dropout) for _ in range(n_conv)])
@@ -208,8 +241,18 @@ class QANetEncoderBlock(tf.keras.Model):
         self.feed_forward = QANetFeedForward(filter_size, hidden_size, dropout)
 
     def call(self, inputs, self_attention_mask=None, padding_mask=None):
-        # if self_attention_mask is not None and padding_mask is None:
-            # padding_mask = self_attention_mask
+        """Computes the encoding on the context
+        
+        :param inputs: The inputs to compute over
+        :type inputs: tf.Tensor
+        :param self_attention_mask: Self Attention Mask, defaults to None
+        :param self_attention_mask: tf.Tensor, optional
+        :param padding_mask: Padding Mask, defaults to None
+        :param padding_mask: tf.Tensor, optional
+        :return: The convolutional stack + the self-attention
+        :rtype: tf.Tensor
+        """
+
         conv_out = self.conv_stack(inputs, mask=padding_mask)
         res_attn = self.self_attention(conv_out, mask=self_attention_mask)
         output = self.feed_forward(res_attn)
@@ -217,6 +260,26 @@ class QANetEncoderBlock(tf.keras.Model):
 
 
 class QANet(tf.keras.Model):
+    """QANet Model 
+        
+    Based on https://arxiv.org/abs/1804.09541
+    
+    :param word_embed_matrix: Word-Level Embedding Matrix
+    :type word_embed_matrix: np.ndarray
+    :param char_embed_matrix: Character-Level Embedding Matrix
+    :type char_embed_matrix: np.ndarray
+    :param n_heads: Number of heads to use for self-attention in the model, defaults to 8
+    :param n_heads: int, optional
+    :param d_model: Model internal dimenstion, defaults to 128
+    :param d_model: int, optional
+    :param d_filter: The internal filter dimension, defaults to 512
+    :param d_filter: int, optional
+    :param char_limit: The limit of characters in each word, defaults to 16
+    :param char_limit: int, optional
+    :param dropout: Dropout weight, defaults to None
+    :param dropout: Optional[float], optional
+
+    """
 
     def __init__(self,
                  word_embed_matrix: np.ndarray,
@@ -226,20 +289,6 @@ class QANet(tf.keras.Model):
                  d_filter: int = 512,
                  char_limit: int = 16,
                  dropout: Optional[float] = None) -> None:
-        """QANet (Based on https://arxiv.org/abs/1804.09541)
-
-        Arguments:
-            word_embed_matrix {np.ndarray} -- Word-level embedding matrix
-            char_embed_matrix {np.ndarray} -- Character-level embedding matrix
-
-        Keyword Arguments:
-            n_heads {int} -- Number of self-attention heads (default: {8})
-            d_model {int} -- Internal dimension of the model (default: {128})
-            d_filter {int} -- internal dimension of the filters (default: {512})
-            char_limit {int} -- Character limit for each word (default: {16})
-            dropout {Optional[float]} -- Optional dropout constant (default: {None})
-        """
-
         super().__init__()
         self.n_symbols_in = word_embed_matrix.shape[0]
         self.n_symbols_out = word_embed_matrix.shape[0]  # TODO: Fix this bug?
@@ -273,6 +322,20 @@ class QANet(tf.keras.Model):
         self.output_layer = tf.keras.layers.Dense(self.n_symbols_out)
 
     def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
+        """Calls the model on new inputs.
+        
+        :param inputs: Tuple of (Context, Question, Context Characters, Question Characters, Answer Index 1, Answer Index 2, None)
+        :type inputs: Tuple[tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor]
+        :param padding_mask: The padding mask for the question and answer, defaults to None
+        :param padding_mask: tf.Tensor, optional
+        :param shift_target_sequence_right: Shift the target sequence to the right, defaults to True
+        :param shift_target_sequence_right: bool, optional
+        :param training: Define the training variables of the network, defaults to True
+        :param training: bool, optional
+        :return: Output logits of the model
+        :rtype: tf.Tensor
+        """
+
         context, question, context_characters, question_characters, answer_index1, answer_index2, _ = inputs
 
         def get_mask_and_length(array):
