@@ -5,10 +5,17 @@ from .Trainer import Trainer
 
 class SupervisedTrainer(Trainer):
 
-    def __init__(self, model, loss_type: str, optimizer: str = 'adam',
-                 gradient_clipping: str='none',
-                 gradient_clipping_bounds: Tuple[float, ...]=(-1, 1)) -> None:
-        super().__init__(model, optimizer, gradient_clipping=gradient_clipping, gradient_clipping_bounds=gradient_clipping_bounds)
+    def __init__(self, 
+                 model, 
+                 loss_type: str, 
+                 optimizer: str = 'adam',
+                 gradient_clipping: str = 'none',
+                 gradient_clipping_bounds: Tuple[float, ...] = (-1, 1),
+                 **kwargs) -> None:
+        super().__init__(model, optimizer,
+                         gradient_clipping=gradient_clipping, 
+                         gradient_clipping_bounds=gradient_clipping_bounds,
+                         **kwargs)
         self._loss_fn = tf.keras.losses.get(loss_type)
 
     def loss_function(self, features, labels):
