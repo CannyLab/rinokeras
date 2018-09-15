@@ -176,14 +176,14 @@ class Trainer(ABC):
         # By default all of these norms use L2 TODO: Add additional norm types to the options
         if self._use_gradient_clipping:
             if self._clipping_method == 'value':
-                grads = [(tf.clip_by_value(g[0], self._clipping_bounds[0], self._clipping_bounds[1]), g[1]) 
+                grads = [(tf.clip_by_value(g[0], self._clipping_bounds[0], self._clipping_bounds[1]) if g[0] is not None else None, g[1]) 
                          for g in grads]
             elif self._clipping_method == 'norm':
-                grads = [(tf.clip_by_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+                grads = [(tf.clip_by_norm(g[0], self._clipping_bounds[0]) if g[0] is not None else None, g[1]) for g in grads]
             elif self._clipping_method == 'global_norm':
-                grads = [(tf.clip_by_global_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+                grads = [(tf.clip_by_global_norm(g[0], self._clipping_bounds[0]) if g[0] is not None else None, g[1]) for g in grads]
             elif self._clipping_method == 'average_norm':
-                grads = [(tf.clip_by_average_norm(g[0], self._clipping_bounds[0]), g[1]) for g in grads]
+                grads = [(tf.clip_by_average_norm(g[0], self._clipping_bounds[0]) if g[0] is not None else None, g[1]) for g in grads]
 
         return grads, loss_packed
 

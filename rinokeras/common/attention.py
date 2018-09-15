@@ -388,7 +388,7 @@ class ContextQueryAttention(tf.keras.Model):
                 "Haven't got around to implementing other attention types yet!")
 
         self.attention_type = attention_type
-        self.dropout = dropout
+        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
         self.apply_mask = ApplyAttentionMask()
         self.trilinear_similarity = TrilinearSimilarity(dropout)
 
