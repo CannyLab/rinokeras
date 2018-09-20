@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
 import tensorflow as tf
+import time
 
 
 class Trainer(ABC):
