@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Callable
 
 import tensorflow as tf
 from tensorflow.python.keras import backend as K  # pylint: disable=E0611
@@ -215,9 +215,10 @@ class AttentionMap(tf.keras.Model):
     Computes attention based on provided similarity metric.
     """
 
-    def __init__(self, similarity_metric, dropout: float = None) -> None:
+    def __init__(self, similarity_metric, attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax, dropout: float = None) -> None:
         super(AttentionMap, self).__init__()
         self.similarity_metric = similarity_metric
+        self.attention_function = attention_function
         self.apply_mask = ApplyAttentionMask()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
@@ -236,12 +237,12 @@ class AttentionMap(tf.keras.Model):
         similarity = self.similarity_metric((queries, keys))
         masked_similarity = self.apply_mask(similarity, mask=mask)
         # (batch_size, heads, n_queries, n_keyval)
-        weights = tf.nn.softmax(masked_similarity, axis=-1)
+        weights = self.attention_function(masked_similarity) 
 
         if self.dropout is not None:
             weights = self.dropout(weights)
         output = tf.matmul(weights, values)
-        return output
+        return output, weights
 
 
 class MultiHeadAttentionMap(tf.keras.Model):
@@ -258,7 +259,7 @@ class MultiHeadAttentionMap(tf.keras.Model):
         """
 
         super(MultiHeadAttentionMap, self).__init__()
-        self.attention_map = AttentionMap(similarity_metric, dropout)
+        self.attention_map = AttentionMap(similarity_metric, dropout=dropout)
         self.n_heads = n_heads
 
     def build(self, input_shape):
@@ -279,7 +280,7 @@ class MultiHeadAttentionMap(tf.keras.Model):
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split = self.attention_map((queries_split, keys_split, values_split), mask=mask)
+        attention_output_split, _ = self.attention_map((queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         return output
 
