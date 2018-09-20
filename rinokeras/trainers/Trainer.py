@@ -360,3 +360,12 @@ class Trainer(ABC):
             int: Number of times the train(...) function has been called.
         """
         return self._num_param_updates
+
+    @property
+    def num_param_updates_gpu(self) -> tf.Tensor:
+        """
+        Returns:
+            tf.Tensor[int]: Number of times train(...) function has been called (on gpu).
+                            Useful when defining loss functions that scale with training epochs.
+        """
+        return self._num_param_updates_gpu
