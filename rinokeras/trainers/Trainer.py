@@ -95,11 +95,11 @@ class Trainer(ABC):
         self._num_param_updates: int = 0
 
         with tf.variable_scope(self._name):
-            self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, 
-                                                          trainable=False, initializer=tf.zeros_initializer())
+            # self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, 
+            #                                               trainable=False, initializer=tf.zeros_initializer())
 
-            if not tf.executing_eagerly():
-                self._increment_step = tf.assign(self._num_param_updates_gpu, self._num_param_updates_gpu + 1)
+            # if not tf.executing_eagerly():
+            #     self._increment_step = tf.assign(self._num_param_updates_gpu, self._num_param_updates_gpu + 1)
             if optimizer == 'adam':
                 self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             elif optimizer == 'rmsprop':
@@ -364,13 +364,13 @@ class Trainer(ABC):
         """
         loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
         self._num_param_updates += 1
-        if tf.executing_eagerly():
-            self._num_param_updates_gpu = self._num_param_updates_gpu + 1
-        else:
-            sess = tf.get_default_session()
-            if sess is None:
-                raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-            sess.run(self._increment_step)
+        # if tf.executing_eagerly():
+        #     self._num_param_updates_gpu = self._num_param_updates_gpu + 1
+        # else:
+        #     sess = tf.get_default_session()
+        #     if sess is None:
+        #         raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+        #     sess.run(self._increment_step)
         return loss
 
     def loss(self, *args, **kwargs):
@@ -436,11 +436,11 @@ class Trainer(ABC):
         """
         return self._num_param_updates
 
-    @property
-    def num_param_updates_gpu(self) -> tf.Tensor:
-        """
-        Returns:
-            tf.Tensor[int]: Number of times train(...) function has been called (on gpu).
-                            Useful when defining loss functions that scale with training epochs.
-        """
-        return self._num_param_updates_gpu
+    # @property
+    # def num_param_updates_gpu(self) -> tf.Tensor:
+    #     """
+    #     Returns:
+    #         tf.Tensor[int]: Number of times train(...) function has been called (on gpu).
+    #                         Useful when defining loss functions that scale with training epochs.
+    #     """
+    #     return self._num_param_updates_gpu
