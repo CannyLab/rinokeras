@@ -1,7 +1,237 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Sequence, Callable
 
 import tensorflow as tf
+
+
+class ModelOptimizer(ABC):
+
+    _num_optimizers: int = 0
+
+    def __init__(self, 
+                 optimizer: str, 
+                 loss_function: Callable,
+                 grads_function: Callable,
+                 variables: Sequence[tf.Variable],
+                 learning_rate: float = 1e-3) -> None:
+        super().__init__()
+        self._name = self.__class__.__name__.lower()
+        if ModelOptimizer._num_optimizers > 0:
+            self._name += '_{}'.format(ModelOptimizer._num_optimizers)
+        ModelOptimizer._num_optimizers += 1
+
+        with tf.variable_scope(self._name):
+            if optimizer == 'adam':
+                self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'rmsprop':
+                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'sgd':
+                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'momentum':
+                self._optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
+            else:
+                raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
+
+
+class EagerOptimizer(ModelOptimizer):
+
+    def __init__(self, *args, **kwargs) -> None:
+        assert tf.executing_eagerly(), "Cannot use EagerOptimizer when not in tf eager mode."
+        super(EagerOptimizer, self).__init__(*args, **kwargs)
+
+    def update(self, *args, **kwargs):
+        grads, loss = self.grads_function(*args, **kwargs)
+        self._optimizer.apply_gradients(grads)
+        return loss
+
+    def loss(self, *args, **kwargs):
+        loss = self.loss_function(*args, **kwargs)
+        return loss
+
+
+class PlaceholderOptimizer(ModelOptimizer):
+
+    def __init__(self, *args, **kwargs) -> None:
+
+        def setup_from_placeholders(self, *args, **kwargs) -> None:
+        """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+        
+        Args:
+            *args: Placeholders for positional arguments to loss function
+            **kwargs: Placeholders for keyword arguments to loss function
+        """
+
+        grads, loss_packed = self.grads_function(*args, **kwargs)
+        loss, losses = self._unpack_losses(loss_packed)
+
+        update_op = self._optimizer.apply_gradients(grads)
+        self._placeholder_ops = {'loss': loss, 'losses': losses, 'grads': grads, 'update_op': update_op}
+        self._args_in = args
+        self._kwargs_in = kwargs
+        self._has_placeholders = True
+
+    def setup_from_dataset(self, dataset) -> None:
+        """Sets up dataset handles so that you can call trainer.train or trainer.loss and just pass in the
+        iterator handle.
+        
+        Args:
+            dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
+        """
+        handle = tf.placeholder(tf.string, shape=[])
+        iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
+        batch = iterator.get_next()
+
+        if isinstance(batch, dict):
+            grads, loss_packed = self.grads_function(**batch)
+        elif isinstance(batch, list) or isinstance(batch, tuple):
+            grads, loss_packed = self.grads_function(*batch)
+        else:
+            grads, loss_packed = self.grads_function(batch)
+
+        loss, losses = self._unpack_losses(loss_packed)
+        update_op = self._optimizer.apply_gradients(grads)
+
+        self._handle_ops = {'loss': loss, 'losses': losses, 'grads': grads, 'update_op': update_op}
+        self._handle = handle
+        self._has_dataset_handle = True
+
+    def _run_eager(self, do_training: bool, *args, **kwargs):
+        """Runs the model in eager mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        """
+        assert tf.executing_eagerly(), "Cannot call Trainer._train_eager() when not in tf eager mode."
+        if do_training:
+            grads, loss = self.grads_function(*args, **kwargs)
+            self._optimizer.apply_gradients(zip(grads, self._model.variables))
+        else:
+            loss = self.loss_function(*args, **kwargs)
+        return loss
+
+    def _run_graph_placeholders(self, do_training: bool, *args, **kwargs):
+        """Runs the model with placeholders in graph mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        
+        Raises:
+            KeyError: Description
+            RuntimeError: Description
+            ValueError: Description
+        """
+        assert self._has_placeholders, "Cannot call Trainer._train_graph_placeholders without setting up placeholders."
+
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+
+        if len(args) != len(self._args_in):
+            raise ValueError("Expected {} positional arguments, but received {}.".format(
+                len(self._args_in), len(args))
+            )
+
+        if len(kwargs) != len(self._kwargs_in):
+            raise ValueError("Expected {} keyword arguments, but received {}.".format(
+                len(self._kwargs_in), len(kwargs))
+            )
+
+        feed_dict = {}
+        for arg_in, arg in zip(self._args_in, args):
+            feed_dict[arg_in] = arg
+        for kw in self._kwargs_in:
+            try:
+                feed_dict[self._kwargs_in[kw]] = kwargs[kw]
+            except KeyError:
+                raise KeyError("Expected keyword argument '{}'".format(kw))
+
+        update_op = self._placeholder_ops['update_op']
+        loss = self._placeholder_ops['loss']
+
+        if do_training:
+            _, loss = sess.run([update_op, loss], feed_dict=feed_dict)
+        else:
+            loss = sess.run(loss, feed_dict=feed_dict)
+        return loss
+
+    def _run_graph_handle(self, do_training: bool, data_handle: bytes):
+        """Runs the model with a tf.data.Dataset in graph mode.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or not.
+            data_handle (bytes): Handle to a tf.data.Iterator
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        
+        Raises:
+            RuntimeError: Description
+            TypeError: Description
+        """
+        assert self._has_dataset_handle, "Cannot call Trainer._train_graph_handle without setting up dataset handles."
+        if not isinstance(data_handle, bytes):
+            raise TypeError("Data handle must be a bytes object")
+
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+
+        update_op = self._handle_ops['update_op']
+        loss = self._handle_ops['loss']
+
+        if do_training:
+            _, loss = sess.run([update_op, loss], feed_dict={self._handle: data_handle})
+        else:
+            loss = sess.run(loss, feed_dict={self._handle: data_handle})
+        return loss
+
+    def _run_on_batch(self,
+                      do_training: bool,
+                      *args,
+                      learning_rate: float = 1e-3,
+                      input_data_format: Optional[str] = None,
+                      **kwargs):
+        """Runs the model on an input batch, automatically choosing which method to run with.
+        
+        Args:
+            do_training (bool): Whether to do a backwards pass or just evaluate the loss.
+            *args: Positional arguments to loss function or a handle to a tf.data.Iterator
+            learning_rate (float, optional): Learning rate for optimizer
+            input_data_format (Optional[str], optional): If model set up for placeholder and dataset training,
+                                                         allows you to choose the input data format.
+            **kwargs: Keyword arguments to loss function
+        
+        Returns:
+            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+        
+        Raises:
+            ValueError: If run in graph mode and no placeholders/handles are set up, or if you specify a type
+                        with input_data_format that the trainer is not set up for.
+        """
+        self._optimizer._lr = learning_rate
+        assert input_data_format in [None, 'placeholders', 'handle'], \
+            "<input_data_format> must be one of [None, 'placeholders', 'handle']"
+        if tf.executing_eagerly():
+            loss = self._run_eager(do_training, *args, **kwargs)
+        elif self._has_placeholders and input_data_format != 'handle':
+            loss = self._run_graph_placeholders(do_training, *args, **kwargs)
+        elif self._has_dataset_handle and input_data_format != 'placeholders':
+            # This will fail if you pass in the wrong arguments.
+            # Not sure if we should catch this error specifically or not.
+            loss = self._run_graph_handle(do_training, *args, **kwargs)
+        else:
+            raise ValueError("Either placeholders/handle not set up, or input_data_format incorrectly specified.")
+        return loss
 
 
 class Trainer(ABC):
