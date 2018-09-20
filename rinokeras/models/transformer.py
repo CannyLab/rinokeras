@@ -306,7 +306,7 @@ class TransformerInputEmbedding(tf.keras.Model):
         # TODO: Make sure that for non-discrete embeddings, this is handled correctly
         # and allow the shape to be correctly sorted. This should have a tensor
         # as output with shape [batch_size x sequence_len x d_model]
-        embedding = self.embedding(inputs)
+        embedding = tf.stop_gradient(self.embedding(inputs))
 
         # If we're using dropout, then we need to add on the dropout
         # of the embedding
