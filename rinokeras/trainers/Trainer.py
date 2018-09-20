@@ -93,6 +93,7 @@ class Trainer(ABC):
 
         self._add_model_losses = add_model_losses
         self._num_param_updates: int = 0
+        self.flops_required = None
 
         with tf.variable_scope(self._name):
             # self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, 
@@ -362,7 +363,18 @@ class Trainer(ABC):
         Raises:
             RuntimeError: Description
         """
-        loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
+        t0 = time.time()
+        if self.flops_required is None:
+            run_meta = tf.RunMetadata()
+            loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
+            opts = tf.profiler.ProfileOptionBuilder.float_operation()
+            opts['output'] = 'none'
+            self.flops_required = tf.profiler.profile(tf.get_default_session().graph, run_meta=run_meta, cmd='op', options=opts).total_float_ops
+        else:
+            loss = self._run_on_batch(True, *args, learning_rate=learning_rate, **kwargs)
+        self.last_batch_time = time.time() - t0
+        self.last_batch_flops = self.flops_required / self.last_batch_time
+
         self._num_param_updates += 1
         # if tf.executing_eagerly():
         #     self._num_param_updates_gpu = self._num_param_updates_gpu + 1
