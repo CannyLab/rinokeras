@@ -75,6 +75,8 @@ class Trainer(ABC):
             as the arguments to loss_function or a dict with the same keys as the loss function has variable names.
     """
 
+    _num_trainers: int = 0
+
     def __init__(self,
                  model: tf.keras.Model,
                  optimizer: str = 'adam',
@@ -83,25 +85,31 @@ class Trainer(ABC):
                  gradient_clipping: str = 'none',
                  gradient_clipping_bounds: Tuple[float, ...] = (-1, 1)) -> None:
         super().__init__()
+        self._name = self.__class__.__name__.lower()
+        if Trainer._num_trainers > 0:
+            self._name += '_{}'.format(Trainer._num_trainers)
+        Trainer._num_trainers += 1
         self._model = model
 
-        self._num_param_updates: int = 0
-        self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, trainable=False, 
-                                                      initializer=tf.zeros_initializer())
         self._add_model_losses = add_model_losses
+        self._num_param_updates: int = 0
 
-        if not tf.executing_eagerly():
-            self._increment_step = tf.assign(self._num_param_updates_gpu, self._num_param_updates_gpu + 1)
-        if optimizer == 'adam':
-            self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        elif optimizer == 'rmsprop':
-            self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-        elif optimizer == 'sgd':
-            self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
-        elif optimizer == 'momentum':
-            self._optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
-        else:
-            raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
+        with tf.variable_scope(self._name):
+            self._num_param_updates_gpu = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32, 
+                                                          trainable=False, initializer=tf.zeros_initializer())
+
+            if not tf.executing_eagerly():
+                self._increment_step = tf.assign(self._num_param_updates_gpu, self._num_param_updates_gpu + 1)
+            if optimizer == 'adam':
+                self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'rmsprop':
+                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'sgd':
+                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+            elif optimizer == 'momentum':
+                self._optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
+            else:
+                raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
         # Setup gradient clipping
         if gradient_clipping == 'none':
