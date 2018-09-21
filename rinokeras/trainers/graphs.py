@@ -370,6 +370,29 @@ class MultiGPUGraph(AbstractGraph):
                 raise KeyError("Expected keyword argument '{}'".format(kw))
         return feed_dict
 
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        """Runs the 
+        
+        Args:
+            ops (Union[tf.Tensor, Sequence[tf.Tensor]]): op or sequence of ops to run
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            Result of running ops
+        
+        Raises:
+            RuntimeError: If not run inside a tf.Session context
+        """
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+
+        feed_dict = self._get_feed_dict(*args, **kwargs)
+
+        results = sess.run(ops, feed_dict=feed_dict)
+        return results
+
     def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
         if ops == 'update':
             return self.update(*args, **kwargs)
