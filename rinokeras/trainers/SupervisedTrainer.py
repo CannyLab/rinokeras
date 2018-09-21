@@ -20,8 +20,4 @@ class SupervisedTrainer(Trainer):
 
     def loss_function(self, features, labels):
         predictions = self._model(features)
-        self.predictions = tf.argmax(predictions, -1)
-        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(
-            predictions, -1, output_type=tf.int32), tf.squeeze(labels)), tf.float32))
-        # return tf.reduce_mean(self._loss_fn(y_true=labels, y_pred=predictions))
-        return tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=predictions)
+        return tf.reduce_mean(self._loss_fn(y_true=labels, y_pred=predictions))

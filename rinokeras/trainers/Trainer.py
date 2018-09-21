@@ -187,6 +187,23 @@ class Trainer(ABC):
 
         return grads, loss_packed
 
+    def _unpack_losses(self, losses: Union[tf.Tensor, Sequence[tf.Tensor]]):
+        """Optionally unpacks a sequence of losses
+        
+        Args:
+            losses (Union[tf.Tensor, Sequence[tf.Tensor]]): Loss tensor or sequence of loss tensors with 
+                first tensor being total loss
+        
+        Returns:
+            tf.Tensor, Union[tf.Tensor, Sequence[tf.Tensor]]: Total loss, and sequence of loss tensors
+        """
+        if isinstance(losses, tuple) or isinstance(losses, list):
+            total_loss = losses[0]
+        else:
+            total_loss = losses
+
+        return total_loss, losses
+
     def _run_graph(self,
                    ops: Union[str, Sequence[tf.Tensor]],
                    *args,
