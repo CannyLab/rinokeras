@@ -249,7 +249,7 @@ class Trainer(ABC):
             **kwargs: Keyword arguments to loss function
         
         Returns:
-            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+            loss (Union[float, tf.Tensor]): Model loss on input batch
         
         Raises:
             RuntimeError: Description
@@ -266,7 +266,7 @@ class Trainer(ABC):
             **kwargs: Keyword arguments to loss function
         
         Returns:
-            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+            loss (Union[float, tf.Tensor]): Model loss on input batch
         """
         loss = self._run_graph('loss', *args, **kwargs)
         return loss

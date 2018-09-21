@@ -63,7 +63,7 @@ class EagerGraph(AbstractGraph):
         assert tf.executing_eagerly(), "Cannot use EagerGraph when not in tf eager mode."
         super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
 
-    def run(self, ops: str, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:  # type: ignore
+    def run(self, ops: str, *args, **kwargs) -> Union[tf.Tensor, Tuple]:  # type: ignore
         if ops == 'update':
             return self.update(*args, **kwargs)
         elif ops == 'loss':
@@ -72,7 +72,7 @@ class EagerGraph(AbstractGraph):
             raise ValueError("Unknown argument for ops: {}. \
                 In eager mode, can only automatically run the update and loss ops.".format(ops))
 
-    def update(self, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
+    def update(self, *args, **kwargs) -> Union[tf.Tensor, Tuple]:
         """Updates the model in eager mode.
         
         Args:
@@ -80,13 +80,13 @@ class EagerGraph(AbstractGraph):
             **kwargs: Keyword arguments to the loss function
         
         Returns:
-            loss (Union[float, tf.EagerTensor]): Model loss on input batch
+            loss (Union[float, tf.Tensor]): Model loss on input batch
         """
         grads, loss = self.grads_function(*args, **kwargs)
         self.optimizer.apply_gradients(grads)
         return loss
 
-    def loss(self, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
+    def loss(self, *args, **kwargs) -> Union[tf.Tensor, Tuple]:
         """Gets the loss of the model in eager mode.
         
         Args:
@@ -94,7 +94,7 @@ class EagerGraph(AbstractGraph):
             **kwargs: Keyword arguments to the loss function
         
         Returns:
-            loss (Union[tf.EagerTensor, Tuple]): Model loss on input batch
+            loss (Union[tf.Tensor, Tuple]): Model loss on input batch
         """
         loss = self.loss_function(*args, **kwargs)
         return loss
