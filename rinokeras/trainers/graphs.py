@@ -101,23 +101,22 @@ class EagerGraph(AbstractGraph):
 
 
 class PlaceholderGraph(AbstractGraph):
+    """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+            
+        Args:
+            *args: Placeholders for positional arguments to loss function
+            **kwargs: Placeholders for keyword arguments to loss function
+    """
 
     def __init__(self, 
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
                  grads_function: Callable,
+                 loss_args: Sequence,
+                 loss_kwargs: Dict,
                  learning_rate: float = 1e-3) -> None:
         super(PlaceholderGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
-        self._built: bool = False
-
-    def build(self, *args, **kwargs) -> None:
-        """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
-            
-            Args:
-                *args: Placeholders for positional arguments to loss function
-                **kwargs: Placeholders for keyword arguments to loss function
-        """
-        grads, loss_packed = self.grads_function(*args, **kwargs)
+        grads, loss_packed = self.grads_function(*loss_args, **loss_kwargs)
         loss, losses = self._unpack_losses(loss_packed)
 
         update_op = self.optimizer.apply_gradients(grads)
@@ -125,9 +124,8 @@ class PlaceholderGraph(AbstractGraph):
         self.losses = losses
         self.grads = grads
         self.update_op = update_op
-        self.args_in = args
-        self.kwargs_in = kwargs
-        self.built = True
+        self.args_in = loss_args
+        self.kwargs_in = loss_kwargs
 
     def _get_feed_dict(self, *args, **kwargs) -> Dict[tf.placeholder, Any]:
         if len(args) != len(self.args_in):
@@ -164,8 +162,6 @@ class PlaceholderGraph(AbstractGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        assert self._built, "Cannot call update without setting up placeholders."
-
         sess = tf.get_default_session()
         if sess is None:
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
@@ -217,21 +213,19 @@ class PlaceholderGraph(AbstractGraph):
 
 
 class DatasetGraph(AbstractGraph):
+    """Sets up dataset handles so that you can call update or loss and just pass in the iterator handle.
+        
+    Args:
+        dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
+    """
 
     def __init__(self, 
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
                  grads_function: Callable,
+                 dataset: tf.data.Dataset,
                  learning_rate: float = 1e-3) -> None:
         super(DatasetGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
-        self._built: bool = False
-
-    def build(self, dataset: tf.data.Dataset) -> None:
-        """Sets up dataset handles so that you can call update or loss and just pass in the iterator handle.
-        
-        Args:
-            dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
-        """
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
@@ -251,8 +245,6 @@ class DatasetGraph(AbstractGraph):
         self.grads = grads
         self.update_op = update_op
         self.handle = handle
-
-        self._built = True
 
     def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], data_handle: bytes) -> Any:
         """Runs ops on the model with a tf.data.Dataset in graph mode.
