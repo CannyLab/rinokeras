@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Sequence, Callable, Union, Dict, Any
-from overrides import overrides
 
 import tensorflow as tf
 
@@ -64,8 +63,7 @@ class EagerGraph(AbstractGraph):
         assert tf.executing_eagerly(), "Cannot use EagerGraph when not in tf eager mode."
         super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
 
-    @overrides
-    def run(self, ops: str, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
+    def run(self, ops: str, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:  # type: ignore
         if ops == 'update':
             return self.update(*args, **kwargs)
         elif ops == 'loss':
@@ -288,8 +286,7 @@ class DatasetGraph(AbstractGraph):
         else:
             return self._run_tensor(ops, *args, **kwargs)
 
-    @overrides
-    def update(self, data_handle: bytes) -> Union[float, Tuple]:
+    def update(self, data_handle: bytes) -> Union[float, Tuple]:  # type: ignore
         """Updates the model with a tf.data.Dataset in graph mode.
         
         Args:
@@ -305,8 +302,7 @@ class DatasetGraph(AbstractGraph):
         _, loss = self._run_tensor([self.update_op, self.losses], data_handle)
         return loss
 
-    @overrides
-    def loss(self, data_handle: bytes) -> Union[float, Tuple]:
+    def loss(self, data_handle: bytes) -> Union[float, Tuple]:  # type: ignore
         """Gets loss of the model with a tf.data.Dataset in graph mode.
         
         Args:
