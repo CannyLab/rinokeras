@@ -42,7 +42,7 @@ class AbstractGraph(ABC):
         return total_loss, losses
 
     @abstractmethod
-    def run(self, tensors: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
         raise NotImplementedError("run op not implemented.")
 
     @abstractmethod
@@ -65,14 +65,14 @@ class EagerGraph(AbstractGraph):
         super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
 
     @overrides
-    def run(self, tensors: str, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
-        if tensors == 'update':
+    def run(self, ops: str, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
+        if ops == 'update':
             return self.update(*args, **kwargs)
-        elif tensors == 'loss':
+        elif ops == 'loss':
             return self.loss(*args, **kwargs)
         else:
-            raise ValueError("Unknown argument for tensors: {}. \
-                In eager mode, can only automatically run the update and loss ops.".format(tensors))
+            raise ValueError("Unknown argument for ops: {}. \
+                In eager mode, can only automatically run the update and loss ops.".format(ops))
 
     def update(self, *args, **kwargs) -> Union[tf.EagerTensor, Tuple]:
         """Updates the model in eager mode.
@@ -152,6 +152,39 @@ class PlaceholderGraph(AbstractGraph):
                 raise KeyError("Expected keyword argument '{}'".format(kw))
         return feed_dict
 
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        """Runs the 
+        
+        Args:
+            ops (Union[tf.Tensor, Sequence[tf.Tensor]]): op or sequence of ops to run
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            Result of running ops
+        
+        Raises:
+            RuntimeError: If not run inside a tf.Session context
+        """
+        assert self._built, "Cannot call update without setting up placeholders."
+
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+
+        feed_dict = self._get_feed_dict(*args, **kwargs)
+
+        results = sess.run(ops, feed_dict=feed_dict)
+        return results
+
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        if ops == 'update':
+            return self.update(*args, **kwargs)
+        elif ops == 'loss':
+            return self.loss(*args, **kwargs)
+        else:
+            return self._run_tensor(ops, *args, **kwargs)
+
     def update(self, *args, **kwargs) -> Union[float, Tuple]:
         """Updates the model with placeholders in graph mode.
         
@@ -165,15 +198,7 @@ class PlaceholderGraph(AbstractGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        assert self._built, "Cannot call update without setting up placeholders."
-
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-
-        feed_dict = self._get_feed_dict(*args, **kwargs)
-
-        _, loss = sess.run([self.update_op, self.losses], feed_dict=feed_dict)
+        _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
         return loss
 
     def loss(self, *args, **kwargs) -> Union[float, Tuple]:
@@ -189,15 +214,7 @@ class PlaceholderGraph(AbstractGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        assert self._built, "Cannot call update without setting up placeholders."
-
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-
-        feed_dict = self._get_feed_dict(*args, **kwargs)
-
-        loss = sess.run(self.losses, feed_dict=feed_dict)
+        loss = self._run_tensor(self.losses, *args, **kwargs)
         return loss
 
 
@@ -239,16 +256,15 @@ class DatasetGraph(AbstractGraph):
 
         self._built = True
 
-    @overrides
-    def update(self, data_handle: bytes) -> Union[float, Tuple]:
-        """Updates the model with a tf.data.Dataset in graph mode.
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], data_handle: bytes) -> Any:
+        """Runs ops on the model with a tf.data.Dataset in graph mode.
         
         Args:
-            do_training (bool): Whether to do a backwards pass or not.
+            ops (Union[tf.Tensor, Sequence[tf.Tensor]]): Ops to run on the graph
             data_handle (bytes): Handle to a tf.data.Iterator
         
         Returns:
-            loss (Union[float, Tuple]): Model loss on input batch
+            Result of ops
         
         Raises:
             RuntimeError: If not run inside a tf Session context
@@ -261,7 +277,32 @@ class DatasetGraph(AbstractGraph):
         if sess is None:
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
 
-        _, loss = sess.run([self.update_op, self.losses], feed_dict={self.handle: data_handle})
+        result = sess.run(ops, feed_dict={self.handle: data_handle})
+        return result
+
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        if ops == 'update':
+            return self.update(*args, **kwargs)
+        elif ops == 'loss':
+            return self.loss(*args, **kwargs)
+        else:
+            return self._run_tensor(ops, *args, **kwargs)
+
+    @overrides
+    def update(self, data_handle: bytes) -> Union[float, Tuple]:
+        """Updates the model with a tf.data.Dataset in graph mode.
+        
+        Args:
+            data_handle (bytes): Handle to a tf.data.Iterator
+        
+        Returns:
+            loss (Union[float, Tuple]): Model loss on input batch
+        
+        Raises:
+            RuntimeError: If not run inside a tf Session context
+            TypeError: If input data handle is not a bytes object
+        """
+        _, loss = self._run_tensor([self.update_op, self.losses], data_handle)
         return loss
 
     @overrides
@@ -269,7 +310,6 @@ class DatasetGraph(AbstractGraph):
         """Gets loss of the model with a tf.data.Dataset in graph mode.
         
         Args:
-            do_training (bool): Whether to do a backwards pass or not.
             data_handle (bytes): Handle to a tf.data.Iterator
         
         Returns:
@@ -279,12 +319,5 @@ class DatasetGraph(AbstractGraph):
             RuntimeError: If not run inside a tf Session context
             TypeError: If input data handle is not a bytes object
         """
-        if not isinstance(data_handle, bytes):
-            raise TypeError("Data handle must be a bytes object")
-
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-
-        loss = sess.run(self.losses, feed_dict={self.handle: data_handle})
+        loss = self._run_tensor(self.losses, data_handle)
         return loss
