@@ -316,7 +316,7 @@ class MultiGPUGraph(AbstractGraph):
                  loss_args: Sequence,
                  loss_kwargs: Dict,
                  num_gpus: int = 1) -> None:
-        super(MultiGPUGraph, self).__init__(optimizer, loss_function, grads_function)
+        super().__init__(optimizer, loss_function, grads_function)
         self.num_gpus = num_gpus
 
         graphs = []
@@ -328,14 +328,15 @@ class MultiGPUGraph(AbstractGraph):
         loss_kwargs = {kw: tf.split(arg, num_gpus, axis=0) for kw, arg in loss_kwargs.items()}
         for gpu in range(num_gpus):
             with tf.device('/gpu:{}'.format(gpu)):
-                args = [arg[i] for arg in loss_args]
-                kwargs = {kw: arg[i] for kw, arg in loss_kwargs.items()}
+                args = [arg[gpu] for arg in loss_args]
+                kwargs = {kw: arg[gpu] for kw, arg in loss_kwargs.items()}
 
-                graph = PlacholderGraph(optimizer, loss_function, grads_function, args, kwargs)
+                graph = PlaceholderGraph(optimizer, loss_function, grads_function, args, kwargs)
                 graphs.append(graph)
                 loss.append(graph.total_loss)
                 losses.append(graph.losses)
                 grads.append(graph.grads)
+        self.graphs = graphs
 
         self.total_loss = self._average_tensors(loss)
         if isinstance(self.graphs[0].losses, list) or isinstance(self.graphs[0].losses, tuple):
@@ -344,7 +345,7 @@ class MultiGPUGraph(AbstractGraph):
             self.losses = self._average_tensors(losses)
 
         self.grads = self._average_gradients(grads)
-        self.update_op = self._optimizer.apply_gradients(self.grads)
+        self.update_op = self.optimizer.apply_gradients(self.grads)
         self.args_in = loss_args
         self.kwargs_in = loss_kwargs
 
@@ -410,16 +411,16 @@ class MultiGPUGraph(AbstractGraph):
         return loss
 
     def _average_tensors(self, tensors: Sequence) -> Any:
-        return tf.reduce_mean(tf.concat(tensor[None] for tensor in tensors, 0), 0)
+        return tf.reduce_mean(tf.concat([tensor[None] for tensor in tensors], 0), 0)
 
     def _average_gradients(self, grads_and_vars: Sequence) -> Sequence:
         assert len(grads_and_vars) == self.num_gpus, 'Length of grads_and_vars does not match number of GPUs'
         if self.num_gpus == 1:
-            return grads_and_vars
+            return grads_and_vars[0]
 
         average_grads = []
         for grad_and_var in zip(*grads_and_vars):
-            grad = self._average_tensors(g for g, _ in grad_and_var)
+            grad = self._average_tensors([g for g, _ in grad_and_var])
             grad = tf.reduce_mean(grads, 0)
             average_grads.append((grad, grad_and_var[0][1]))
         return average_grads

@@ -299,7 +299,7 @@ class Trainer(ABC):
             **kwargs: Placeholders for keyword arguments to loss function
         """
         self._placeholder_graph = MultiGPUGraph(
-            self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.learning_rate, self.num_gpus)
+            self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.num_gpus)
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
@@ -310,7 +310,7 @@ class Trainer(ABC):
             dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
         """
         self._dataset_graph = DatasetGraph(
-            self._optimizer, self.loss_function, self.grads_function, dataset, self.learning_rate)
+            self._optimizer, self.loss_function, self.grads_function, dataset)
         self._has_dataset_handle = True
 
     @property
