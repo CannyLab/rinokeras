@@ -113,7 +113,7 @@ class Trainer(ABC):
         self._clip_gradients = self._get_gradient_clip_function(gradient_clipping, gradient_clipping_bounds)
 
         if tf.executing_eagerly():
-            self._eager_graph = EagerGraph(optimizer, self.loss_function, self.grads_function, learning_rate)
+            self._eager_graph = EagerGraph(self._optimizer, self.loss_function, self.grads_function, learning_rate)
 
         self._has_placeholders: bool = False
         self._has_dataset_handle: bool = False
