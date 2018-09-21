@@ -11,8 +11,7 @@ class AbstractGraph(ABC):
     def __init__(self, 
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
-                 grads_function: Callable,
-                 learning_rate: float = 1e-3) -> None:
+                 grads_function: Callable) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
         if AbstractGraph._num_graphs > 0:
@@ -58,10 +57,9 @@ class EagerGraph(AbstractGraph):
     def __init__(self, 
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
-                 grads_function: Callable,
-                 learning_rate: float = 1e-3) -> None:
+                 grads_function: Callable) -> None:
         assert tf.executing_eagerly(), "Cannot use EagerGraph when not in tf eager mode."
-        super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
+        super(EagerGraph, self).__init__(optimizer, loss_function, grads_function)
 
     def run(self, ops: str, *args, **kwargs) -> Union[tf.Tensor, Tuple]:  # type: ignore
         if ops == 'update':
@@ -113,9 +111,8 @@ class PlaceholderGraph(AbstractGraph):
                  loss_function: Callable,
                  grads_function: Callable,
                  loss_args: Sequence,
-                 loss_kwargs: Dict,
-                 learning_rate: float = 1e-3) -> None:
-        super(PlaceholderGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
+                 loss_kwargs: Dict) -> None:
+        super(PlaceholderGraph, self).__init__(optimizer, loss_function, grads_function)
         grads, loss_packed = self.grads_function(*loss_args, **loss_kwargs)
         loss, losses = self._unpack_losses(loss_packed)
 
@@ -223,9 +220,8 @@ class DatasetGraph(AbstractGraph):
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
                  grads_function: Callable,
-                 dataset: tf.data.Dataset,
-                 learning_rate: float = 1e-3) -> None:
-        super(DatasetGraph, self).__init__(optimizer, loss_function, grads_function, learning_rate)
+                 dataset: tf.data.Dataset) -> None:
+        super(DatasetGraph, self).__init__(optimizer, loss_function, grads_function)
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
@@ -309,3 +305,121 @@ class DatasetGraph(AbstractGraph):
         """
         loss = self._run_tensor(self.losses, data_handle)
         return loss
+
+
+class MultiGPUGraph(AbstractGraph):
+
+    def __init__(self, 
+                 optimizer: tf.train.Optimizer, 
+                 loss_function: Callable,
+                 grads_function: Callable,
+                 loss_args: Sequence,
+                 loss_kwargs: Dict,
+                 num_gpus: int = 1) -> None:
+        super(MultiGPUGraph, self).__init__(optimizer, loss_function, grads_function)
+        self.num_gpus = num_gpus
+
+        graphs = []
+        loss = []
+        losses = []
+        grads = []
+
+        loss_args = [tf.split(arg, num_gpus, axis=0) for arg in loss_args]
+        loss_kwargs = {kw: tf.split(arg, num_gpus, axis=0) for kw, arg in loss_kwargs.items()}
+        for gpu in range(num_gpus):
+            with tf.device('/gpu:{}'.format(gpu)):
+                args = [arg[i] for arg in loss_args]
+                kwargs = {kw: arg[i] for kw, arg in loss_kwargs.items()}
+
+                graph = PlacholderGraph(optimizer, loss_function, grads_function, args, kwargs)
+                graphs.append(graph)
+                loss.append(graph.total_loss)
+                losses.append(graph.losses)
+                grads.append(graph.grads)
+
+        self.total_loss = self._average_tensors(loss)
+        if isinstance(self.graphs[0].losses, list) or isinstance(self.graphs[0].losses, tuple):
+            self.losses = [self._average_tensors(loss) for loss in zip(*losses)]
+        else:
+            self.losses = self._average_tensors(losses)
+
+        self.grads = self._average_gradients(grads)
+        self.update_op = self._optimizer.apply_gradients(self.grads)
+        self.args_in = loss_args
+        self.kwargs_in = loss_kwargs
+
+    def _get_feed_dict(self, *args, **kwargs) -> Dict[tf.placeholder, Any]:
+        if len(args) != len(self.args_in):
+            raise ValueError("Expected {} positional arguments, but received {}.".format(
+                len(self.args_in), len(args))
+            )
+
+        if len(kwargs) != len(self.kwargs_in):
+            raise ValueError("Expected {} keyword arguments, but received {}.".format(
+                len(self.kwargs_in), len(kwargs))
+            )
+
+        feed_dict = {}
+        for arg_in, arg in zip(self.args_in, args):
+            feed_dict[arg_in] = arg
+        for kw in self.kwargs_in:
+            try:
+                feed_dict[self.kwargs_in[kw]] = kwargs[kw]
+            except KeyError:
+                raise KeyError("Expected keyword argument '{}'".format(kw))
+        return feed_dict
+
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        if ops == 'update':
+            return self.update(*args, **kwargs)
+        elif ops == 'loss':
+            return self.loss(*args, **kwargs)
+        else:
+            return self._run_tensor(ops, *args, **kwargs)
+
+    def update(self, *args, **kwargs) -> Union[float, Tuple]:
+        """Updates the model with placeholders in graph mode.
+        
+        Args:
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, Tuple]): Model loss on input batch
+        
+        Raises:
+            RuntimeError: If not run inside a tf.Session context
+        """
+        _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
+        return loss
+
+    def loss(self, *args, **kwargs) -> Union[float, Tuple]:
+        """Gets loss of model with placeholders in graph mode.
+        
+        Args:
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+        
+        Returns:
+            loss (Union[float, Tuple]): Model loss on input batch
+        
+        Raises:
+            RuntimeError: If not run inside a tf.Session context
+        """
+        loss = self._run_tensor(self.losses, *args, **kwargs)
+        return loss
+
+    def _average_tensors(self, tensors: Sequence) -> Any:
+        return tf.reduce_mean(tf.concat(tensor[None] for tensor in tensors, 0), 0)
+
+    def _average_gradients(self, grads_and_vars: Sequence) -> Sequence:
+        assert len(grads_and_vars) == self.num_gpus, 'Length of grads_and_vars does not match number of GPUs'
+        if self.num_gpus == 1:
+            return grads_and_vars
+
+        average_grads = []
+        for grad_and_var in zip(*grads_and_vars):
+            grad = self._average_tensors(g for g, _ in grad_and_var)
+            grad = tf.reduce_mean(grads, 0)
+            average_grads.append((grad, grad_and_var[0][1]))
+        return average_grads

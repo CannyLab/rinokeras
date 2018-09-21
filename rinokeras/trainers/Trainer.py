@@ -3,7 +3,7 @@ from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
 
-from .graphs import EagerGraph, PlaceholderGraph, DatasetGraph
+from .graphs import EagerGraph, PlaceholderGraph, DatasetGraph, MultiGPUGraph
 
 
 class Trainer(ABC):
@@ -85,7 +85,8 @@ class Trainer(ABC):
                  learning_rate: float = 1e-3,
                  add_model_losses: bool = True,
                  gradient_clipping: str = 'none',
-                 gradient_clipping_bounds: Union[float, Tuple[float, ...]] = (-1, 1)) -> None:
+                 gradient_clipping_bounds: Union[float, Tuple[float, ...]] = (-1, 1),
+                 num_gpus: int = 1) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
         if Trainer._num_trainers > 0:
@@ -96,6 +97,7 @@ class Trainer(ABC):
         self._add_model_losses = add_model_losses
         self._num_param_updates: int = 0
         self.learning_rate = learning_rate
+        self.num_gpus = num_gpus
 
         with tf.variable_scope(self._name):
             if optimizer == 'adam':
@@ -296,8 +298,8 @@ class Trainer(ABC):
             *args: Placeholders for positional arguments to loss function
             **kwargs: Placeholders for keyword arguments to loss function
         """
-        self._placeholder_graph = PlaceholderGraph(
-            self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.learning_rate)
+        self._placeholder_graph = MultiGPUGraph(
+            self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.learning_rate, self.num_gpus)
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
