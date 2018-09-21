@@ -327,28 +327,29 @@ class MultiGPUGraph(AbstractGraph):
         self.args_in = loss_args
         self.kwargs_in = loss_kwargs
 
-        loss_args = [tf.split(arg, num_gpus, axis=0) for arg in loss_args]
-        loss_kwargs = {kw: tf.split(arg, num_gpus, axis=0) for kw, arg in loss_kwargs.items()}
-        for gpu in range(num_gpus):
-            with tf.device('/gpu:{}'.format(gpu)):
-                args = [arg[gpu] for arg in loss_args]
-                kwargs = {kw: arg[gpu] for kw, arg in loss_kwargs.items()}
+        with tf.device('/cpu:0'):
+            loss_args = [tf.split(arg, num_gpus, axis=0) for arg in loss_args]
+            loss_kwargs = {kw: tf.split(arg, num_gpus, axis=0) for kw, arg in loss_kwargs.items()}
+            for gpu in range(num_gpus):
+                with tf.device('/gpu:{}'.format(gpu)):
+                    args = [arg[gpu] for arg in loss_args]
+                    kwargs = {kw: arg[gpu] for kw, arg in loss_kwargs.items()}
 
-                graph = PlaceholderGraph(optimizer, loss_function, grads_function, args, kwargs)
-                graphs.append(graph)
-                loss.append(graph.total_loss)
-                losses.append(graph.losses)
-                grads.append(graph.grads)
-        self.graphs = graphs
+                    graph = PlaceholderGraph(optimizer, loss_function, grads_function, args, kwargs)
+                    graphs.append(graph)
+                    loss.append(graph.total_loss)
+                    losses.append(graph.losses)
+                    grads.append(graph.grads)
+            self.graphs = graphs
 
-        self.total_loss = self._average_tensors(loss)
-        if isinstance(self.graphs[0].losses, list) or isinstance(self.graphs[0].losses, tuple):
-            self.losses = [self._average_tensors(loss) for loss in zip(*losses)]
-        else:
-            self.losses = self._average_tensors(losses)
+            self.total_loss = self._average_tensors(loss)
+            if isinstance(self.graphs[0].losses, list) or isinstance(self.graphs[0].losses, tuple):
+                self.losses = [self._average_tensors(loss) for loss in zip(*losses)]
+            else:
+                self.losses = self._average_tensors(losses)
 
-        self.grads = self._average_gradients(grads)
-        self.update_op = self.optimizer.apply_gradients(self.grads)
+            self.grads = self._average_gradients(grads)
+            self.update_op = self.optimizer.apply_gradients(self.grads)
 
     def _get_feed_dict(self, *args, **kwargs) -> Dict[tf.placeholder, Any]:
         if len(args) != len(self.args_in):
