@@ -17,4 +17,6 @@ You can install in development mode using `pip install -e .`
 
 ### About the Name
 
-Keras is Greek for 'horn', and rhinoceroses have horns, thus the name, rinokeras 
+Keras is Greek for 'horn', and rhinoceroses have horns, thus the name, rinokeras
+
+
