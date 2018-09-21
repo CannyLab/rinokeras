@@ -324,6 +324,9 @@ class MultiGPUGraph(AbstractGraph):
         losses = []
         grads = []
 
+        self.args_in = loss_args
+        self.kwargs_in = loss_kwargs
+
         loss_args = [tf.split(arg, num_gpus, axis=0) for arg in loss_args]
         loss_kwargs = {kw: tf.split(arg, num_gpus, axis=0) for kw, arg in loss_kwargs.items()}
         for gpu in range(num_gpus):
@@ -346,8 +349,6 @@ class MultiGPUGraph(AbstractGraph):
 
         self.grads = self._average_gradients(grads)
         self.update_op = self.optimizer.apply_gradients(self.grads)
-        self.args_in = loss_args
-        self.kwargs_in = loss_kwargs
 
     def _get_feed_dict(self, *args, **kwargs) -> Dict[tf.placeholder, Any]:
         if len(args) != len(self.args_in):
@@ -444,6 +445,5 @@ class MultiGPUGraph(AbstractGraph):
         average_grads = []
         for grad_and_var in zip(*grads_and_vars):
             grad = self._average_tensors([g for g, _ in grad_and_var])
-            grad = tf.reduce_mean(grads, 0)
             average_grads.append((grad, grad_and_var[0][1]))
         return average_grads
