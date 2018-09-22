@@ -57,9 +57,11 @@ class EagerGraph(AbstractGraph):
     def __init__(self, 
                  optimizer: tf.train.Optimizer, 
                  loss_function: Callable,
-                 grads_function: Callable) -> None:
+                 grads_function: Callable,
+                 *args,
+                 **kwargs) -> None:
         assert tf.executing_eagerly(), "Cannot use EagerGraph when not in tf eager mode."
-        super(EagerGraph, self).__init__(optimizer, loss_function, grads_function)
+        super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, *args, **kwargs)
 
     def run(self, ops: str, *args, **kwargs) -> Union[tf.Tensor, Tuple]:  # type: ignore
         if ops == 'update':
@@ -111,8 +113,10 @@ class RunGraph(AbstractGraph):
                  loss_function: Callable,
                  grads_function: Callable,
                  loss_args: Sequence,
-                 loss_kwargs: Dict) -> None:
-        super(RunGraph, self).__init__(optimizer, loss_function, grads_function)
+                 loss_kwargs: Dict,
+                 *args,
+                 **kwargs) -> None:
+        super(RunGraph, self).__init__(optimizer, loss_function, grads_function, *args, **kwargs)
         self.build(*loss_args, **loss_kwargs)
 
     def build(self, *args, **kwargs):
@@ -133,7 +137,8 @@ class RunGraph(AbstractGraph):
                      optimizer: tf.train.Optimizer, 
                      loss_function: Callable,
                      grads_function: Callable,
-                     dataset: tf.data.Dataset):
+                     dataset: tf.data.Dataset,
+                     *args, **kwargs):
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
@@ -148,7 +153,7 @@ class RunGraph(AbstractGraph):
         else:
             loss_args = (batch,)
 
-        new_class = cls(optimizer, loss_function, grads_function, loss_args, loss_kwargs)
+        new_class = cls(optimizer, loss_function, grads_function, loss_args, loss_kwargs, *args, **kwargs)
         new_class.handle = handle
         return new_class
 
@@ -262,16 +267,13 @@ class MultiGPUGraph(RunGraph):
 
         self.args_in = args
         self.kwargs_in = kwargs
-
+        
         with tf.device('/cpu:0'):
-            loss_args = [tf.split(arg, self.num_gpus, axis=0) for arg in args]
-            loss_kwargs = {kw: tf.split(arg, self.num_gpus, axis=0) for kw, arg in kwargs.items()}
+            loss_args = self._split_nested_tensors(args)
+            loss_kwargs = self._split_nested_tensors(kwargs)
             for gpu in range(self.num_gpus):
                 with tf.device('/gpu:{}'.format(gpu)):
-                    args = [arg[gpu] for arg in loss_args]
-                    kwargs = {kw: arg[gpu] for kw, arg in loss_kwargs.items()}
-
-                    graph = RunGraph(self.optimizer, self.loss_function, self.grads_function, args, kwargs)
+                    graph = RunGraph(self.optimizer, self.loss_function, self.grads_function, loss_args[gpu], loss_kwargs[gpu])
                     graphs.append(graph)
                     loss.append(graph.total_loss)
                     losses.append(graph.losses)
@@ -287,6 +289,34 @@ class MultiGPUGraph(RunGraph):
             self.grads = self._average_gradients(grads)
             self.update_op = self.optimizer.apply_gradients(self.grads)
         self.handle = None
+
+    def _split_nested_tensors(self, tensors: Sequence) -> Sequence:
+        if isinstance(tensors, tuple) or isinstance(tensors, list):
+            splits = tuple([] for _ in range(self.num_gpus))
+            for tensor in tensors:
+                split_tensors = self._split_nested_tensors(tensor)
+                for i, split_t in enumerate(split_tensors):
+                    splits[i].append(split_t)
+            splits = tuple(tuple(split) for split in splits)
+        elif isinstance(tensors, dict):
+            splits = tuple({} for _ in range(self.num_gpus))
+            for kw, tensor in tensors.items():
+                split_tensors = self._split_nested_tensors(tensor)
+                for i, split_t in enumerate(split_tensors):
+                    splits[i][kw] = split_t
+
+        else:
+            split_batch_size = tf.shape(tensors)[0] // self.num_gpus
+            splits = []
+            for i in range(self.num_gpus):
+                start = split_batch_size * i
+                end = split_batch_size * (i + 1)
+                if (i + 1) != self.num_gpus:
+                    splits.append(tensors[start:end])
+                else:
+                    splits.append(tensors[start:])
+            # splits = tf.split(tensors, self.num_gpus, axis=0)
+        return splits
 
     def _average_tensors(self, tensors: Sequence) -> Any:
         return tf.reduce_mean(tf.concat([tensor[None] for tensor in tensors], 0), 0)

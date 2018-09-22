@@ -131,7 +131,8 @@ class Trainer(ABC):
             clipped_grads = []
             for g, v in grads:
                 if g is None:
-                    clipped_grads.append((None, v))
+                    # Choosing not to add gradients to list if they're None. Both adding/not adding are valid choices.
+                    # clipped_grads.append((None, v))
                     continue
 
                 if clip_type == 'value':
@@ -331,7 +332,7 @@ class Trainer(ABC):
                 self._optimizer, self.loss_function, self.grads_function, dataset)
         else:
             self._dataset_graph = MultiGPUGraph.from_dataset(
-                self._optimizer, self.loss_function, self.grads_function, dataset)
+                self._optimizer, self.loss_function, self.grads_function, dataset, self.num_gpus)
         self._has_dataset_handle = True
 
     @property
