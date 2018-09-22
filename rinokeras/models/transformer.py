@@ -276,7 +276,8 @@ class TransformerInputEmbedding(tf.keras.Model):
                  dropout: Optional[float] = None,
                  batch_norm: bool = False,
                  n_embed_layers: int = 1,
-                 embedding_initializer=None) -> None:
+                 embedding_initializer=None,
+                 freeze_embeddings=False) -> None:
         super(TransformerInputEmbedding, self).__init__()
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -296,6 +297,8 @@ class TransformerInputEmbedding(tf.keras.Model):
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
             self.embedding = DenseStack([embed_size] * n_embed_layers, output_activation='relu')
 
+        self.discrete = discrete
+        self.freeze_embeddings = freeze_embeddings
         self.position_encoding = PositionEmbedding()
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
         self.batch_norm = None if batch_norm is False else tf.keras.layers.BatchNormalization()
@@ -306,7 +309,9 @@ class TransformerInputEmbedding(tf.keras.Model):
         # TODO: Make sure that for non-discrete embeddings, this is handled correctly
         # and allow the shape to be correctly sorted. This should have a tensor
         # as output with shape [batch_size x sequence_len x d_model]
-        embedding = tf.stop_gradient(self.embedding(inputs))
+        embedding = self.embedding(inputs)
+        if self.freeze_embeddings:
+            embedding = K.stop_gradients(embedding)
 
         # If we're using dropout, then we need to add on the dropout
         # of the embedding

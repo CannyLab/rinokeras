@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
+import time
 
 from .graphs import EagerGraph, PlaceholderGraph, DatasetGraph, MultiGPUGraph
 
@@ -98,6 +99,7 @@ class Trainer(ABC):
         self._num_param_updates: int = 0
         self.learning_rate = learning_rate
         self.num_gpus = num_gpus
+        self.flops_required = None
 
         with tf.variable_scope(self._name):
             if optimizer == 'adam':
@@ -126,10 +128,10 @@ class Trainer(ABC):
         def clip_func(grads):
             if clip_type in ['none', 'None']:
                 return grads
-            grads = []
+            clipped_grads = []
             for g, v in grads:
                 if g is None:
-                    grads.append((None, v))
+                    clipped_grads.append((None, v))
                     continue
 
                 if clip_type == 'value':
@@ -142,8 +144,8 @@ class Trainer(ABC):
                     g = tf.clip_by_average_norm(g, clip_bounds)
                 else:
                     raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))
-                grads.append((g, v))
-            return grads
+                clipped_grads.append((g, v))
+            return clipped_grads
         return clip_func
 
     @abstractmethod
@@ -183,8 +185,6 @@ class Trainer(ABC):
             total_loss, _ = self._unpack_losses(loss_packed)
             loss_to_optimize = total_loss if not self._add_model_losses else total_loss + sum(self._model.losses)
             grads = self._optimizer.compute_gradients(loss_to_optimize, self._model.variables)
-            print(grads)
-            print(any(g is not None for g, v in grads))
 
         # By default all of these norms use L2 TODO: Add additional norm types to the options
         grads = self._clip_gradients(grads)
@@ -276,7 +276,18 @@ class Trainer(ABC):
         Raises:
             RuntimeError: Description
         """
-        loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
+        t0 = time.time()
+        if self.flops_required is None:
+            run_meta = tf.RunMetadata()
+            loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
+            opts = tf.profiler.ProfileOptionBuilder.float_operation()
+            opts['output'] = 'none'
+            self.flops_required = tf.profiler.profile(tf.get_default_session().graph, run_meta=run_meta, cmd='op', options=opts).total_float_ops
+        else:
+            loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
+        self.last_batch_time = time.time() - t0
+        self.last_batch_flops = self.flops_required / self.last_batch_time
+
         self._num_param_updates += 1
         return loss
 
