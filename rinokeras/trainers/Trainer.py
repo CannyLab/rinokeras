@@ -3,7 +3,7 @@ from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
 
-from .graphs import EagerGraph, PlaceholderGraph, DatasetGraph, MultiGPUGraph
+from .graphs import EagerGraph, RunGraph, MultiGPUGraph
 
 
 class Trainer(ABC):
@@ -115,7 +115,7 @@ class Trainer(ABC):
         self._clip_gradients = self._get_gradient_clip_function(gradient_clipping, gradient_clipping_bounds)
 
         if tf.executing_eagerly():
-            self._eager_graph = EagerGraph(self._optimizer, self.loss_function, self.grads_function, learning_rate)
+            self._eager_graph = EagerGraph(self._optimizer, self.loss_function, self.grads_function)
 
         self._has_placeholders: bool = False
         self._has_dataset_handle: bool = False
@@ -298,8 +298,12 @@ class Trainer(ABC):
             *args: Placeholders for positional arguments to loss function
             **kwargs: Placeholders for keyword arguments to loss function
         """
-        self._placeholder_graph = MultiGPUGraph(
-            self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.num_gpus)
+        if self.num_gpus == 1:
+            self._placeholder_graph = RunGraph(
+                self._optimizer, self.loss_function, self.grads_function, args, kwargs)
+        else:
+            self._placeholder_graph = MultiGPUGraph(
+                self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.num_gpus)
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
@@ -309,8 +313,12 @@ class Trainer(ABC):
         Args:
             dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
         """
-        self._dataset_graph = DatasetGraph(
-            self._optimizer, self.loss_function, self.grads_function, dataset)
+        if self.num_gpus == 1:
+            self._dataset_graph = RunGraph.from_dataset(
+                self._optimizer, self.loss_function, self.grads_function, dataset)
+        else:
+            self._dataset_graph = MultiGPUGraph.from_dataset(
+                self._optimizer, self.loss_function, self.grads_function, dataset)
         self._has_dataset_handle = True
 
     @property
