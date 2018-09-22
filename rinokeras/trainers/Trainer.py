@@ -183,6 +183,8 @@ class Trainer(ABC):
             total_loss, _ = self._unpack_losses(loss_packed)
             loss_to_optimize = total_loss if not self._add_model_losses else total_loss + sum(self._model.losses)
             grads = self._optimizer.compute_gradients(loss_to_optimize, self._model.variables)
+            print(grads)
+            print(any(g is not None for g, v in grads))
 
         # By default all of these norms use L2 TODO: Add additional norm types to the options
         grads = self._clip_gradients(grads)

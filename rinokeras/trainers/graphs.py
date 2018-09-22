@@ -232,7 +232,7 @@ class DatasetGraph(AbstractGraph):
             grads, loss_packed = self.grads_function(*batch)
         else:
             grads, loss_packed = self.grads_function(batch)
-
+        
         loss, losses = self._unpack_losses(loss_packed)
         update_op = self.optimizer.apply_gradients(grads)
 
