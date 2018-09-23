@@ -312,7 +312,7 @@ class Trainer(ABC):
             *args: Placeholders for positional arguments to loss function
             **kwargs: Placeholders for keyword arguments to loss function
         """
-        if self.num_gpus == 1:
+        if self.num_gpus <= 1:
             self._placeholder_graph = RunGraph(
                 self._optimizer, self.loss_function, self.grads_function, args, kwargs)
         else:
@@ -327,7 +327,7 @@ class Trainer(ABC):
         Args:
             dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
         """
-        if self.num_gpus == 1:
+        if self.num_gpus <= 1:
             self._dataset_graph = RunGraph.from_dataset(
                 self._optimizer, self.loss_function, self.grads_function, dataset)
         else:
