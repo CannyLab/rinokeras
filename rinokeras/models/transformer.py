@@ -5,6 +5,7 @@ import tensorflow.keras.backend as K
 
 from rinokeras.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
+from tensorflow.python.keras import backend as K  # pylint: disable=E0611
 
 
 class TransformerSelfAttention(tf.keras.Model):
@@ -267,6 +268,7 @@ class TransformerDecoder(tf.keras.Model):
 
             return cross_attention_mask
 
+
 # TODO: Split this into a discrete/continuous embedding rather than handle the logic here
 class TransformerInputEmbedding(tf.keras.Model):
 
@@ -404,7 +406,6 @@ class Transformer(tf.keras.Model):
         else:
             self.positional_encoding = PositionEmbedding()
 
-
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
             n_layers, n_heads, d_model, d_filter, dropout)
@@ -511,7 +512,7 @@ class Transformer(tf.keras.Model):
                 first_zeros = tf.zeros((batch_size, 1))
             else:
                 batch_size, target_size = tf.shape(target_sequence)[0], target_sequence.shape.as_list()[-1]
-                first_zeros = 1e-10* tf.ones((batch_size, 1, target_size),dtype=target_sequence.dtype)
+                first_zeros = 1e-10 * tf.ones((batch_size, 1, target_size),dtype=target_sequence.dtype)
 
             first_zeros = tf.cast(first_zeros, target_sequence.dtype)
             target_sequence = tf.concat(

@@ -95,9 +95,9 @@ class Conv2DStack(Stack):
                  filters: Sequence[int],
                  kernel_size: Sequence[int],
                  strides: Sequence[int],
-                 batch_norm: bool = False, 
-                 activation: str = 'relu', 
-                 padding: str = 'same', 
+                 batch_norm: bool = False,
+                 activation: str = 'relu',
+                 padding: str = 'same',
                  flatten_output: bool = True,
                  **kwargs) -> None:
         super(Conv2DStack, self).__init__()
@@ -115,10 +115,10 @@ class DenseStack(Stack):
     """
     A stack of fully connected layers. Can do batch norm and specify an alternate output activation.
     """
-    def __init__(self, 
-                 layers: Sequence[Union[tuple, int]], 
-                 batch_norm: bool = False, 
-                 activation: str = 'relu', 
+    def __init__(self,
+                 layers: Sequence[Union[tuple, int]],
+                 batch_norm: bool = False,
+                 activation: str = 'relu',
                  output_activation: Optional[str] = None) -> None:
         super(DenseStack, self).__init__()
         if layers is None:
@@ -159,11 +159,11 @@ class Residual(tf.keras.Model):
 
 class Highway(tf.keras.Model):
     """
-    Implementation of a highway layer. Can use convolutional or fully connected layer. 
+    Implementation of a highway layer. Can use convolutional or fully connected layer.
 
     From the paper: https://arxiv.org/abs/1607.06450
     """
-    def __init__(self, 
+    def __init__(self,
                  convolution: bool = False,
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
