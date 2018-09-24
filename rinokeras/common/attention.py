@@ -61,9 +61,6 @@ class AttentionQKV(tf.keras.Model):
         self.key_depth = key_depth
         self.value_depth = value_depth
 
-        # TODO: Splitting this up as three layers is slower than concatenating the layers,
-        #       doing the transformation, and then re-separating the layers would be.
-
     def build(self, input_shapes):
         if input_shapes[0] is input_shapes[1]:
             self.projection_layer = tf.keras.layers.Dense(2 * self.key_depth + self.value_depth, use_bias=False)
@@ -80,7 +77,8 @@ class AttentionQKV(tf.keras.Model):
         query_antecedent, memory_antecedent = inputs
         if query_antecedent is memory_antecedent:
             projection = self.projection_layer(query_antecedent)
-            queries, keys, values = tf.split(projection, tf.stack((self.key_depth, self.key_depth, self.value_depth)), axis=-1)
+            queries, keys, values = tf.split(projection, tf.stack((self.key_depth, self.key_depth, self.value_depth)), 
+                                             axis=-1)
         else:
             queries = self.query_layer(query_antecedent)
             projection = self.projection_layer(memory_antecedent)
