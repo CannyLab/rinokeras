@@ -1,6 +1,7 @@
 from typing import Optional
 
 import tensorflow as tf
+import tensorflow.keras.backend as K
 
 from rinokeras.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
@@ -311,7 +312,7 @@ class TransformerInputEmbedding(tf.keras.Model):
         # as output with shape [batch_size x sequence_len x d_model]
         embedding = self.embedding(inputs)
         if self.freeze_embeddings:
-            embedding = K.stop_gradients(embedding)
+            embedding = K.stop_gradient(embedding)
 
         # If we're using dropout, then we need to add on the dropout
         # of the embedding
