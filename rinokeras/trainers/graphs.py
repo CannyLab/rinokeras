@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, Sequence, Callable, Union, Dict, Any
+from typing import List, Tuple, Sequence, Callable, Union, Dict, Any
 
 import tensorflow as tf
 
@@ -8,10 +8,12 @@ class AbstractGraph(ABC):
 
     _num_graphs: int = 0
 
-    def __init__(self, 
-                 optimizer: tf.train.Optimizer, 
+    def __init__(self,
+                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
-                 grads_function: Callable) -> None:
+                 grads_function: Callable,
+                 *args,
+                 **kwargs) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
         if AbstractGraph._num_graphs > 0:
@@ -24,11 +26,11 @@ class AbstractGraph(ABC):
 
     def _unpack_losses(self, losses: Union[tf.Tensor, Sequence[tf.Tensor]]):
         """Optionally unpacks a sequence of losses
-        
+
         Args:
-            losses (Union[tf.Tensor, Sequence[tf.Tensor]]): Loss tensor or sequence of loss tensors with 
+            losses (Union[tf.Tensor, Sequence[tf.Tensor]]): Loss tensor or sequence of loss tensors with
                 first tensor being total loss
-        
+
         Returns:
             tf.Tensor, Union[tf.Tensor, Sequence[tf.Tensor]]: Total loss, and sequence of loss tensors
         """
@@ -54,8 +56,8 @@ class AbstractGraph(ABC):
 
 class EagerGraph(AbstractGraph):
 
-    def __init__(self, 
-                 optimizer: tf.train.Optimizer, 
+    def __init__(self,
+                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
                  grads_function: Callable,
                  *args,
@@ -74,11 +76,11 @@ class EagerGraph(AbstractGraph):
 
     def update(self, *args, **kwargs) -> Union[tf.Tensor, Tuple]:
         """Updates the model in eager mode.
-        
+
         Args:
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[float, tf.Tensor]): Model loss on input batch
         """
@@ -88,11 +90,11 @@ class EagerGraph(AbstractGraph):
 
     def loss(self, *args, **kwargs) -> Union[tf.Tensor, Tuple]:
         """Gets the loss of the model in eager mode.
-        
+
         Args:
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[tf.Tensor, Tuple]): Model loss on input batch
         """
@@ -102,14 +104,14 @@ class EagerGraph(AbstractGraph):
 
 class RunGraph(AbstractGraph):
     """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
-            
+
         Args:
             *args: Placeholders for positional arguments to loss function
             **kwargs: Placeholders for keyword arguments to loss function
     """
 
-    def __init__(self, 
-                 optimizer: tf.train.Optimizer, 
+    def __init__(self,
+                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
                  grads_function: Callable,
                  loss_args: Sequence,
@@ -134,7 +136,7 @@ class RunGraph(AbstractGraph):
 
     @classmethod
     def from_dataset(cls,
-                     optimizer: tf.train.Optimizer, 
+                     optimizer: tf.train.Optimizer,
                      loss_function: Callable,
                      grads_function: Callable,
                      dataset: tf.data.Dataset,
@@ -185,16 +187,16 @@ class RunGraph(AbstractGraph):
         return feed_dict
 
     def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
-        """Runs the 
-        
+        """Runs the network for a specific tensor
+
         Args:
             ops (Union[tf.Tensor, Sequence[tf.Tensor]]): op or sequence of ops to run
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             Result of running ops
-        
+
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
@@ -217,14 +219,14 @@ class RunGraph(AbstractGraph):
 
     def update(self, *args, **kwargs) -> Union[float, Tuple]:
         """Updates the model with placeholders in graph mode.
-        
+
         Args:
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[float, Tuple]): Model loss on input batch
-        
+
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
@@ -233,24 +235,25 @@ class RunGraph(AbstractGraph):
 
     def loss(self, *args, **kwargs) -> Union[float, Tuple]:
         """Gets loss of model with placeholders in graph mode.
-        
+
         Args:
             *args: Positional arguments to the loss function
             **kwargs: Keyword arguments to the loss function
-        
+
         Returns:
             loss (Union[float, Tuple]): Model loss on input batch
-        
+
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
         loss = self._run_tensor(self.losses, *args, **kwargs)
         return loss
 
+
 class MultiGPUGraph(RunGraph):
 
-    def __init__(self, 
-                 optimizer: tf.train.Optimizer, 
+    def __init__(self,
+                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
                  grads_function: Callable,
                  loss_args: Sequence,
@@ -267,7 +270,7 @@ class MultiGPUGraph(RunGraph):
 
         self.args_in = args
         self.kwargs_in = kwargs
-        
+
         with tf.device('/cpu:0'):
             loss_args = self._split_nested_tensors(args)
             loss_kwargs = self._split_nested_tensors(kwargs)
@@ -290,16 +293,16 @@ class MultiGPUGraph(RunGraph):
             self.update_op = self.optimizer.apply_gradients(self.grads)
         self.handle = None
 
-    def _split_nested_tensors(self, tensors: Sequence) -> Sequence:
+    def _split_nested_tensors(self, tensors: List) -> List:
         if isinstance(tensors, tuple) or isinstance(tensors, list):
-            splits = tuple([] for _ in range(self.num_gpus))
+            splits: List[List[Any]] = list([] for _ in range(self.num_gpus))
             for tensor in tensors:
                 split_tensors = self._split_nested_tensors(tensor)
                 for i, split_t in enumerate(split_tensors):
                     splits[i].append(split_t)
-            splits = tuple(tuple(split) for split in splits)
+            splits = list(list(split) for split in splits)
         elif isinstance(tensors, dict):
-            splits = tuple({} for _ in range(self.num_gpus))
+            splits = list({} for _ in range(self.num_gpus))
             for kw, tensor in tensors.items():
                 split_tensors = self._split_nested_tensors(tensor)
                 for i, split_t in enumerate(split_tensors):
