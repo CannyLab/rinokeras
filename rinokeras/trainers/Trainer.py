@@ -92,16 +92,22 @@ class Trainer(ABC):
         self._name = self.__class__.__name__.lower()
         if Trainer._num_trainers > 0:
             self._name += '_{}'.format(Trainer._num_trainers)
+        self.learning_rate = learning_rate
         Trainer._num_trainers += 1
         self._model = model
 
         self._add_model_losses = add_model_losses
         self._num_param_updates: int = 0
-        self.learning_rate = learning_rate
         self.num_gpus = num_gpus
         self.flops_required = None
 
         with tf.variable_scope(self._name):
+            if not tf.executing_eagerly():
+                self.learning_rate = tf.placeholder(tf.float32, shape=(), name='learning_rate')
+                self._learning_rate = learning_rate
+            else:
+                self._learning_rate = learning_rate
+                self.learning_rate = learning_rate
             if optimizer == 'adam':
                 self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             elif optimizer == 'rmsprop':
@@ -126,16 +132,15 @@ class Trainer(ABC):
             Callable[[Sequence], List]:
 
         def clip_func(grads):
-            if clip_type in ['none', 'None']:
-                return grads
             clipped_grads = []
             for g, v in grads:
                 if g is None:
                     # Choosing not to add gradients to list if they're None. Both adding/not adding are valid choices.
                     # clipped_grads.append((None, v))
                     continue
-
-                if clip_type == 'value':
+                if clip_type in ['none', 'None']:
+                    pass
+                elif clip_type == 'value':
                     g = tf.clip_by_value(g, clip_bounds[0], clip_bounds[1])
                 elif clip_type == 'norm':
                     g = tf.clip_by_norm(g, clip_bounds)
