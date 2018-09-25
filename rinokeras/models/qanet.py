@@ -189,7 +189,7 @@ class QANetInputEmbedding(tf.keras.Model):
             char_embedding = self.dropout(char_embedding)
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, 200)
         char_embedding = tf.reshape(char_embedding, (batch_size * input_length,
-                                                     char_embedding.shape[2],  # These .shapes stay b/c they're constants
+                                                     char_embedding.shape[2],  # These .shapes stay b/c they're constant
                                                      char_embedding.shape[3]))
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, n_filters)
         char_embedding = self.char_conv(char_embedding)
@@ -324,7 +324,8 @@ class QANet(tf.keras.Model):
     def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
         """Calls the model on new inputs.
         
-        :param inputs: Tuple of (Context, Question, Context Characters, Question Characters, Answer Index 1, Answer Index 2, None)
+        :param inputs: Tuple of (Context, Question, Context Characters, Question Characters, 
+                                 Answer Index 1, Answer Index 2, None)
         :type inputs: Tuple[tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor,tf.Tensor]
         :param padding_mask: The padding mask for the question and answer, defaults to None
         :param padding_mask: tf.Tensor, optional
