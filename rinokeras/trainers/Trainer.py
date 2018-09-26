@@ -102,12 +102,11 @@ class Trainer(ABC):
         self.flops_required = 0
 
         with tf.variable_scope(self._name):
+            self._num_param_updates_tensor = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32,
+                                                             initializer=tf.zeros_initializer())
             if not tf.executing_eagerly():
-                self.learning_rate = tf.placeholder(tf.float32, shape=(), name='learning_rate')
-                self._learning_rate = learning_rate
-            else:
-                self._learning_rate = learning_rate
-                self.learning_rate = learning_rate
+                self._increment_param_updates = \
+                    self._num_param_updates_tensor.assign(self._num_param_updates_tensor + 1)
             if optimizer == 'adam':
                 self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
             elif optimizer == 'rmsprop':
@@ -288,13 +287,23 @@ class Trainer(ABC):
             loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
             opts = tf.profiler.ProfileOptionBuilder.float_operation()
             opts['output'] = 'none'
-            self.flops_required = tf.profiler.profile(tf.get_default_session().graph, run_meta=run_meta, cmd='op', options=opts).total_float_ops  # pylint: disable=E1101
+            self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
+                                                      run_meta=run_meta,
+                                                      cmd='op',
+                                                      options=opts).total_float_ops  # pylint: disable=E1101
         else:
             loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
         self.last_batch_time = time.time() - t0
         self.last_batch_flops = self.flops_required / self.last_batch_time
 
         self._num_param_updates += 1
+        if tf.executing_eagerly():
+            self._num_param_updates_tensor += 1
+        else:
+            sess = tf.get_default_session()
+            if sess is None:
+                raise RuntimeError("Must run inside a tf.Session context.")
+            sess.run(self._increment_param_updates)
         return loss
 
     def loss(self, *args, **kwargs):
