@@ -53,7 +53,8 @@ class AttentionQKV(tf.keras.Model):
 
     def __init__(self,
                  key_depth: int,
-                 value_depth: int = None) -> None:
+                 value_depth: int = None,
+                 deprecated: bool = False) -> None:
         super(AttentionQKV, self).__init__()
         if value_depth is None:
             value_depth = key_depth
@@ -61,7 +62,16 @@ class AttentionQKV(tf.keras.Model):
         self.key_depth = key_depth
         self.value_depth = value_depth
 
+        if deprecated:
+            self.query_layer = tf.keras.layers.Dense(self.key_depth, use_bias=False)
+            self.key_layer = tf.keras.layers.Dense(self.key_depth, use_bias=False)
+            self.value_layer = tf.keras.layers.Dense(self.value_depth, use_bias=False)
+        self.deprecated = deprecated
+
     def build(self, input_shapes):
+        if self.deprecated:
+            return
+
         if input_shapes[0] is input_shapes[1]:
             self.projection_layer = tf.keras.layers.Dense(2 * self.key_depth + self.value_depth, use_bias=False)
         else:
@@ -75,14 +85,20 @@ class AttentionQKV(tf.keras.Model):
                 memory_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
         """
         query_antecedent, memory_antecedent = inputs
-        if query_antecedent is memory_antecedent:
-            projection = self.projection_layer(query_antecedent)
-            queries, keys, values = tf.split(projection, tf.stack((self.key_depth, self.key_depth, self.value_depth)), 
-                                             axis=-1)
-        else:
+        if self.deprecated:
             queries = self.query_layer(query_antecedent)
-            projection = self.projection_layer(memory_antecedent)
-            keys, values = tf.split(projection, tf.stack((self.key_depth, self.value_depth)), axis=-1)
+            keys = self.key_layer(memory_antecedent)
+            values = self.value_layer(memory_antecedent)
+        else:
+            if query_antecedent is memory_antecedent:
+                projection = self.projection_layer(query_antecedent)
+                queries, keys, values = tf.split(projection,
+                                                 tf.stack((self.key_depth, self.key_depth, self.value_depth)),
+                                                 axis=-1)
+            else:
+                queries = self.query_layer(query_antecedent)
+                projection = self.projection_layer(memory_antecedent)
+                keys, values = tf.split(projection, tf.stack((self.key_depth, self.value_depth)), axis=-1)
 
         return [queries, keys, values]
 
@@ -212,7 +228,7 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
             mask = tf.expand_dims(mask, 1)
 
         # We know that we're passing this through a softmax later, thus just add a relatively large negative
-        # value to mask the output avoids a hadamard product (though I think that technically it's not 
+        # value to mask the output avoids a hadamard product (though I think that technically it's not
         # any more efficient to do it this way operations wise)
         bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
         masked_similarity = similarity + bias
@@ -246,7 +262,7 @@ class AttentionMap(tf.keras.Model):
         similarity = self.similarity_metric((queries, keys))
         masked_similarity = self.apply_mask(similarity, mask=mask)
         # (batch_size, heads, n_queries, n_keyval)
-        weights = self.attention_function(masked_similarity) 
+        weights = self.attention_function(masked_similarity)
 
         if self.dropout is not None:
             weights = self.dropout(weights)
