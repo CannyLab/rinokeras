@@ -92,7 +92,6 @@ class Trainer(ABC):
         self._name = self.__class__.__name__.lower()
         if Trainer._num_trainers > 0:
             self._name += '_{}'.format(Trainer._num_trainers)
-        self.learning_rate = learning_rate
         Trainer._num_trainers += 1
         self._model = model
 
@@ -104,17 +103,23 @@ class Trainer(ABC):
         with tf.variable_scope(self._name):
             self._num_param_updates_tensor = tf.get_variable('num_param_updates', shape=(), dtype=tf.int32,
                                                              initializer=tf.zeros_initializer())
+            self._learning_rate = tf.get_variable('learning_rate', shape=(), dtype=tf.float32,
+                                                  initializer=tf.constant_initializer(learning_rate),
+                                                  trainable=False)
             if not tf.executing_eagerly():
                 self._increment_param_updates = \
                     self._num_param_updates_tensor.assign(self._num_param_updates_tensor + 1)
+                self._update_learning_rate_ph = tf.placeholder(tf.float32, shape=(), name='learning_rate_placeholder')
+                self._update_learning_rate_op = tf.assign(self._learning_rate, self._update_learning_rate_ph)
+
             if optimizer == 'adam':
-                self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+                self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
             elif optimizer == 'rmsprop':
-                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=self._learning_rate)
             elif optimizer == 'sgd':
-                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=self._learning_rate)
             elif optimizer == 'momentum':
-                self._optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
+                self._optimizer = tf.train.MomentumOptimizer(learning_rate=self._learning_rate, momentum=0.8)
             else:
                 raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
@@ -266,7 +271,7 @@ class Trainer(ABC):
         result = self._run_graph(ops, *args, **kwargs)
         return result
 
-    def train(self, *args, learning_rate: float = 1e-3, **kwargs):
+    def train(self, *args, learning_rate: Optional[float] = None, **kwargs):
         """Trains model on an input batch. Can specify the learning rate.
         See the class docstring for full usage instructions.
 
@@ -279,12 +284,15 @@ class Trainer(ABC):
             loss (Union[float, tf.Tensor]): Model loss on input batch
 
         Raises:
-            RuntimeError: Description
+            RuntimeError: If not executed inside tf.Session context
         """
+        if learning_rate is not None:
+            self.learning_rate = learning_rate
+
         t0 = time.time()
         if self.flops_required == 0:
             run_meta = tf.RunMetadata()
-            loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
+            loss = self._run_graph('update', *args, **kwargs)
             opts = tf.profiler.ProfileOptionBuilder.float_operation()
             opts['output'] = 'none'
             self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
@@ -292,13 +300,13 @@ class Trainer(ABC):
                                                       cmd='op',
                                                       options=opts).total_float_ops  # pylint: disable=E1101
         else:
-            loss = self._run_graph('update', *args, learning_rate=learning_rate, **kwargs)
+            loss = self._run_graph('update', *args, **kwargs)
         self.last_batch_time = time.time() - t0
         self.last_batch_flops = self.flops_required / self.last_batch_time
 
         self._num_param_updates += 1
         if tf.executing_eagerly():
-            self._num_param_updates_tensor += 1
+            self._num_param_updates_tensor.assign(self._num_param_updates)
         else:
             sess = tf.get_default_session()
             if sess is None:
@@ -356,3 +364,21 @@ class Trainer(ABC):
             int: Number of times the train(...) function has been called.
         """
         return self._num_param_updates
+
+    @property
+    def num_param_updates_tensor(self) -> tf.Variable:
+        return self._num_param_updates_tensor
+
+    @property
+    def learning_rate(self) -> tf.Variable:
+        return self._learning_rate
+
+    @learning_rate.setter
+    def learning_rate(self, value: float) -> None:
+        if tf.executing_eagerly():
+            self._learning_rate.assign(value)
+        else:
+            sess = tf.get_default_session()
+            if sess is None:
+                raise RuntimeError("Must be executed inside tf.Session context.")
+            sess.run(self._update_learning_rate_op, feed_dict={self._update_learning_rate_ph: value})
