@@ -14,7 +14,7 @@ class SupervisedTrainer(Trainer):
                  gradient_clipping: str = 'none',
                  gradient_clipping_bounds: Union[float, Tuple[float, ...]] = (-1, 1),
                  num_gpus: int = 1) -> None:
-        super().__init__(model, optimizer, learning_rate, add_model_losses, gradient_clipping, 
+        super().__init__(model, optimizer, learning_rate, add_model_losses, gradient_clipping,
                          gradient_clipping_bounds, num_gpus)
         self._loss_fn = tf.keras.losses.get(loss_type)
 
