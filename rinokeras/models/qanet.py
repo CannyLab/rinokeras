@@ -113,7 +113,8 @@ class QANetConvBlock(tf.keras.Model):
                  activity_regularizer=None) -> None:
         super().__init__()
         conv_layer = tf.keras.layers.SeparableConv1D(filters, kernel_size, padding='same',
-                                                     kernel_regularizer=kernel_regularizer,
+                                                     depthwise_regularizer=kernel_regularizer,
+                                                     pointwise_regularizer=kernel_regularizer,
                                                      bias_regularizer=bias_regularizer,
                                                      activity_regularizer=activity_regularizer)
         if dropout is not None:
