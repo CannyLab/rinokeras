@@ -119,14 +119,15 @@ class DenseStack(Stack):
                  layers: Sequence[Union[tuple, int]],
                  batch_norm: bool = False,
                  activation: str = 'relu',
-                 output_activation: Optional[str] = None) -> None:
+                 output_activation: Optional[str] = None,
+                 **kwargs) -> None:
         super(DenseStack, self).__init__()
         if layers is None:
             layers = []
         for _, layer in enumerate(layers[:-1]):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
-            self.add(tf.keras.layers.Dense(*layer))
+            self.add(tf.keras.layers.Dense(*layer, **kwargs))
             if batch_norm:
                 self.add(tf.keras.layers.BatchNormalization())
             self.add(tf.keras.layers.Activation(activation))
@@ -134,7 +135,7 @@ class DenseStack(Stack):
         out_layer = layers[-1]
         if not isinstance(out_layer, collections.Iterable):
             out_layer = (out_layer,)
-        self.add(tf.keras.layers.Dense(*out_layer))
+        self.add(tf.keras.layers.Dense(*out_layer, **kwargs))
         if output_activation is not None:
             self.add(tf.keras.layers.Activation(output_activation))
 
@@ -167,13 +168,20 @@ class Highway(tf.keras.Model):
                  convolution: bool = False,
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
-                 dropout: Optional[float] = None) -> None:
+                 dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(Highway, self).__init__()
         self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
         self.dropout = None if dropout is None else tf.keras.layers.Dropout(
             dropout)
+
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
 
     def build(self, input_shape):
         units = input_shape[-1]
@@ -183,18 +191,30 @@ class Highway(tf.keras.Model):
                                                padding='same',
                                                acitvation='sigmoid',
                                                use_bias=True,
-                                               bias_initializer=self._gate_initializer)
+                                               bias_initializer=self._gate_initializer,
+                                               kernel_regularizer=self.kernel_regularizer,
+                                               bias_regularizer=self.bias_regularizer,
+                                               activity_regularizer=self.activity_regularizer)
             self.layer = tf.keras.layers.Conv1D(filters=units,
                                                 kernel_size=1,
                                                 padding='same',
-                                                activation=self.activation)
+                                                activation=self.activation,
+                                                kernel_regularizer=self.kernel_regularizer,
+                                                bias_regularizer=self.bias_regularizer,
+                                                activity_regularizer=self.activity_regularizer)
         else:
             self.gate = tf.keras.layers.Dense(units=units,
                                               activation='sigmoid',
                                               use_bias=True,
-                                              bias_initializer=self._gate_initializer)
+                                              bias_initializer=self._gate_initializer,
+                                              kernel_regularizer=self.kernel_regularizer,
+                                              bias_regularizer=self.bias_regularizer,
+                                              activity_regularizer=self.activity_regularizer)
             self.layer = tf.keras.layers.Dense(units=units,
-                                               activation=self.activation)
+                                               activation=self.activation,
+                                               kernel_regularizer=self.kernel_regularizer,
+                                               bias_regularizer=self.bias_regularizer,
+                                               activity_regularizer=self.activity_regularizer)
 
     def call(self, inputs):
         gated = self.gate(inputs)

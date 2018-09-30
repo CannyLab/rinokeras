@@ -1,7 +1,6 @@
 from typing import Optional
 
 import tensorflow as tf
-import tensorflow.keras.backend as K
 
 from rinokeras.common.layers import Residual, Stack, DenseStack, LayerNorm, PositionEmbedding
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
@@ -10,9 +9,19 @@ from tensorflow.python.keras import backend as K  # pylint: disable=E0611
 
 class TransformerSelfAttention(tf.keras.Model):
 
-    def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
+    def __init__(self,
+                 n_heads: int,
+                 dropout: Optional[float],
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerSelfAttention, self).__init__()
-        selfattn = SelfAttention('scaled_dot', n_heads, dropout)
+        selfattn = SelfAttention('scaled_dot',
+                                 n_heads,
+                                 dropout,
+                                 kernel_regularizer=kernel_regularizer,
+                                 bias_regularizer=bias_regularizer,
+                                 activity_regularizer=activity_regularizer)
         self.residual_self_attention = Residual(selfattn)
         self.norm = LayerNorm()
 
@@ -22,9 +31,19 @@ class TransformerSelfAttention(tf.keras.Model):
 
 
 class TransformerMultiAttention(tf.keras.Model):
-    def __init__(self, n_heads: int, dropout: Optional[float]) -> None:
+    def __init__(self,
+                 n_heads: int,
+                 dropout: Optional[float],
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerMultiAttention, self).__init__()
-        multiattn = MultiHeadAttention('scaled_dot', n_heads, dropout)
+        multiattn = MultiHeadAttention('scaled_dot',
+                                       n_heads,
+                                       dropout,
+                                       kernel_regularizer=kernel_regularizer,
+                                       bias_regularizer=bias_regularizer,
+                                       activity_regularizer=activity_regularizer)
         self.residual_multi_attention = Residual(multiattn)
         self.norm = LayerNorm()
 
@@ -34,9 +53,15 @@ class TransformerMultiAttention(tf.keras.Model):
 
 
 class TransformerFeedForward(tf.keras.Model):
-    def __init__(self, filter_size: int, hidden_size: int, dropout: Optional[float]) -> None:
+    def __init__(self, filter_size: int,
+                 hidden_size: int,
+                 dropout: Optional[float],
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerFeedForward, self).__init__()
-        dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None)
+        dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None, kernel_regularizer=kernel_regularizer,
+                                      bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
         self.dropout = None
         if dropout is not None:
             self.dropout = tf.keras.layers.Dropout(dropout)
@@ -62,10 +87,15 @@ class TransformerEncoderBlock(tf.keras.Model):
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
-                 dropout: Optional[float] = None) -> None:
+                 dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerEncoderBlock, self).__init__()
-        self.self_attention = TransformerSelfAttention(n_heads, dropout)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
+        self.self_attention = TransformerSelfAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout, kernel_regularizer=kernel_regularizer,
+                                                   bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
     def call(self, inputs, self_attention_mask=None, training=True):
 
@@ -89,11 +119,17 @@ class TransformerDecoderBlock(tf.keras.Model):
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
-                 dropout: Optional[float] = None) -> None:
+                 dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerDecoderBlock, self).__init__()
-        self.self_attention = TransformerSelfAttention(n_heads, dropout)
-        self.multi_attention = TransformerMultiAttention(n_heads, dropout)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout)
+        self.self_attention = TransformerSelfAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.multi_attention = TransformerMultiAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout, kernel_regularizer=kernel_regularizer,
+                                                   bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
     def call(self, inputs, self_attention_mask=None, cross_attention_mask=None, fast_decode=False, training=True):
         encoder_outputs, decoder_inputs = inputs  # Parse the encoder outputs from the input tensor
@@ -125,12 +161,18 @@ class TransformerEncoder(tf.keras.Model):
                  n_heads: int,
                  d_model: int,
                  d_filter: int,
-                 dropout: Optional[float] = None) -> None:
+                 dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerEncoder, self).__init__()
 
         # The encoding stack is a stack of transformer encoder blocks
-        self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout)
-                                    for _ in range(n_layers)])
+        self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout,
+                                                             kernel_regularizer=kernel_regularizer,
+                                                             bias_regularizer=bias_regularizer,
+                                                             activity_regularizer=activity_regularizer)
+                                     for _ in range(n_layers)])
 
     def call(self, inputs, encoder_mask=None, training=True):
         """
@@ -171,10 +213,16 @@ class TransformerDecoder(tf.keras.Model):
                  n_heads: int,
                  d_model: int,
                  d_filter: int,
-                 dropout: Optional[float] = None) -> None:
+                 dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerDecoder, self).__init__()
-        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout)
-                                    for _ in range(n_layers)])
+        self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout,
+                                                             kernel_regularizer=kernel_regularizer,
+                                                             bias_regularizer=bias_regularizer,
+                                                             activity_regularizer=activity_regularizer)
+                                     for _ in range(n_layers)])
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
@@ -280,7 +328,10 @@ class TransformerInputEmbedding(tf.keras.Model):
                  batch_norm: bool = False,
                  n_embed_layers: int = 1,
                  embedding_initializer=None,
-                 freeze_embeddings=False) -> None:
+                 freeze_embeddings=False,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(TransformerInputEmbedding, self).__init__()
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -289,8 +340,7 @@ class TransformerInputEmbedding(tf.keras.Model):
                 assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
                 assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
                 self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
-                                                           weights=[
-                                                               embedding_initializer],
+                                                           weights=[embedding_initializer],
                                                            mask_zero=True)
             else:
                 self.embedding = tf.keras.layers.Embedding(
@@ -298,7 +348,10 @@ class TransformerInputEmbedding(tf.keras.Model):
         else:
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
-            self.embedding = DenseStack([embed_size] * n_embed_layers, output_activation='relu')
+            self.embedding = DenseStack([embed_size] * n_embed_layers, output_activation='relu',
+                                        kernel_regularizer=kernel_regularizer,
+                                        bias_regularizer=bias_regularizer,
+                                        activity_regularizer=activity_regularizer)
 
         self.discrete = discrete
         self.freeze_embeddings = freeze_embeddings
@@ -346,7 +399,10 @@ class Transformer(tf.keras.Model):
                  embedding_initializer=None,
                  use_preembedded_vectors=False,
                  multiply_wtih_embedding_transpose=False,
-                 share_source_target_embedding=False) -> None:
+                 share_source_target_embedding=False,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
         super(Transformer, self).__init__()
 
         # Not sure if we need to have the discrete/non-discrete versions
@@ -367,6 +423,10 @@ class Transformer(tf.keras.Model):
         self.preembedded = use_preembedded_vectors
         self.mtranspose = multiply_wtih_embedding_transpose
         self.share_source_target_embedding = share_source_target_embedding
+
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -397,10 +457,16 @@ class Transformer(tf.keras.Model):
 
         if not self.preembedded:
             self.input_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_in, dropout,
-                                                             embedding_initializer=embedding_initializer)
+                                                             embedding_initializer=embedding_initializer,
+                                                             kernel_regularizer=self.kernel_regularizer,
+                                                             bias_regularizer=self.bias_regularizer,
+                                                             activity_regularizer=self.activity_regularizer)
             if not self.share_source_target_embedding:
                 self.target_embedding = TransformerInputEmbedding(d_model, discrete, n_symbols_out, dropout,
-                                                                  embedding_initializer=embedding_initializer)
+                                                                  embedding_initializer=embedding_initializer,
+                                                                  kernel_regularizer=self.kernel_regularizer,
+                                                                  bias_regularizer=self.bias_regularizer,
+                                                                  activity_regularizer=self.activity_regularizer)
             else:
                 self.target_embedding = self.input_embedding
         else:
@@ -408,18 +474,27 @@ class Transformer(tf.keras.Model):
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
-            n_layers, n_heads, d_model, d_filter, dropout)
+            n_layers, n_heads, d_model, d_filter, dropout,
+            kernel_regularizer=self.kernel_regularizer,
+            bias_regularizer=self.bias_regularizer,
+            activity_regularizer=self.activity_regularizer)
 
         # Build the decoder stack.
         self.decoder = TransformerDecoder(
-            n_layers, n_heads, d_model, d_filter, dropout)
+            n_layers, n_heads, d_model, d_filter, dropout,
+            kernel_regularizer=self.kernel_regularizer,
+            bias_regularizer=self.bias_regularizer,
+            activity_regularizer=self.activity_regularizer)
 
         # Build the output layer of the model
         if self.mtranspose:
             self.output_layer = None
         else:
             self.output_layer = tf.keras.layers.Dense(
-                n_symbols_out if discrete else out_size, activation=output_activation)
+                n_symbols_out if discrete else out_size, activation=output_activation,
+                kernel_regularizer=self.kernel_regularizer,
+                bias_regularizer=self.bias_regularizer,
+                activity_regularizer=self.activity_regularizer)
 
     # Test decoding. Does not use the fast-decode method (which would make this much more effective)
     def test_decode(self, inputs, max_seq_len, encoder_mask=None, preembed_hook=None):

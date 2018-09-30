@@ -4,5 +4,5 @@ import tensorflow as tf
 import sys
 
 
-def test_transformer_preembedding():
+def test_transformer():
     pass

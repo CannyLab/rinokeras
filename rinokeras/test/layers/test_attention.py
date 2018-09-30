@@ -63,7 +63,12 @@ def test_attentionQKV():
 
 
 def test_trilinearSimilarity():
-    pass
+    from rinokeras.common.attention import TrilinearSimilarity
+    
+    # Just test the construction and passing random data through the layers
+    layer = TrilinearSimilarity()
+    layer = TrilinearSimilarity(regularizer=tf.keras.regularizers.l2)
+    layer = TrilinearSimilarity(dropout=0.1, regularizer=tf.keras.regularizers.l2);
 
 
 def test_scaledDotProductSimilarity():

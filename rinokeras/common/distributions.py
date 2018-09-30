@@ -22,7 +22,7 @@ class Pd(tf.keras.layers.Layer):
 
 
 class CategoricalPd(Pd):
-    
+
     def call(self, inputs, sample=False, greedy=False):
         logits = super().call(inputs)
         if sample:
