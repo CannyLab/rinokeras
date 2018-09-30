@@ -360,7 +360,7 @@ class QANet(tf.keras.Model):
                                                           bias_regularizer=bias_regularizer,
                                                           activity_regularizer=activity_regularizer) for _ in range(1)])
 
-        self.context_query_attention = ContextQueryAttention()
+        self.context_query_attention = ContextQueryAttention(regularizer=kernel_regularizer)
 
         self.model_encoder_projection = tf.keras.layers.Conv1D(filters=d_model,
                                                                kernel_size=1,
