@@ -345,7 +345,8 @@ class Trainer(ABC):
                 return_grad_summaries=self.return_grad_summaries)
         else:
             self._placeholder_graph = MultiGPUGraph(
-                self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.num_gpus,
+                self._optimizer, self.loss_function, self.grads_function, args, kwargs,
+                num_gpus=self.num_gpus,
                 return_loss_summaries=self.return_loss_summaries,
                 return_grad_summaries=self.return_grad_summaries)
         self._has_placeholders = True
@@ -364,7 +365,8 @@ class Trainer(ABC):
                 return_grad_summaries=self.return_grad_summaries)
         else:
             self._dataset_graph = MultiGPUGraph.from_dataset(
-                self._optimizer, self.loss_function, self.grads_function, dataset, self.num_gpus,
+                self._optimizer, self.loss_function, self.grads_function, dataset,
+                num_gpus=self.num_gpus,
                 return_loss_summaries=self.return_loss_summaries,
                 return_grad_summaries=self.return_grad_summaries)
         self._has_dataset_handle = True
