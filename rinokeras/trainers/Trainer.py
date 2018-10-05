@@ -88,7 +88,8 @@ class Trainer(ABC):
                  gradient_clipping: str = 'none',
                  gradient_clipping_bounds: Union[float, Tuple[float, ...]] = (-1, 1),
                  num_gpus: int = 1,
-                 return_summaries: bool = False) -> None:
+                 return_loss_summaries: bool = False,
+                 return_grad_summaries: bool = False) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
         if Trainer._num_trainers > 0:
@@ -98,7 +99,8 @@ class Trainer(ABC):
 
         self._add_model_losses = add_model_losses
         self._num_param_updates: int = 0
-        self.return_summaries = return_summaries
+        self.return_loss_summaries = return_loss_summaries
+        self.return_grad_summaries = return_grad_summaries
         self.num_gpus = num_gpus
         self.flops_required = 0
 
@@ -339,11 +341,13 @@ class Trainer(ABC):
         if self.num_gpus <= 1:
             self._placeholder_graph = RunGraph(
                 self._optimizer, self.loss_function, self.grads_function, args, kwargs,
-                return_summaries=self.return_summaries)
+                return_loss_summaries=self.return_loss_summaries,
+                return_grad_summaries=self.return_grad_summaries)
         else:
             self._placeholder_graph = MultiGPUGraph(
                 self._optimizer, self.loss_function, self.grads_function, args, kwargs, self.num_gpus,
-                return_summaries=self.return_summaries)
+                return_loss_summaries=self.return_loss_summaries,
+                return_grad_summaries=self.return_grad_summaries)
         self._has_placeholders = True
 
     def setup_from_dataset(self, dataset) -> None:
@@ -356,11 +360,13 @@ class Trainer(ABC):
         if self.num_gpus <= 1:
             self._dataset_graph = RunGraph.from_dataset(
                 self._optimizer, self.loss_function, self.grads_function, dataset,
-                return_summaries=self.return_summaries)
+                return_loss_summaries=self.return_loss_summaries,
+                return_grad_summaries=self.return_grad_summaries)
         else:
             self._dataset_graph = MultiGPUGraph.from_dataset(
                 self._optimizer, self.loss_function, self.grads_function, dataset, self.num_gpus,
-                return_summaries=self.return_summaries)
+                return_loss_summaries=self.return_loss_summaries,
+                return_grad_summaries=self.return_grad_summaries)
         self._has_dataset_handle = True
 
     @property
