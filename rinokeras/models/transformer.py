@@ -338,10 +338,13 @@ class TransformerInputEmbedding(tf.keras.Model):
             assert n_embed_layers == 1, 'discrete models can only have one embedding layer'
             if embedding_initializer is not None:
                 assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
-                assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
                 self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
                                                            weights=[embedding_initializer],
                                                            mask_zero=True)
+                
+                if shape[1] == embed_size in [None, True]:
+                    # We have to correct if the input embedding isn't quite right
+                    self.embedding = tf.keras.layers.Dense(embed_size)
             else:
                 self.embedding = tf.keras.layers.Embedding(
                     n_symbols, embed_size)
