@@ -38,6 +38,7 @@ class AbstractGraph(ABC):
             total_loss = losses[0]
         else:
             total_loss = losses
+            losses = (losses,)
 
         return total_loss, losses
 
@@ -117,9 +118,14 @@ class RunGraph(AbstractGraph):
                  loss_args: Sequence,
                  loss_kwargs: Dict,
                  *args,
+                 return_loss_summaries: bool = False,
+                 return_grad_summaries: bool = False,
                  **kwargs) -> None:
         super(RunGraph, self).__init__(optimizer, loss_function, grads_function, *args, **kwargs)
+        self.return_loss_summaries = return_loss_summaries
+        self.return_grad_summaries = return_grad_summaries
         self.build(*loss_args, **loss_kwargs)
+        self.create_summaries()
 
     def build(self, *args, **kwargs):
         grads, loss_packed = self.grads_function(*args, **kwargs)
@@ -134,13 +140,26 @@ class RunGraph(AbstractGraph):
         self.kwargs_in = kwargs
         self.handle = None
 
+    def create_summaries(self):
+        if self.return_loss_summaries:
+            with tf.name_scope('losses'):
+                for i, loss in enumerate(self.losses):
+                    tf.summary.scalar(str(i), loss)
+        if self.return_grad_summaries:
+            with tf.name_scope('gradients'):
+                for grad, var in self.grads:
+                    name = var.name.replace(':', '_')
+                    tf.summary.histogram(name, grad)
+        self.summaries = tf.summary.merge_all()
+
     @classmethod
     def from_dataset(cls,
                      optimizer: tf.train.Optimizer,
                      loss_function: Callable,
                      grads_function: Callable,
                      dataset: tf.data.Dataset,
-                     *args, **kwargs):
+                     *args,
+                     **kwargs):
         handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
         batch = iterator.get_next()
@@ -230,8 +249,12 @@ class RunGraph(AbstractGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
-        return loss
+        if self.return_loss_summaries or self.return_grad_summaries:
+            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], *args, **kwargs)
+            return loss, summaries
+        else:
+            _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
+            return loss
 
     def loss(self, *args, **kwargs) -> Union[float, Tuple]:
         """Gets loss of model with placeholders in graph mode.
@@ -246,8 +269,10 @@ class RunGraph(AbstractGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        loss = self._run_tensor(self.losses, *args, **kwargs)
-        return loss
+        if self.return_loss_summaries:
+            return self._run_tensor([self.losses, self.summaries], *args, **kwargs)
+        else:
+            return self._run_tensor(self.losses, *args, **kwargs)
 
 
 class MultiGPUGraph(RunGraph):
@@ -258,9 +283,12 @@ class MultiGPUGraph(RunGraph):
                  grads_function: Callable,
                  loss_args: Sequence,
                  loss_kwargs: Dict,
-                 num_gpus: int = 1) -> None:
+                 *args,
+                 num_gpus: int = 1,
+                 **kwargs) -> None:
         self.num_gpus = num_gpus
-        super(MultiGPUGraph, self).__init__(optimizer, loss_function, grads_function, loss_args, loss_kwargs)
+        super(MultiGPUGraph, self).__init__(optimizer, loss_function, grads_function, loss_args, loss_kwargs,
+                                            *args, **kwargs)
 
     def build(self, *args, **kwargs):
         graphs = []
@@ -276,7 +304,8 @@ class MultiGPUGraph(RunGraph):
             loss_kwargs = self._split_nested_tensors(kwargs)
             for gpu in range(self.num_gpus):
                 with tf.device('/gpu:{}'.format(gpu)):
-                    graph = RunGraph(self.optimizer, self.loss_function, self.grads_function, loss_args[gpu], loss_kwargs[gpu])
+                    graph = RunGraph(self.optimizer, self.loss_function, self.grads_function,
+                                     loss_args[gpu], loss_kwargs[gpu])
                     graphs.append(graph)
                     loss.append(graph.total_loss)
                     losses.append(graph.losses)
