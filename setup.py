@@ -19,7 +19,6 @@ setup(
     install_requires=[
         'pytest >= 3.7.0',
         'numpy >= 1.14.1',
-        'tensorflow >= 1.9.0',
     ],
     packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )

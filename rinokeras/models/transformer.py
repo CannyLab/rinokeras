@@ -346,18 +346,24 @@ class TransformerInputEmbedding(tf.keras.Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super(TransformerInputEmbedding, self).__init__()
+        self.embedding_dense = tf.keras.layers.Lambda(lambda x: x)
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
             assert n_embed_layers == 1, 'discrete models can only have one embedding layer'
             if embedding_initializer is not None:
                 assert (embedding_initializer.shape[0] == n_symbols) in [None, True], 'n_symbols and initializer shape mismatch'
-                assert (embedding_initializer.shape[1] == embed_size) in [None, True], 'embed_size, initializer shape mismatch'
-                self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
+                if embedding_initializer.shape[1] != embed_size:
+                    # We have to correct if the input embedding isn't quite right
+                    self.embedding = tf.keras.layers.Embedding(n_symbols, embedding_initializer.shape[1],
+                                                           weights=[embedding_initializer],
+                                                           mask_zero=True)
+                    self.embedding_dense = tf.keras.layers.Dense(embed_size)
+                else:
+                    self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
                                                            weights=[embedding_initializer],
                                                            mask_zero=True)
             else:
-                self.embedding = tf.keras.layers.Embedding(
-                    n_symbols, embed_size)
+                self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size)
         else:
             assert n_symbols is None, 'n_symbols passed in but model set to continuous'
             assert embedding_initializer is None, 'embedding_initializer passed in but model set to continouous'
@@ -378,9 +384,11 @@ class TransformerInputEmbedding(tf.keras.Model):
         # TODO: Make sure that for non-discrete embeddings, this is handled correctly
         # and allow the shape to be correctly sorted. This should have a tensor
         # as output with shape [batch_size x sequence_len x d_model]
+
         embedding = self.embedding(inputs)
         if self.freeze_embeddings:
             embedding = K.stop_gradient(embedding)
+        embedding = self.embedding_dense(embedding)
 
         # If we're using dropout, then we need to add on the dropout
         # of the embedding
