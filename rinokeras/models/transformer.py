@@ -342,7 +342,7 @@ class TransformerInputEmbedding(tf.keras.Model):
                                                            weights=[embedding_initializer],
                                                            mask_zero=True)
                 
-                if shape[1] == embed_size in [None, True]:
+                if embedding_initializer.shape[1] == embed_size in [None, True]:
                     # We have to correct if the input embedding isn't quite right
                     self.embedding = Stack([self.embedding_t, tf.keras.layers.Dense(embed_size)])
                 else:
