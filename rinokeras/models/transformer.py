@@ -22,12 +22,16 @@ class TransformerSelfAttention(tf.keras.Model):
                                  kernel_regularizer=kernel_regularizer,
                                  bias_regularizer=bias_regularizer,
                                  activity_regularizer=activity_regularizer)
-        self.residual_self_attention = Residual(selfattn)
+        self.self_attention = selfattn
+        # self.residual_self_attention = Residual(selfattn)
         self.norm = LayerNorm()
 
     def call(self, inputs, mask):
-        resattn = self.residual_self_attention(inputs, mask=mask)
-        return self.norm(resattn)
+        # resattn = self.residual_self_attention(inputs, mask=mask)
+        # return self.norm(resattn)
+        norm_input = self.norm(inputs)
+        attention = self.self_attention(norm_input, mask=mask)
+        return attention + inputs
 
 
 class TransformerMultiAttention(tf.keras.Model):
@@ -44,12 +48,16 @@ class TransformerMultiAttention(tf.keras.Model):
                                        kernel_regularizer=kernel_regularizer,
                                        bias_regularizer=bias_regularizer,
                                        activity_regularizer=activity_regularizer)
-        self.residual_multi_attention = Residual(multiattn)
+        # self.residual_multi_attention = Residual(multiattn)
+        self.self_attention = multiattn
         self.norm = LayerNorm()
 
     def call(self, inputs, mask):
-        resattn = self.residual_multi_attention(inputs, mask=mask)
-        return self.norm(resattn)
+        # resattn = self.residual_multi_attention(inputs, mask=mask)
+        # return self.norm(resattn)
+        norm_input = self.norm(inputs[0])
+        attention = self.self_attention((norm_input, inputs[1]), mask=mask)
+        return attention + inputs[0]
 
 
 class TransformerFeedForward(tf.keras.Model):
@@ -62,17 +70,22 @@ class TransformerFeedForward(tf.keras.Model):
         super(TransformerFeedForward, self).__init__()
         dense_relu_dense = DenseStack([filter_size, hidden_size], output_activation=None, kernel_regularizer=kernel_regularizer,
                                       bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
-        self.dropout = None
+        # self.dropout = None
         if dropout is not None:
-            self.dropout = tf.keras.layers.Dropout(dropout)
-        self.residual_dense = Residual(dense_relu_dense)
+            dense_relu_dense = Stack([dense_relu_dense, tf.keras.layers.Dropout(dropout)])
+            # self.dropout = tf.keras.layers.Dropout(dropout)
+        # self.residual_dense = Residual(dense_relu_dense)
+        self.feed_forward = dense_relu_dense
         self.norm = LayerNorm()
 
     def call(self, inputs, training=True):
-        dense_out = self.residual_dense(inputs)
-        if self.dropout:
-            dense_out = self.dropout(dense_out, training=training)
-        return self.norm(dense_out)
+        # dense_out = self.residual_dense(inputs)
+        # if self.dropout:
+            # dense_out = self.dropout(dense_out, training=training)
+        # return self.norm(dense_out)
+        norm_input = self.norm(inputs)
+        dense_out = self.feed_forward(norm_input)
+        return dense_out + inputs
 
 
 class TransformerEncoderBlock(tf.keras.Model):
