@@ -1,3 +1,4 @@
+import sys
 from abc import ABC
 from typing import Optional, Sequence
 from timeit import default_timer as timer
@@ -43,7 +44,7 @@ class epoch(ABC):
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.progress_bar.__exit__()
-        if isinstance(exc_type, tf.errors.OutOfRangeError):
+        if exc_type == tf.errors.OutOfRangeError:
             pass
         else:
             raise
