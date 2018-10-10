@@ -56,7 +56,7 @@ class epoch(ABC):
 
         self.n_minibatches += 1
         if self.loss_names is not None:
-            postfix = {ln: loss / self.n_minibatches for ln, loss in zip(self.loss_names, losses)}
+            postfix = {ln: loss / self.n_minibatches for ln, loss in zip(self.loss_names, self.losses)}
         else:
             postfix = {'Loss{}'.format(i): loss / self.n_minibatches for i, loss in enumerate(losses)}
         self.progress_bar.update()
