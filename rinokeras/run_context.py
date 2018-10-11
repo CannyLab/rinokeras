@@ -44,10 +44,7 @@ class epoch(ABC):
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.progress_bar.__exit__()
-        if exc_type == tf.errors.OutOfRangeError:
-            pass
-        else:
-            raise
+        return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     def process_iteration(self, losses, summary):
         if self.losses is None:
