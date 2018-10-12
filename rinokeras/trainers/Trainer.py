@@ -4,7 +4,7 @@ from typing import Optional, Tuple, Union, Callable, Sequence, List
 import tensorflow as tf
 import time
 import contextlib
-import sys
+import os
 
 from .graphs import EagerGraph, RunGraph, MultiGPUGraph
 
