@@ -118,14 +118,18 @@ class Trainer(ABC):
                 self._update_learning_rate_ph = tf.placeholder(tf.float32, shape=(), name='learning_rate_placeholder')
                 self._update_learning_rate_op = tf.assign(self._learning_rate, self._update_learning_rate_ph)
 
-            if optimizer == 'adam':
-                self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'rmsprop':
-                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'sgd':
-                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'momentum':
-                self._optimizer = tf.train.MomentumOptimizer(learning_rate=self._learning_rate, momentum=0.8)
+            optimizers = {
+                'adam': tf.train.AdamOptimizer(learning_rate=self._learning_rate),
+                'rmsprop': tf.train.RMSPropOptimizer(learning_rate=self._learning_rate),
+                'sgd': tf.train.GradientDescentOptimizer(learning_rate=self._learning_rate),
+                'momentum': tf.train.MomentumOptimizer(learning_rate=self._learning_rate, momentum=0.8),
+                'adadelta': tf.train.AdadeltaOptimizer(learning_rate=self._learning_rate),
+                'proximal-adagrad': tf.train.ProximalAdagradOptimizer(learning_rate=self._learning_rate),
+                'ftrl': tf.train.FtrlOptimizer(learning_rate=self._learning_rate),
+            }
+
+            if optimizer in optimizers:
+                self._optimizer = optimizers[optimizer]
             else:
                 raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
