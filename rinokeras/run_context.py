@@ -1,5 +1,5 @@
 import sys
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Optional, Sequence
 from timeit import default_timer as timer
 
@@ -62,6 +62,10 @@ class epoch(ABC):
 
         if self.n_minibatches % self.summary_iter == 0 and self.summary_writer is not None:
             self.summary_writer.add_summary(summary, self.epoch * self.data_len + self.n_minibatches)
+    
+    @abstractmethod
+    def run_iteration(self,):
+        raise NotImplementedError("You must override the run_iteration method")
 
 
 class train_epoch(epoch):

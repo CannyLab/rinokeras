@@ -3,6 +3,8 @@ from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
 import time
+import contextlib
+import sys
 
 from .graphs import EagerGraph, RunGraph, MultiGPUGraph
 
@@ -295,14 +297,16 @@ class Trainer(ABC):
 
         t0 = time.time()
         if self.flops_required == 0:
-            run_meta = tf.RunMetadata()
-            loss = self._run_graph('update', *args, **kwargs)
-            opts = tf.profiler.ProfileOptionBuilder.float_operation()
-            opts['output'] = 'none'
-            self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
-                                                      run_meta=run_meta,
-                                                      cmd='op',
-                                                      options=opts).total_float_ops  # pylint: disable=E1101
+            with open(os.devnull, 'w') as null_file:
+                with contextlib.redirect_stdout(null_file):
+                    run_meta = tf.RunMetadata()
+                    loss = self._run_graph('update', *args, **kwargs)
+                    opts = tf.profiler.ProfileOptionBuilder.float_operation()
+                    opts['output'] = 'none'
+                    self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
+                                                              run_meta=run_meta,
+                                                              cmd='op',
+                                                              options=opts).total_float_ops  # pylint: disable=E1101
         else:
             loss = self._run_graph('update', *args, **kwargs)
         self.last_batch_time = time.time() - t0

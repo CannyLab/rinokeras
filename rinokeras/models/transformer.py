@@ -347,6 +347,7 @@ class TransformerInputEmbedding(tf.keras.Model):
                  activity_regularizer=None) -> None:
         super(TransformerInputEmbedding, self).__init__()
         self.embedding_dense = tf.keras.layers.Lambda(lambda x: x)
+        self.using_dense_embedding = False
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
             assert n_embed_layers == 1, 'discrete models can only have one embedding layer'
@@ -358,6 +359,7 @@ class TransformerInputEmbedding(tf.keras.Model):
                                                            weights=[embedding_initializer],
                                                            mask_zero=True)
                     self.embedding_dense = tf.keras.layers.Dense(embed_size)
+                    self.using_dense_embedding = True
                 else:
                     self.embedding = tf.keras.layers.Embedding(n_symbols, embed_size,
                                                            weights=[embedding_initializer],
