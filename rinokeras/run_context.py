@@ -1,4 +1,5 @@
-from abc import ABC
+import sys
+from abc import ABC, abstractmethod
 from typing import Optional, Sequence
 from timeit import default_timer as timer
 
@@ -43,10 +44,7 @@ class epoch(ABC):
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.progress_bar.__exit__()
-        if isinstance(exc_type, tf.errors.OutOfRangeError):
-            pass
-        else:
-            raise
+        return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     def process_iteration(self, losses, summary):
         if self.losses is None:
@@ -56,7 +54,7 @@ class epoch(ABC):
 
         self.n_minibatches += 1
         if self.loss_names is not None:
-            postfix = {ln: loss / self.n_minibatches for ln, loss in zip(self.loss_names, losses)}
+            postfix = {ln: loss / self.n_minibatches for ln, loss in zip(self.loss_names, self.losses)}
         else:
             postfix = {'Loss{}'.format(i): loss / self.n_minibatches for i, loss in enumerate(losses)}
         self.progress_bar.update()
@@ -64,6 +62,10 @@ class epoch(ABC):
 
         if self.n_minibatches % self.summary_iter == 0 and self.summary_writer is not None:
             self.summary_writer.add_summary(summary, self.epoch * self.data_len + self.n_minibatches)
+    
+    @abstractmethod
+    def run_iteration(self,):
+        raise NotImplementedError("You must override the run_iteration method")
 
 
 class train_epoch(epoch):

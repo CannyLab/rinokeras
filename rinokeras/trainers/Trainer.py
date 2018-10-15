@@ -3,6 +3,8 @@ from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
 import time
+import contextlib
+import os
 
 from .graphs import EagerGraph, RunGraph, MultiGPUGraph
 
@@ -116,14 +118,21 @@ class Trainer(ABC):
                 self._update_learning_rate_ph = tf.placeholder(tf.float32, shape=(), name='learning_rate_placeholder')
                 self._update_learning_rate_op = tf.assign(self._learning_rate, self._update_learning_rate_ph)
 
-            if optimizer == 'adam':
-                self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'rmsprop':
-                self._optimizer = tf.train.RMSPropOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'sgd':
-                self._optimizer = tf.train.GradientDescentOptimizer(learning_rate=self._learning_rate)
-            elif optimizer == 'momentum':
-                self._optimizer = tf.train.MomentumOptimizer(learning_rate=self._learning_rate, momentum=0.8)
+            def momentum_opt(learning_rate):
+                return tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
+
+            optimizers = {
+                'adam': tf.train.AdamOptimizer,
+                'rmsprop': tf.train.RMSPropOptimizer,
+                'sgd': tf.train.GradientDescentOptimizer,
+                'momentum': momentum_opt,
+                'adadelta': tf.train.AdadeltaOptimizer,
+                'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
+                'ftrl': tf.train.FtrlOptimizer,
+            }
+
+            if optimizer in optimizers:
+                self._optimizer = optimizers[optimizer](learning_rate=self._learning_rate)
             else:
                 raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
@@ -295,14 +304,16 @@ class Trainer(ABC):
 
         t0 = time.time()
         if self.flops_required == 0:
-            run_meta = tf.RunMetadata()
-            loss = self._run_graph('update', *args, **kwargs)
-            opts = tf.profiler.ProfileOptionBuilder.float_operation()
-            opts['output'] = 'none'
-            self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
-                                                      run_meta=run_meta,
-                                                      cmd='op',
-                                                      options=opts).total_float_ops  # pylint: disable=E1101
+            with open(os.devnull, 'w') as null_file:
+                with contextlib.redirect_stdout(null_file):
+                    run_meta = tf.RunMetadata()
+                    loss = self._run_graph('update', *args, **kwargs)
+                    opts = tf.profiler.ProfileOptionBuilder.float_operation()
+                    opts['output'] = 'none'
+                    self.flops_required = tf.profiler.profile(tf.get_default_session().graph,
+                                                              run_meta=run_meta,
+                                                              cmd='op',
+                                                              options=opts).total_float_ops  # pylint: disable=E1101
         else:
             loss = self._run_graph('update', *args, **kwargs)
         self.last_batch_time = time.time() - t0
