@@ -165,3 +165,6 @@ class FixedLengthDecoder(tf.keras.Model):
                 inputs = target_inputs[:, t + 1]
         outputs = tf.stack(outputs, 1)
         return outputs
+
+
+__all__ = ['EagerLSTMCell', 'EagerLSTM', 'EagerBidirectionalLSTM', 'FixedLengthDecoder']

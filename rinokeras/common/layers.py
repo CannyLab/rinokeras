@@ -330,3 +330,7 @@ class PositionEmbedding2D(PositionEmbedding):
             position_embedding, (1, width, height, self.hidden_size))
 
         return inputs + position_embedding
+
+
+__all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
+           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D']

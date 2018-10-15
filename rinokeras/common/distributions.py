@@ -50,3 +50,6 @@ class DiagGaussianPd(tf.keras.layers.Layer):
     @property
     def std(self):
         return tf.exp(self._logstd)
+
+
+__all__ = ['Pd', 'CategoricalPd', 'DiagGaussianPd']

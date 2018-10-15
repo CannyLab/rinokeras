@@ -494,3 +494,7 @@ class ContextQueryAttention(tf.keras.Model):
         if self.dropout is not None:
             outputs = self.dropout(outputs)
         return outputs
+
+
+__all__ = ['LuongAttention', 'AttentionQKV', 'TrilinearSimilarity', 'ScaledDotProductSimilarity', 'ApplyAttentionMask',
+           'AttentionMap', 'MultiHeadAttentionMap', 'MultiHeadAttention', 'SelfAttention', 'ContextQueryAttention']
