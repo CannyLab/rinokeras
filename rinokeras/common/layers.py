@@ -165,6 +165,17 @@ class DenseStack(Stack):
             self.add(tf.keras.layers.Activation(output_activation))
 
 
+class DenseTranspose(tf.keras.layers.Layer):
+    """Multiply by the transpose of a dense layer
+    """
+    def __init__(self, other_layer):
+        super(DenseTranspose, self).__init__()
+        self.other_layer = other_layer
+
+    def call(self, x):
+        return K.dot(x - K.stop_gradient(self.other_layer.b), K.transpose(K.stop_gradient(self.other_layer.W)))
+
+
 class Residual(tf.keras.Model):
     """
     Adds a residual connection between layers. If input to layer is a tuple, adds output to the first element
@@ -344,3 +355,7 @@ class PositionEmbedding2D(PositionEmbedding):
             position_embedding, (1, width, height, self.hidden_size))
 
         return inputs + position_embedding
+
+
+__all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
+           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D']
