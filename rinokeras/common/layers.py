@@ -110,6 +110,31 @@ class Conv2DStack(Stack):
         if flatten_output:
             self.add(tf.keras.layers.Flatten())
 
+class Deconv2DStack(Stack):
+    """
+    A stack of deconvolutional layers. Can optionally do batch normalization after each layer.
+    Note:  Deconvolution in tf.keras perform transpose convolution, so if you want
+    UPconvolution's stride to be 1/2, write 2 in this case
+    """
+    def __init__(self,
+                 filters: Sequence[int],
+                 kernel_size: Sequence[int],
+                 strides: Sequence[int],
+                 batch_norm: bool = False,
+                 activation: str = 'relu',
+                 padding: str = 'same',
+                 flatten_output: bool = True,
+                 **kwargs) -> None:
+        super(Deconv2DStack, self).__init__()
+        assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
+        for fsize, ks, stride in zip(filters, kernel_size, strides):
+            self.add(tf.keras.layers.Conv2DTranspose(fsize, ks, stride, padding=padding, **kwargs))
+            if batch_norm:
+                self.add(tf.keras.layers.BatchNormalization())
+            self.add(tf.keras.layers.Activation(activation))
+        if flatten_output:
+            self.add(tf.keras.layers.Flatten())
+
 
 class DenseStack(Stack):
     """
