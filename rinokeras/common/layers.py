@@ -72,8 +72,8 @@ class Stack(Model):
     """
     A re-implementation of Keras's Sequential layer to work well with tf eager.
     """
-    def __init__(self, layers: Optional[Sequence[Any]] = None) -> None:
-        super(Stack, self).__init__()
+    def __init__(self, layers: Optional[Sequence[Any]] = None, *args, **kwargs) -> None:
+        super(Stack, self).__init__(*args, **kwargs)
         self._call = None
         self._layer_list = tf.contrib.checkpoint.List()
         if layers is not None:
