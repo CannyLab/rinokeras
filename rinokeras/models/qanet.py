@@ -1,12 +1,15 @@
 from typing import Optional
 import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Embedding, Dense, Conv1D, SeparableConv1D, Dropout, BatchNormalization
 import numpy as np
 
+import rinokeras as rk
 from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway
 from rinokeras.common.attention import ContextQueryAttention, SelfAttention
 
 
-class QANetSelfAttention(tf.keras.Model):
+class QANetSelfAttention(Model):
     """QANet Self Attention Block
 
     :param n_heads: The number of heads in the self attention block
@@ -45,7 +48,7 @@ class QANetSelfAttention(tf.keras.Model):
         return attention + inputs  # Just do the residual connection manually
 
 
-class QANetFeedForward(tf.keras.Model):
+class QANetFeedForward(Model):
     """QANet Feed Forward Block
 
     :param filter_size: The size of the input filter
@@ -65,16 +68,14 @@ class QANetFeedForward(tf.keras.Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
-        dense_relu_dense = DenseStack(
+        self.norm = LayerNorm()
+        self.feed_forward = DenseStack(
             [filter_size, hidden_size], output_activation=None,
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer)
-        if dropout is not None:
-            dropout = tf.keras.layers.Dropout(dropout)
-            dense_relu_dense = Stack([dense_relu_dense, dropout])
-        self.feed_forward = dense_relu_dense
-        self.norm = LayerNorm()
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
 
     def call(self, inputs):
         """Compute a feed-forward pass on the inputs
@@ -87,10 +88,11 @@ class QANetFeedForward(tf.keras.Model):
 
         norm_input = self.norm(inputs)
         dense_out = self.feed_forward(norm_input)
+        dense_out = self.dropout(dense_out, training=self.dropout_weight > 0)
         return dense_out + inputs
 
 
-class QANetConvBlock(tf.keras.Model):
+class QANetConvBlock(Model):
     """QANet Convolutional Block
 
     Layered depth-wise separable convolutions. Based on https://arxiv.org/pdf/1804.09541.pdf.
@@ -112,12 +114,12 @@ class QANetConvBlock(tf.keras.Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
-        conv_layer = tf.keras.layers.SeparableConv1D(filters, kernel_size, padding='same', depthwise_regularizer=kernel_regularizer, pointwise_regularizer=kernel_regularizer)
-        if dropout is not None:
-            dropout = tf.keras.layers.Dropout(dropout)
-            conv_layer = Stack([conv_layer, dropout])
-        self.conv_layer = conv_layer
         self.norm = LayerNorm()
+        self.conv_layer = SeparableConv1D(filters, kernel_size, padding='same',
+                                          depthwise_regularizer=kernel_regularizer,
+                                          pointwise_regularizer=kernel_regularizer)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
 
     def call(self, inputs, mask):
         """
@@ -128,17 +130,18 @@ class QANetConvBlock(tf.keras.Model):
         :return: a float32 Tensor with shape  [TODO (roshan_rao@berkeley.edu)]
         :rtype: tf.Tensor
         """
-
         norm_input = self.norm(inputs)
         if mask is not None:
             mask = tf.cast(mask[:, 0, :], tf.float32)
             norm_input = norm_input * mask[:, :, None]
+
         conv_out = self.conv_layer(norm_input)
+        conv_out = self.dropout(conv_out, training=self.dropout_weight > 0)
 
         return conv_out + inputs
 
 
-class QANetInputEmbedding(tf.keras.Model):
+class QANetInputEmbedding(Model):
     """QANet Input Embedding Class
 
     Perform an embedding of the input vector based on the words and characters.
@@ -166,31 +169,29 @@ class QANetInputEmbedding(tf.keras.Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
-        self.word_embedding = tf.keras.layers.Embedding(word_embed_initializer.shape[0],
-                                                        word_embed_initializer.shape[1],
-                                                        weights=[
-                                                            word_embed_initializer],
-                                                        mask_zero=True)
-        self.char_embedding = tf.keras.layers.Embedding(char_embed_initializer.shape[0],
-                                                        char_embed_initializer.shape[1],
-                                                        weights=[
-                                                            char_embed_initializer],
-                                                        mask_zero=True)
-        self.char_conv = tf.keras.layers.Conv1D(filters=char_embed_initializer.shape[1], kernel_size=5,
-                                                kernel_regularizer=kernel_regularizer,
-                                                bias_regularizer=bias_regularizer,
-                                                activity_regularizer=activity_regularizer)
-        self.projection_conv = tf.keras.layers.Conv1D(filters=d_model, kernel_size=1,
-                                                      kernel_regularizer=kernel_regularizer,
-                                                      bias_regularizer=bias_regularizer,
-                                                      activity_regularizer=activity_regularizer)
+        self.word_embedding = Embedding(word_embed_initializer.shape[0],
+                                        word_embed_initializer.shape[1],
+                                        weights=[word_embed_initializer],
+                                        mask_zero=True)
+        self.char_embedding = Embedding(char_embed_initializer.shape[0],
+                                        char_embed_initializer.shape[1],
+                                        weights=[char_embed_initializer],
+                                        mask_zero=True)
+        self.char_conv = Conv1D(filters=char_embed_initializer.shape[1], kernel_size=5,
+                                kernel_regularizer=kernel_regularizer,
+                                bias_regularizer=bias_regularizer,
+                                activity_regularizer=activity_regularizer)
+        self.projection_conv = Conv1D(filters=d_model, kernel_size=1,
+                                      kernel_regularizer=kernel_regularizer,
+                                      bias_regularizer=bias_regularizer,
+                                      activity_regularizer=activity_regularizer)
 
         self.highway = Stack([Highway(dropout=dropout) for _ in range(2)])
 
         self.position_embedding = PositionEmbedding()
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
-            dropout)
-        self.batch_norm = None if batch_norm is False else tf.keras.layers.BatchNormalization()
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
+        self.batch_norm = None if batch_norm is False else BatchNormalization()
 
     def call(self, inputs):
         """Calls the input embedding on the new inputs
@@ -211,9 +212,8 @@ class QANetInputEmbedding(tf.keras.Model):
         word_embedding = self.word_embedding(words)
         # char_embedding -> Tensor with shape (batch_size, input_length, 16, 200)
         char_embedding = self.char_embedding(chars)
-        if self.dropout:
-            word_embedding = self.dropout(word_embedding)
-            char_embedding = self.dropout(char_embedding)
+        word_embedding = self.dropout(word_embedding, training=self.dropout_weight > 0)
+        char_embedding = self.dropout(char_embedding, training=self.dropout_weight > 0)
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, 200)
         char_embedding = tf.reshape(char_embedding, (batch_size * input_length,
                                                      char_embedding.shape[2],  # These .shapes stay b/c they're constant
@@ -237,7 +237,7 @@ class QANetInputEmbedding(tf.keras.Model):
         return embedding
 
 
-class QANetEncoderBlock(tf.keras.Model):
+class QANetEncoderBlock(Model):
     """QANet Encoder Block
 
     An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf)
@@ -279,7 +279,7 @@ class QANetEncoderBlock(tf.keras.Model):
                                              bias_regularizer=bias_regularizer,
                                              activity_regularizer=activity_regularizer)
 
-    def call(self, inputs, self_attention_mask=None, padding_mask=None):
+    def call(self, inputs, self_attention_mask, padding_mask):
         """Computes the encoding on the context
 
         :param inputs: The inputs to compute over
@@ -291,14 +291,13 @@ class QANetEncoderBlock(tf.keras.Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-
         conv_out = self.conv_stack(inputs, mask=padding_mask)
         res_attn = self.self_attention(conv_out, mask=self_attention_mask)
         output = self.feed_forward(res_attn)
         return output
 
 
-class QANet(tf.keras.Model):
+class QANet(Model):
     """QANet Model
 
     Based on https://arxiv.org/abs/1804.09541
@@ -338,12 +337,10 @@ class QANet(tf.keras.Model):
         self.d_model = d_model
         self.d_filter = d_filter
         self.char_limit = char_limit
-        self.dropout = dropout
-
         self.input_embedding = QANetInputEmbedding(self.d_model,
                                                    word_embed_matrix,
                                                    char_embed_matrix,
-                                                   dropout=self.dropout,
+                                                   dropout=dropout,
                                                    batch_norm=False,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
@@ -352,31 +349,34 @@ class QANet(tf.keras.Model):
                                                           n_heads=self.n_heads,
                                                           filter_size=self.d_filter,
                                                           hidden_size=self.d_model,
-                                                          dropout=self.dropout,
+                                                          dropout=dropout,
                                                           kernel_regularizer=kernel_regularizer,
                                                           bias_regularizer=bias_regularizer,
                                                           activity_regularizer=activity_regularizer) for _ in range(1)])
 
         self.context_query_attention = ContextQueryAttention(regularizer=kernel_regularizer)
 
-        self.model_encoder_projection = tf.keras.layers.Conv1D(filters=d_model,
-                                                               kernel_size=1,
-                                                               kernel_regularizer=kernel_regularizer,
-                                                               bias_regularizer=bias_regularizer,
-                                                               activity_regularizer=activity_regularizer)
+        self.model_encoder_projection = Conv1D(filters=d_model,
+                                               kernel_size=1,
+                                               kernel_regularizer=kernel_regularizer,
+                                               bias_regularizer=bias_regularizer,
+                                               activity_regularizer=activity_regularizer)
+
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
         self.model_encoder = Stack([QANetEncoderBlock(n_conv=2,
                                                       n_heads=self.n_heads,
                                                       filter_size=self.d_filter,
                                                       hidden_size=self.d_model,
-                                                      dropout=self.dropout,
+                                                      dropout=dropout,
                                                       kernel_regularizer=kernel_regularizer,
                                                       bias_regularizer=bias_regularizer,
                                                       activity_regularizer=activity_regularizer) for _ in range(7)])
 
-        self.output_layer = tf.keras.layers.Dense(self.n_symbols_out)
+        self.output_layer = Dense(self.n_symbols_out)
 
-    def call(self, inputs, padding_mask=None, shift_target_sequence_right=True, training=True):
-        """Calls the model on new inputs.
+    def call(self, inputs):
+        """Calls the model on new  inputs.
 
         :param inputs: Tuple of (Context, Question, Context Characters, Question Characters,
                                  Answer Index 1, Answer Index 2, None)
@@ -385,8 +385,6 @@ class QANet(tf.keras.Model):
         :param padding_mask: tf.Tensor, optional
         :param shift_target_sequence_right: Shift the target sequence to the right, defaults to True
         :param shift_target_sequence_right: bool, optional
-        :param training: Define the training variables of the network, defaults to True
-        :param training: bool, optional
         :return: Output logits of the model
         :rtype: tf.Tensor
         """
@@ -401,27 +399,12 @@ class QANet(tf.keras.Model):
         context_mask, context_length = get_mask_and_length(context)
         question_mask, question_length = get_mask_and_length(question)
 
-        context_maxlen = tf.reduce_max(context_length)
-        question_maxlen = tf.reduce_max(question_length)
-
-        context = context[:, :context_maxlen]
-        question = question[:, :question_maxlen]
-        context_mask = context_mask[:, :context_maxlen]
-        question_mask = question_mask[:, :question_maxlen]
-        context_characters = context_characters[:, :context_maxlen]
-        question_characters = question_characters[:, :question_maxlen]
-
-        # TODO: Compute something useful with the answer indices
-        # answer_index1 = answer_index1[:, :context_maxlen]
-        # answer_index2 = answer_index2[:, :context_maxlen]
-
         context_query_mask = self._convert_padding_masks_to_context_query_mask(
             question_mask, context_mask)
-        context_mask = self._convert_padding_mask_to_attention_mask(
+        context_mask = rk.utils.convert_padding_mask_to_attention_mask(
             context, context_mask)
-        question_mask = self._convert_padding_mask_to_attention_mask(
+        question_mask = rk.utils.convert_padding_mask_to_attention_mask(
             question, question_mask)
-
         context_embedding = self.input_embedding((context, context_characters))
         question_embedding = self.input_embedding(
             (question, question_characters))
@@ -430,31 +413,15 @@ class QANet(tf.keras.Model):
             context_embedding, self_attention_mask=context_mask, padding_mask=context_mask)
         question_encoding = self.embedding_encoder(
             question_embedding, self_attention_mask=question_mask, padding_mask=question_mask)
-
         context_query_attention = self.context_query_attention((question_encoding, context_encoding),
                                                                mask=context_query_mask)
         context_query_projection = self.model_encoder_projection(
             context_query_attention)
+        context_query_attention = self.dropout(context_query_attention, training=self.dropout_weight > 0)
         output = self.model_encoder(
             context_query_projection, self_attention_mask=context_mask, padding_mask=context_mask)
 
         return output
-
-    def _convert_padding_mask_to_attention_mask(self, inputs, mask):
-        assert (mask.shape[0] == inputs.shape[0]) in [None, True], 'Mask and input batch size must match'
-        assert len(mask.shape) == 2, 'Can only convert dimension 2 masks to dimension 3 masks'
-
-        mask = tf.tile(mask[:, None, :], (1, tf.shape(inputs)[1], 1))
-        return mask
-
-    def _convert_seqlens_to_attention_mask(self, inputs, seqlens):
-        assert (seqlens.shape[0] == inputs.shape[0]) in [None, True], 'Seqlens and input batch size must match'
-        assert len(seqlens.shape) == 1, 'Can only convert dimension 1 seqlens to dimension 3 masks'
-
-        indices = tf.tile(tf.range(tf.shape(inputs)[1])[
-                          None, :], (tf.shape(seqlens)[0], 1))
-        mask = indices < seqlens[:, None]
-        return mask
 
     def _convert_padding_masks_to_context_query_mask(self, query_mask, context_mask):
         return tf.logical_and(context_mask[:, :, None], query_mask[:, None, :])
