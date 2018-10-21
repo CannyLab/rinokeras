@@ -206,10 +206,13 @@ class LayerDropout(Model):
         layer_call (Callable[[], Any]): Function that returns output of layer on inputs
         inputs (Any): What to return if the layer is dropped
         rate (float): Rate at which to drop layers
+
+    Returns:
+        Any: Either inputs or output of layer_call function.
     """
 
-    def __init__(self, layer_output: Callable[[], Any], inputs: Any, rate: float) -> None:
-        super(LayerDropout, self).__init__()
+    def __init__(self, layer_output: Callable[[], Any], inputs: Any, rate: float, *args, **kwargs) -> None:
+        super(LayerDropout, self).__init__(*args, **kwargs)
         self.layer_output = layer_output
         self.inputs = inputs
         self.rate = rate
@@ -219,6 +222,43 @@ class LayerDropout(Model):
             return K.switch(K.random_uniform([]) > self.rate, self.layer_output(), self.inputs)
         else:
             return self.layer_output()
+
+
+class MaskInput(Layer):
+    """
+    Replaces some percentage of the input with a mask token. Used for implementing BERT style models.
+
+    Based on https://arxiv.org/abs/1810.04805.
+
+    Args:
+        percentage (float): Percentage of input tokens to mask
+        mask_token (int): Token to replace masked input with
+    """
+
+    def __init__(self, percentage: float, mask_token: int, *args, **kwargs) -> None:
+        super(MaskInput, self).__init__(*args, **kwargs)
+        self.percentage = percentage
+        self.mask_token = mask_token
+
+    def call(self, inputs: tf.Tensor, valid_mask: Optional[tf.Tensor]=None):
+        """
+        Args:
+            inputs (tf.Tensor[ndims=2, int]): Tensor of values to mask
+            valid_mask (Optional[tf.Tensor[bool]]): Locations in the inputs to that are valid
+                                                     (i.e. not padding, start tokens, etc.)
+        Returns:
+            masked_inputs (tf.Tensor[ndims=2, int]): Tensor of masked values
+            bert_mask: Locations in the input that were masked
+        """
+
+        percent_drop = K.random_uniform(inputs.shape) < self.percentage
+
+        bert_mask = valid_mask & percent_drop
+
+        masked_inputs = inputs * tf.cast(~bert_mask, inputs.dtype)  # type: ignore
+        masked_inputs = inputs + self.mask_token * tf.cast(bert_mask, inputs.dtype)  # type: ignore
+
+        return masked_inputs, bert_mask
 
 
 class Highway(Model):
