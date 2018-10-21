@@ -155,6 +155,8 @@ class Trainer(ABC):
                     # Choosing not to add gradients to list if they're None. Both adding/not adding are valid choices.
                     # clipped_grads.append((None, v))
                     continue
+                if not v.trainable:
+                    continue
                 if clip_type in ['none', 'None']:
                     pass
                 elif clip_type == 'value':
