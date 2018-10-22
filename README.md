@@ -14,6 +14,7 @@ You can install in development mode using `pip install -e .`
 - Numpy >= 1.14.1
 - Tensorflow >= 1.9.0
 - Pytest >= 3.7.0
+- Tqdm
 
 ### About the Name
 

@@ -7,11 +7,13 @@ import tensorflow as tf
 import numpy as np
 from tqdm import tqdm
 
+import rinokeras as rk
+
 
 class epoch(ABC):
 
     def __init__(self,
-                 trainer,
+                 trainer: rk.trainers.Trainer,
                  dataset: tf.data.Dataset,
                  epoch: int,
                  data_len: Optional[int] = None,
@@ -62,7 +64,7 @@ class epoch(ABC):
 
         if self.n_minibatches % self.summary_iter == 0 and self.summary_writer is not None:
             self.summary_writer.add_summary(summary, self.epoch * self.data_len + self.n_minibatches)
-    
+
     @abstractmethod
     def run_iteration(self,):
         raise NotImplementedError("You must override the run_iteration method")

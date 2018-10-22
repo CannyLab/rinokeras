@@ -1,11 +1,13 @@
 from typing import Optional, Callable
+import warnings
 
 import tensorflow as tf
-import warnings
-from tensorflow.python.keras import backend as K  # pylint: disable=E0611
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Layer, Dense, Dropout
+import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 
-class LuongAttention(tf.keras.layers.Layer):
+class LuongAttention(Layer):
 
     def __init__(self, local=False, stddev=1.0, regularizer=None):
         super(LuongAttention, self).__init__()
@@ -47,7 +49,7 @@ class LuongAttention(tf.keras.layers.Layer):
 # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/common_attention.py
 
 
-class AttentionQKV(tf.keras.Model):
+class AttentionQKV(Model):
     """Computes query, key, and value from antecedents
 
             :param key_depth: integer depth of query and keys
@@ -74,18 +76,18 @@ class AttentionQKV(tf.keras.Model):
 
         if deprecated:
             warnings.warn("Using depricated AttentionQKV call.", DeprecationWarning)
-            self.query_layer = tf.keras.layers.Dense(self.key_depth, use_bias=False,
-                                                     kernel_regularizer=kernel_regularizer,
-                                                     bias_regularizer=bias_regularizer,
-                                                     activity_regularizer=activity_regularizer)
-            self.key_layer = tf.keras.layers.Dense(self.key_depth, use_bias=False,
-                                                   kernel_regularizer=kernel_regularizer,
-                                                   bias_regularizer=bias_regularizer,
-                                                   activity_regularizer=activity_regularizer)
-            self.value_layer = tf.keras.layers.Dense(self.value_depth, use_bias=False,
-                                                     kernel_regularizer=kernel_regularizer,
-                                                     bias_regularizer=bias_regularizer,
-                                                     activity_regularizer=activity_regularizer)
+            self.query_layer = Dense(self.key_depth, use_bias=False,
+                                     kernel_regularizer=kernel_regularizer,
+                                     bias_regularizer=bias_regularizer,
+                                     activity_regularizer=activity_regularizer)
+            self.key_layer = Dense(self.key_depth, use_bias=False,
+                                   kernel_regularizer=kernel_regularizer,
+                                   bias_regularizer=bias_regularizer,
+                                   activity_regularizer=activity_regularizer)
+            self.value_layer = Dense(self.value_depth, use_bias=False,
+                                     kernel_regularizer=kernel_regularizer,
+                                     bias_regularizer=bias_regularizer,
+                                     activity_regularizer=activity_regularizer)
         self.deprecated = deprecated
 
     def build(self, input_shapes):
@@ -93,19 +95,19 @@ class AttentionQKV(tf.keras.Model):
             return
 
         if input_shapes[0] is input_shapes[1]:
-            self.projection_layer = tf.keras.layers.Dense(2 * self.key_depth + self.value_depth, use_bias=False,
-                                                          kernel_regularizer=self.kernel_regularizer,
-                                                          bias_regularizer=self.bias_regularizer,
-                                                          activity_regularizer=self.activity_regularizer)
+            self.projection_layer = Dense(2 * self.key_depth + self.value_depth, use_bias=False,
+                                          kernel_regularizer=self.kernel_regularizer,
+                                          bias_regularizer=self.bias_regularizer,
+                                          activity_regularizer=self.activity_regularizer)
         else:
-            self.query_layer = tf.keras.layers.Dense(self.key_depth, use_bias=False,
-                                                     kernel_regularizer=self.kernel_regularizer,
-                                                     bias_regularizer=self.bias_regularizer,
-                                                     activity_regularizer=self.activity_regularizer)
-            self.projection_layer = tf.keras.layers.Dense(self.key_depth + self.value_depth, use_bias=False,
-                                                          kernel_regularizer=self.kernel_regularizer,
-                                                          bias_regularizer=self.bias_regularizer,
-                                                          activity_regularizer=self.activity_regularizer)
+            self.query_layer = Dense(self.key_depth, use_bias=False,
+                                     kernel_regularizer=self.kernel_regularizer,
+                                     bias_regularizer=self.bias_regularizer,
+                                     activity_regularizer=self.activity_regularizer)
+            self.projection_layer = Dense(self.key_depth + self.value_depth, use_bias=False,
+                                          kernel_regularizer=self.kernel_regularizer,
+                                          bias_regularizer=self.bias_regularizer,
+                                          activity_regularizer=self.activity_regularizer)
 
     def call(self, inputs):
         """
@@ -132,17 +134,17 @@ class AttentionQKV(tf.keras.Model):
         return [queries, keys, values]
 
 
-class TrilinearSimilarity(tf.keras.layers.Layer):
+class TrilinearSimilarity(Layer):
     """
     Computes Trilinear similarity between query and context tensors.
 
     Based on https://arxiv.org/pdf/1611.01603.pdf.
     """
 
-    def __init__(self, dropout=None, regularizer=None):
+    def __init__(self, dropout: Optional[float] = None, regularizer=None) -> None:
         super(TrilinearSimilarity, self).__init__()
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
-            dropout)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
         self.regularizer = regularizer
 
     def build(self, input_shapes):
@@ -183,9 +185,8 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
                 similarity: a Tensor with shape [batch_size, context_length, query_length]
         """
         query, context = inputs
-        if self.dropout:
-            query = self.dropout(query)
-            context = self.dropout(context)
+        query = self.dropout(query, training=self.dropout_weight > 0)
+        context = self.dropout(context, training=self.dropout_weight > 0)
 
         # context_weighted -> Tensor with shape [batch_size, context_length, 1]
         context_weighted = K.dot(context, self.context_weights)
@@ -202,7 +203,7 @@ class TrilinearSimilarity(tf.keras.layers.Layer):
         return similarity
 
 
-class ScaledDotProductSimilarity(tf.keras.layers.Layer):
+class ScaledDotProductSimilarity(Layer):
     """
     Fast scaled dot product attention.
 
@@ -229,7 +230,7 @@ class ScaledDotProductSimilarity(tf.keras.layers.Layer):
         return similarity
 
 
-class ApplyAttentionMask(tf.keras.layers.Layer):
+class ApplyAttentionMask(Layer):
     """
     Applies a mask to the attention similarities.
     """
@@ -248,38 +249,42 @@ class ApplyAttentionMask(tf.keras.layers.Layer):
         if mask is None:
             return similarity
 
-        assert len(similarity.shape) in [3, 4], 'similarity must be a 3 or 4 dimensional Tensor'
-        assert len(mask.shape) == 3, 'Mask must be a 3 dimensional Tensor'
+        similarity_rank_assert = tf.assert_rank_in(similarity, (3, 4))
+        mask_rank_assert = tf.assert_rank(mask, 3)
 
         # There are so many different reasons a mask might be constructed a particular manner.
         # Because of this we don't want to infer a particular construction.
-        assert (mask.shape[0] == similarity.shape[0]) in [None, True], 'Batch size mismatch between mask and similarity'
-        assert (mask.shape[-2] == similarity.shape[-2]) in [None, True], 'Mismatch in dimension -2 between mask and similarity'
-        assert (mask.shape[-1] == similarity.shape[-1]) in [None, True], 'Mismatch in dimension -1 between mask and similarity'
+        with tf.control_dependencies([similarity_rank_assert, mask_rank_assert]):
+            # If shapes don't match, then similarity has been split for multi-headed attention
+            if len(mask.shape) != len(similarity.shape):
+                similarity[:, 0].shape.assert_is_compatible_with(mask.shape)
+                mask = mask[:, None]
+            else:
+                similarity.shape.assert_is_compatible_with(mask.shape)
 
-        if len(mask.shape) != len(similarity.shape):
-            mask = tf.expand_dims(mask, 1)
-
-        # We know that we're passing this through a softmax later, thus just add a relatively large negative
-        # value to mask the output avoids a hadamard product (though I think that technically it's not
-        # any more efficient to do it this way operations wise)
-        bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
-        masked_similarity = similarity + bias
-        return masked_similarity
+            # We know that we're passing this through a softmax later, thus just add a relatively large negative
+            # value to mask the output avoids a hadamard product (though I think that technically it's not
+            # any more efficient to do it this way operations wise)
+            bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
+            masked_similarity = similarity + bias
+            return masked_similarity
 
 
-class AttentionMap(tf.keras.Model):
+class AttentionMap(Model):
     """
     Computes attention based on provided similarity metric.
     """
 
-    def __init__(self, similarity_metric, attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax, dropout: float = None) -> None:
+    def __init__(self,
+                 similarity_metric,
+                 attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
+                 dropout: Optional[float] = None) -> None:
         super(AttentionMap, self).__init__()
         self.similarity_metric = similarity_metric
         self.attention_function = attention_function
         self.apply_mask = ApplyAttentionMask()
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
-            dropout)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
 
     def call(self, inputs, mask=None):
         """Fast scaled dot product attention.
@@ -297,15 +302,14 @@ class AttentionMap(tf.keras.Model):
         # (batch_size, heads, n_queries, n_keyval)
         weights = self.attention_function(masked_similarity)
 
-        if self.dropout is not None:
-            weights = self.dropout(weights)
+        weights = self.dropout(weights, training=self.dropout_weight > 0)
         output = tf.matmul(weights, values)
         return output, weights
 
 
-class MultiHeadAttentionMap(tf.keras.Model):
+class MultiHeadAttentionMap(Model):
 
-    def __init__(self, similarity_metric, n_heads: int, dropout: float = None) -> None:
+    def __init__(self, similarity_metric, n_heads: int, dropout: Optional[float] = None) -> None:
         """Map the multi-headed attention across the map
 
         Arguments:
@@ -364,7 +368,7 @@ class MultiHeadAttentionMap(tf.keras.Model):
         return tensor
 
 
-class MultiHeadAttention(tf.keras.Model):
+class MultiHeadAttention(Model):
     """
     Fast multi-head attention. Based on the Attention is All You Need paper.
 
@@ -374,7 +378,7 @@ class MultiHeadAttention(tf.keras.Model):
     def __init__(self,
                  similarity_metric: str,
                  n_heads: int,
-                 dropout: float = None,
+                 dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -394,8 +398,8 @@ class MultiHeadAttention(tf.keras.Model):
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
 
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
-            dropout)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
@@ -408,7 +412,7 @@ class MultiHeadAttention(tf.keras.Model):
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
                                         activity_regularizer=self.activity_regularizer)
-        self.output_layer = tf.keras.layers.Dense(ma_channels, use_bias=False,
+        self.output_layer = Dense(ma_channels, use_bias=False,
                                                   kernel_regularizer=self.kernel_regularizer,
                                                   bias_regularizer=self.bias_regularizer,
                                                   activity_regularizer=self.activity_regularizer)
@@ -424,12 +428,11 @@ class MultiHeadAttention(tf.keras.Model):
         q, k, v = self.compute_qkv((query_antecedent, memory_antecedent))
         attention_output = self.attention_layer((q, k, v), mask=mask)
         output = self.output_layer(attention_output)
-        if self.dropout is not None:
-            output = self.dropout(output)
+        output = self.dropout(output, training=self.dropout_weight > 0)
         return output
 
 
-class SelfAttention(tf.keras.Model):
+class SelfAttention(Model):
     """
     Fast multi-head self attention. Based on the Attention is All You Need paper.
 
@@ -439,19 +442,16 @@ class SelfAttention(tf.keras.Model):
     def __init__(self,
                  similarity_metric: str,
                  n_heads: int,
-                 dropout: float = None,
+                 dropout: Optional[float] = None,
                  **kwargs) -> None:
         super(SelfAttention, self).__init__()
         self.multi_attention = MultiHeadAttention(similarity_metric, n_heads, dropout, **kwargs)
-
-    # def build(self, input_shapes):
-    #     self.multi_attention.build((input_shapes, input_shapes))
 
     def call(self, inputs, mask=None):
         return self.multi_attention((inputs, inputs), mask=mask)
 
 
-class ContextQueryAttention(tf.keras.Model):
+class ContextQueryAttention(Model):
 
     def __init__(self, attention_type: str = "trilinear", dropout: Optional[float] = None, regularizer=None) -> None:
         super(ContextQueryAttention, self).__init__()
@@ -460,7 +460,8 @@ class ContextQueryAttention(tf.keras.Model):
                 "Haven't got around to implementing other attention types yet!")
 
         self.attention_type = attention_type
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(dropout)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
         self.apply_mask = ApplyAttentionMask()
         self.trilinear_similarity = TrilinearSimilarity(dropout, regularizer=regularizer)
 
@@ -491,8 +492,7 @@ class ContextQueryAttention(tf.keras.Model):
         # outputs -> Tensor with shape [batch_size, context_length, 4 * d_model]
         outputs = [context, context_to_query, context * context_to_query, context * query_to_context]
         outputs = tf.concat(outputs, axis=-1)
-        if self.dropout is not None:
-            outputs = self.dropout(outputs)
+        outputs = self.dropout(outputs, training=self.dropout_weight > 0)
         return outputs
 
 

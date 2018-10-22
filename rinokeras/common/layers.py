@@ -2,10 +2,13 @@ import collections
 from typing import Optional, Sequence, Any, Union, Callable
 
 import tensorflow as tf
-from tensorflow.python.keras import backend as K  # pylint: disable=E0611
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Layer, Dense, Conv1D, Conv2D, Dropout, Conv2DTranspose, \
+    BatchNormalization, Flatten, Activation
+import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 
-class RandomNoise(tf.keras.layers.Layer):
+class RandomNoise(Layer):
     """
     Adds gaussian random noise to input with trainable standard deviation.
     """
@@ -30,7 +33,7 @@ class RandomNoise(tf.keras.layers.Layer):
 
 
 # https://github.com/keras-team/keras/issues/3878
-class LayerNorm(tf.keras.layers.Layer):
+class LayerNorm(Layer):
     """
     Does layer normalization from https://arxiv.org/abs/1607.06450.
     """
@@ -65,12 +68,12 @@ class LayerNorm(tf.keras.layers.Layer):
 # requires input size to be specified at the begining
 
 
-class Stack(tf.keras.Model):
+class Stack(Model):
     """
     A re-implementation of Keras's Sequential layer to work well with tf eager.
     """
-    def __init__(self, layers: Optional[Sequence[Any]] = None) -> None:
-        super(Stack, self).__init__()
+    def __init__(self, layers: Optional[Sequence[Any]] = None, *args, **kwargs) -> None:
+        super(Stack, self).__init__(*args, **kwargs)
         self._call = None
         self._layer_list = tf.contrib.checkpoint.List()
         if layers is not None:
@@ -103,12 +106,13 @@ class Conv2DStack(Stack):
         super(Conv2DStack, self).__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
         for fsize, ks, stride in zip(filters, kernel_size, strides):
-            self.add(tf.keras.layers.Conv2D(fsize, ks, stride, padding=padding, **kwargs))
+            self.add(Conv2D(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
-                self.add(tf.keras.layers.BatchNormalization())
-            self.add(tf.keras.layers.Activation(activation))
+                self.add(BatchNormalization())
+            self.add(Activation(activation))
         if flatten_output:
-            self.add(tf.keras.layers.Flatten())
+            self.add(Flatten())
+
 
 class Deconv2DStack(Stack):
     """
@@ -128,12 +132,12 @@ class Deconv2DStack(Stack):
         super(Deconv2DStack, self).__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
         for fsize, ks, stride in zip(filters, kernel_size, strides):
-            self.add(tf.keras.layers.Conv2DTranspose(fsize, ks, stride, padding=padding, **kwargs))
+            self.add(Conv2DTranspose(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
-                self.add(tf.keras.layers.BatchNormalization())
-            self.add(tf.keras.layers.Activation(activation))
+                self.add(BatchNormalization())
+            self.add(Activation(activation))
         if flatten_output:
-            self.add(tf.keras.layers.Flatten())
+            self.add(Flatten())
 
 
 class DenseStack(Stack):
@@ -152,20 +156,20 @@ class DenseStack(Stack):
         for _, layer in enumerate(layers[:-1]):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
-            self.add(tf.keras.layers.Dense(*layer, **kwargs))
+            self.add(Dense(*layer, **kwargs))
             if batch_norm:
-                self.add(tf.keras.layers.BatchNormalization())
-            self.add(tf.keras.layers.Activation(activation))
+                self.add(BatchNormalization())
+            self.add(Activation(activation))
 
         out_layer = layers[-1]
         if not isinstance(out_layer, collections.Iterable):
             out_layer = (out_layer,)
-        self.add(tf.keras.layers.Dense(*out_layer, **kwargs))
+        self.add(Dense(*out_layer, **kwargs))
         if output_activation is not None:
-            self.add(tf.keras.layers.Activation(output_activation))
+            self.add(Activation(output_activation))
 
 
-class DenseTranspose(tf.keras.layers.Layer):
+class DenseTranspose(Layer):
     """Multiply by the transpose of a dense layer
     """
     def __init__(self, other_layer):
@@ -176,7 +180,7 @@ class DenseTranspose(tf.keras.layers.Layer):
         return K.dot(x - K.stop_gradient(self.other_layer.b), K.transpose(K.stop_gradient(self.other_layer.W)))
 
 
-class Residual(tf.keras.Model):
+class Residual(Model):
     """
     Adds a residual connection between layers. If input to layer is a tuple, adds output to the first element
     of the tuple.
@@ -194,7 +198,70 @@ class Residual(tf.keras.Model):
         return residual
 
 
-class Highway(tf.keras.Model):
+class LayerDropout(Model):
+    """
+    Optionally drops a full layer. Output is x with probability rate and f(x) with probability (1 - rate).
+
+    Args:
+        layer_call (Callable[[], Any]): Function that returns output of layer on inputs
+        inputs (Any): What to return if the layer is dropped
+        rate (float): Rate at which to drop layers
+
+    Returns:
+        Any: Either inputs or output of layer_call function.
+    """
+
+    def __init__(self, layer_output: Callable[[], Any], inputs: Any, rate: float, *args, **kwargs) -> None:
+        super(LayerDropout, self).__init__(*args, **kwargs)
+        self.layer_output = layer_output
+        self.inputs = inputs
+        self.rate = rate
+
+    def call(self, training=False):
+        if training:
+            return K.switch(K.random_uniform([]) > self.rate, self.layer_output(), self.inputs)
+        else:
+            return self.layer_output()
+
+
+class MaskInput(Layer):
+    """
+    Replaces some percentage of the input with a mask token. Used for implementing BERT style models.
+
+    Based on https://arxiv.org/abs/1810.04805.
+
+    Args:
+        percentage (float): Percentage of input tokens to mask
+        mask_token (int): Token to replace masked input with
+    """
+
+    def __init__(self, percentage: float, mask_token: int, *args, **kwargs) -> None:
+        super(MaskInput, self).__init__(*args, **kwargs)
+        self.percentage = percentage
+        self.mask_token = mask_token
+
+    def call(self, inputs: tf.Tensor, valid_mask: Optional[tf.Tensor]=None):
+        """
+        Args:
+            inputs (tf.Tensor[ndims=2, int]): Tensor of values to mask
+            valid_mask (Optional[tf.Tensor[bool]]): Locations in the inputs to that are valid
+                                                     (i.e. not padding, start tokens, etc.)
+        Returns:
+            masked_inputs (tf.Tensor[ndims=2, int]): Tensor of masked values
+            bert_mask: Locations in the input that were masked
+        """
+
+        percent_drop = K.random_uniform(inputs.shape) < self.percentage
+
+        bert_mask = valid_mask & percent_drop
+
+        masked_inputs = inputs * tf.cast(~bert_mask, inputs.dtype)  # type: ignore
+        masked_inputs = inputs + self.mask_token * tf.cast(bert_mask, inputs.dtype)  # type: ignore
+
+        return masked_inputs, bert_mask
+
+
+class Highway(Model):
     """
     Implementation of a highway layer. Can use convolutional or fully connected layer.
 
@@ -212,8 +279,8 @@ class Highway(tf.keras.Model):
         self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
-        self.dropout = None if dropout is None else tf.keras.layers.Dropout(
-            dropout)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.dropout = Dropout(self.dropout_weight)
 
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
@@ -222,35 +289,35 @@ class Highway(tf.keras.Model):
     def build(self, input_shape):
         units = input_shape[-1]
         if self._convolution:
-            self.gate = tf.keras.layers.Conv1D(filters=units,
-                                               kernel_size=1,
-                                               padding='same',
-                                               acitvation='sigmoid',
-                                               use_bias=True,
-                                               bias_initializer=self._gate_initializer,
-                                               kernel_regularizer=self.kernel_regularizer,
-                                               bias_regularizer=self.bias_regularizer,
-                                               activity_regularizer=self.activity_regularizer)
-            self.layer = tf.keras.layers.Conv1D(filters=units,
-                                                kernel_size=1,
-                                                padding='same',
-                                                activation=self.activation,
-                                                kernel_regularizer=self.kernel_regularizer,
-                                                bias_regularizer=self.bias_regularizer,
-                                                activity_regularizer=self.activity_regularizer)
+            self.gate = Conv1D(filters=units,
+                               kernel_size=1,
+                               padding='same',
+                               activation='sigmoid',
+                               use_bias=True,
+                               bias_initializer=self._gate_initializer,
+                               kernel_regularizer=self.kernel_regularizer,
+                               bias_regularizer=self.bias_regularizer,
+                               activity_regularizer=self.activity_regularizer)
+            self.layer = Conv1D(filters=units,
+                                kernel_size=1,
+                                padding='same',
+                                activation=self.activation,
+                                kernel_regularizer=self.kernel_regularizer,
+                                bias_regularizer=self.bias_regularizer,
+                                activity_regularizer=self.activity_regularizer)
         else:
-            self.gate = tf.keras.layers.Dense(units=units,
-                                              activation='sigmoid',
-                                              use_bias=True,
-                                              bias_initializer=self._gate_initializer,
-                                              kernel_regularizer=self.kernel_regularizer,
-                                              bias_regularizer=self.bias_regularizer,
-                                              activity_regularizer=self.activity_regularizer)
-            self.layer = tf.keras.layers.Dense(units=units,
-                                               activation=self.activation,
-                                               kernel_regularizer=self.kernel_regularizer,
-                                               bias_regularizer=self.bias_regularizer,
-                                               activity_regularizer=self.activity_regularizer)
+            self.gate = Dense(units=units,
+                              activation='sigmoid',
+                              use_bias=True,
+                              bias_initializer=self._gate_initializer,
+                              kernel_regularizer=self.kernel_regularizer,
+                              bias_regularizer=self.bias_regularizer,
+                              activity_regularizer=self.activity_regularizer)
+            self.layer = Dense(units=units,
+                               activation=self.activation,
+                               kernel_regularizer=self.kernel_regularizer,
+                               bias_regularizer=self.bias_regularizer,
+                               activity_regularizer=self.activity_regularizer)
 
     def call(self, inputs):
         gated = self.gate(inputs)
@@ -260,7 +327,7 @@ class Highway(tf.keras.Model):
         return gated * transformed + (1 - gated) * inputs
 
 
-class PositionEmbedding(tf.keras.Model):
+class PositionEmbedding(Model):
     """
     Adds positional embedding to an input embedding.
 
