@@ -16,7 +16,7 @@ val_labels = tf.convert_to_tensor(cifar.Y_test, dtype=tf.int64)
 
 NUM_EPOCHS = 10000
 TEST_INTERVAL = 100
-BATCH_SIZE = 4
+BATCH_SIZE = 64
 
 
 class PredictionNet(tf.keras.Model):
@@ -39,7 +39,7 @@ def compute_accuracy(logits, labels):
     index = tf.argmax(logits, axis=1)
     values = tf.cast(tf.equal(index, labels), tf.float64)
 
-    return tf.reduce_sum(values)/float(BATCH_SIZE)
+    return tf.reduce_sum(values)
 
 resnet = PredictionNet(True)
 checkpoint_prefix = os.path.join('./checkpoints/', 'ckpt')
