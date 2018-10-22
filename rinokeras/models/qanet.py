@@ -22,8 +22,9 @@ class QANetSelfAttention(Model):
     def __init__(self, n_heads: int, dropout: Optional[float],
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super().__init__()
+                 activity_regularizer=None,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.self_attention = SelfAttention('scaled_dot', n_heads, dropout,
                                             kernel_regularizer=kernel_regularizer,
                                             bias_regularizer=bias_regularizer,
@@ -66,8 +67,9 @@ class QANetFeedForward(Model):
                  dropout: Optional[float],
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super().__init__()
+                 activity_regularizer=None,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.norm = LayerNorm()
         self.feed_forward = DenseStack(
             [filter_size, hidden_size], output_activation=None,
@@ -112,8 +114,9 @@ class QANetConvBlock(Model):
                  dropout: Optional[float],
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super().__init__()
+                 activity_regularizer=None,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.norm = LayerNorm()
         self.conv_layer = SeparableConv1D(filters, kernel_size, padding='same',
                                           depthwise_regularizer=kernel_regularizer,
@@ -167,8 +170,9 @@ class QANetInputEmbedding(Model):
                  batch_norm: bool = False,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super().__init__()
+                 activity_regularizer=None,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.word_embedding = Embedding(word_embed_initializer.shape[0],
                                         word_embed_initializer.shape[1],
                                         weights=[word_embed_initializer],
@@ -188,7 +192,6 @@ class QANetInputEmbedding(Model):
 
         self.highway = Stack([Highway(dropout=dropout) for _ in range(2)])
 
-        self.position_embedding = PositionEmbedding()
         self.dropout_weight = 0 if dropout is None else dropout
         self.dropout = Dropout(self.dropout_weight)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
@@ -196,8 +199,7 @@ class QANetInputEmbedding(Model):
     def call(self, inputs):
         """Calls the input embedding on the new inputs
 
-        Computes a set of table lookups with the passed in word and character embeddings. This also
-        computes the positional embedding of the inputs.
+        Computes a set of table lookups with the passed in word and character embeddings.
 
         :param inputs: Tuple of (Words, Characters)
         :type inputs: Tuple[tf.Tensor, tf.Tensor]
@@ -263,13 +265,16 @@ class QANetEncoderBlock(Model):
                  dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super().__init__()
+                 activity_regularizer=None,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.position_embedding = PositionEmbedding()
         self.conv_stack = Stack([QANetConvBlock(hidden_size, 7, dropout,
                                                 kernel_regularizer=kernel_regularizer,
                                                 bias_regularizer=bias_regularizer,
                                                 activity_regularizer=activity_regularizer)
-                                 for _ in range(n_conv)])
+                                 for _ in range(n_conv)],
+                                name='conv_blocks')
         self.self_attention = QANetSelfAttention(n_heads, dropout,
                                                  kernel_regularizer=kernel_regularizer,
                                                  bias_regularizer=bias_regularizer,
@@ -291,6 +296,7 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
+        inputs = self.position_embedding(inputs)
         conv_out = self.conv_stack(inputs, mask=padding_mask)
         res_attn = self.self_attention(conv_out, mask=self_attention_mask)
         output = self.feed_forward(res_attn)

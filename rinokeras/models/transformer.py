@@ -232,7 +232,8 @@ class TransformerDecoder(Model):
                                                              kernel_regularizer=kernel_regularizer,
                                                              bias_regularizer=bias_regularizer,
                                                              activity_regularizer=activity_regularizer)
-                                     for _ in range(n_layers)])
+                                     for _ in range(n_layers)],
+                                    name='decoder_blocks')
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
@@ -315,25 +316,24 @@ class TransformerDecoder(Model):
     # exist within the internals.
     def get_cross_attention_mask(self, inputs, encoder_mask, decoder_mask):
         if encoder_mask is None and decoder_mask is None:
-            return None
+            cross_attention_mask = None
+        elif encoder_mask is None:
+            # We need to not mask the encoding, but mask the decoding
+            # The decoding mask should have shape [batch_size x target_len x target_len]
+            # meaning all we have to do is pad the mask out properly
+            cross_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
+                                                (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
+        elif decoder_mask is None:
+            cross_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
+                                                (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
         else:
-            if encoder_mask is None:
-                # We need to not mask the encoding, but mask the decoding
-                # The decoding mask should have shape [batch_size x target_len x target_len]
-                # meaning all we have to do is pad the mask out properly
-                cross_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
-                                                    (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
-            elif decoder_mask is None:
-                cross_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
-                                                    (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
-            else:
-                dec_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
-                                                  (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
-                enc_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
-                                                  (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
-                cross_attention_mask = tf.logical_and(enc_attention_mask, dec_attention_mask)
+            dec_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
+                                              (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
+            enc_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
+                                              (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
+            cross_attention_mask = tf.logical_and(enc_attention_mask, dec_attention_mask)
 
-            return cross_attention_mask
+        return cross_attention_mask
 
 
 # TODO: Split this into a discrete/continuous embedding rather than handle the logic here

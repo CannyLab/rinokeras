@@ -237,6 +237,8 @@ class MaskInput(Layer):
 
     def __init__(self, percentage: float, mask_token: int, *args, **kwargs) -> None:
         super(MaskInput, self).__init__(*args, **kwargs)
+        if not 0 <= percentage < 1:
+            raise ValueError("Masking percentage must be in [0, 1). Received {}".format(percentage))
         self.percentage = percentage
         self.mask_token = mask_token
 
@@ -251,12 +253,13 @@ class MaskInput(Layer):
             bert_mask: Locations in the input that were masked
         """
 
-        percent_drop = K.random_uniform(inputs.shape) < self.percentage
+        bert_mask = K.random_uniform(K.shape(inputs)) < self.percentage
 
-        bert_mask = valid_mask & percent_drop
+        if valid_mask is not None:
+            bert_mask &= valid_mask
 
         masked_inputs = inputs * tf.cast(~bert_mask, inputs.dtype)  # type: ignore
-        masked_inputs = inputs + self.mask_token * tf.cast(bert_mask, inputs.dtype)  # type: ignore
+        masked_inputs = masked_inputs + self.mask_token * tf.cast(bert_mask, inputs.dtype)  # type: ignore
 
         return masked_inputs, bert_mask
 
@@ -425,4 +428,4 @@ class PositionEmbedding2D(PositionEmbedding):
 
 
 __all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
-           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D']
+           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput']
