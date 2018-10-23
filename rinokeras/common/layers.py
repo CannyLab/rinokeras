@@ -4,7 +4,7 @@ from typing import Optional, Sequence, Any, Union, Callable
 import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Dense, Conv1D, Conv2D, Dropout, Conv2DTranspose, \
-    BatchNormalization, Flatten, Activation
+    BatchNormalization, Flatten, Activation, Embedding
 import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 
@@ -180,6 +180,18 @@ class DenseTranspose(Layer):
         return K.dot(x - K.stop_gradient(self.other_layer.b), K.transpose(K.stop_gradient(self.other_layer.W)))
 
 
+class EmbeddingTranspose(Model):
+    """Multiply by the transpose of an embedding layer
+    """
+    def __init__(self, embedding_layer: Embedding, *args, **kwargs) -> None:
+        super(EmbeddingTranspose, self).__init__(*args, **kwargs)
+        self.embedding = embedding_layer
+
+    def call(self, inputs):
+        embed_mat = self.embedding.weights[0]
+        return K.dot(inputs, K.transpose(embed_mat))
+
+
 class Residual(Model):
     """
     Adds a residual connection between layers. If input to layer is a tuple, adds output to the first element
@@ -259,7 +271,14 @@ class MaskInput(Layer):
             bert_mask &= valid_mask
 
         masked_inputs = inputs * tf.cast(~bert_mask, inputs.dtype)  # type: ignore
-        masked_inputs = masked_inputs + self.mask_token * tf.cast(bert_mask, inputs.dtype)  # type: ignore
+
+        token_bert_mask = K.random_uniform(K.shape(bert_mask)) < 0.8
+        random_bert_mask = (K.random_uniform(K.shape(bert_mask)) < 0.1) & ~token_bert_mask
+        true_bert_mask = ~token_bert_mask & ~random_bert_mask
+        masked_inputs += self.mask_token * tf.cast(bert_mask & token_bert_mask, inputs.dtype)  # type: ignore
+        masked_inputs += K.random_uniform(K.shape(bert_mask), 0, self.mask_token, dtype=inputs.dtype) \
+            * tf.cast(bert_mask & random_bert_mask, inputs.dtype)
+        masked_inputs += inputs * tf.cast(bert_mask & true_bert_mask, inputs.dtype)
 
         return masked_inputs, bert_mask
 
@@ -348,7 +367,7 @@ class PositionEmbedding(Model):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs):
+    def call(self, inputs, start=1):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
@@ -359,7 +378,7 @@ class PositionEmbedding(Model):
         assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
 
         sequence_length = tf.shape(inputs)[1]
-        seq_pos = tf.cast(tf.range(1, sequence_length + 1)
+        seq_pos = tf.cast(tf.range(start, sequence_length + start)
                           [None, :], tf.float32)  # 1-index positions
 
         index = seq_pos[:, :, None] / self.divisor
@@ -428,4 +447,4 @@ class PositionEmbedding2D(PositionEmbedding):
 
 
 __all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
-           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput']
+           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose']
