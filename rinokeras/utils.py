@@ -49,3 +49,17 @@ def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):
         indices = tf.tile(tf.range(tf.shape(sequence)[1])[None, :], (tf.shape(sequence_lengths)[0], 1))
         mask = indices < sequence_lengths[:, None]
         return mask
+
+
+def convert_to_attention_mask(sequence, mask):
+    if mask is None:
+        return None
+    if len(mask.shape) == 1:
+        mask = convert_sequence_length_to_sequence_mask(
+            sequence, mask)
+    if len(mask.shape) == 2:
+        mask = convert_padding_mask_to_attention_mask(
+            sequence, mask)
+    if mask.dtype != tf.bool:
+        mask = tf.cast(mask, tf.bool)
+    return mask

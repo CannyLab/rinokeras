@@ -235,7 +235,6 @@ class QANetInputEmbedding(Model):
 
         if self.batch_norm:
             embedding = self.batch_norm(embedding)
-        embedding = self.position_embedding(embedding)
         return embedding
 
 
