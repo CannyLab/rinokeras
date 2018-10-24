@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Union, Callable, Sequence, List
 
 import tensorflow as tf
+import rinokeras as rk
 import time
 import contextlib
 import os
@@ -129,6 +130,7 @@ class Trainer(ABC):
                 'adadelta': tf.train.AdadeltaOptimizer,
                 'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
                 'ftrl': tf.train.FtrlOptimizer,
+                'adamax': rk.common.optimizers.AdamaxOptimizer,
             }
 
             if optimizer in optimizers:
