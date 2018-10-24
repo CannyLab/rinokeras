@@ -130,7 +130,7 @@ class Trainer(ABC):
                 'adadelta': tf.train.AdadeltaOptimizer,
                 'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
                 'ftrl': tf.train.FtrlOptimizer,
-                'adamax': rk.common.optimizers.AdamaxOptimizer,
+                'adamax': rk.common.optimizers.AdaMaxOptimizer,
             }
 
             if optimizer in optimizers:
