@@ -54,7 +54,10 @@ class TransformerMultiAttention(Model):
     def call(self, inputs, mask):
         target, source = inputs
         norm_target = self.norm(target)
+        print('test', norm_target.shape)
         attention = self.multi_attention((norm_target, source), mask=mask)
+        print('attention', attention.shape)
+        # assert attention.shape[1] == 1
         return attention + target
 
 
@@ -159,8 +162,9 @@ class TransformerDecoderBlock(Model):
             all_inputs = tf.transpose(all_inputs, (1, 0, 2))
         else:
             all_inputs = decoder_inputs
-
+        print('decoder_inputs', decoder_inputs.shape)
         target_selfattn = self.self_attention((decoder_inputs, all_inputs), mask=self_attention_mask)
+        print('target_selfattn', target_selfattn.shape)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
@@ -168,7 +172,9 @@ class TransformerDecoderBlock(Model):
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
         encdec_attention = self.multi_attention((target_selfattn, encoder_outputs), mask=cross_attention_mask)
+        print('encdec_attention', encdec_attention.shape)
         output = self.feed_forward(encdec_attention)
+        print('output', output.shape)
         return [encoder_outputs, output, cache]
 
 
@@ -272,7 +278,9 @@ class TransformerDecoder(Model):
         encoder_output, target_input, cache = inputs
         if shift_target_sequence_right:
             target_input = self.shift_target_sequence_right(target_input)
+        print('shifted_target_input', target_input.shape)
         target_embedding = self.embedding_layer(target_input, start=seqpos)
+        print('embedded', target_embedding.shape)
         if cache is not None and mask_future:
             warnings.warn("Future masking should be unnecessary when using caching and will probably cause an error. \
                            If you think it's necessary, feel free to suppress this warning.")
@@ -292,6 +300,7 @@ class TransformerDecoder(Model):
             cross_attention_mask = self.get_cross_attention_mask(inputs, encoder_mask, decoder_mask)
 
             # Now actually do the decoding which should take us to the right dimension
+            print('target_embedding', target_embedding.shape)
             _, decoder_output, cache = self.decoding_stack(
                 (encoder_output, target_embedding, cache),
                 self_attention_mask=self_attention_mask,
@@ -310,6 +319,7 @@ class TransformerDecoder(Model):
         initial_input = tf.zeros((shape), dtype=output_dtype)
 
         def decoding_step(i, target_input, cache, output_sequence):
+            print('target_input', target_input.shape)
             output = self((encoder_output, target_input, cache), encoder_mask=encoder_mask,
                           decoder_mask=None, shift_target_sequence_right=False,
                           mask_future=False, seqpos=i + 1)
@@ -324,10 +334,14 @@ class TransformerDecoder(Model):
 
             return i + 1, target_input, cache, output_sequence.write(i, tf.squeeze(output, 1))
 
+        inputs = [tf.constant(0), initial_input, self.get_initial_cache(max_seq_len), output_sequence]
+        shapes = [inputs[0].shape, tf.TensorShape((None, None, initial_input.shape[-1])),
+                  {name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs[2].items()}, tf.TensorShape(None)]
         _, _, _, output_sequence = tf.while_loop(
             lambda i, *_: i < max_seq_len,
             decoding_step,
-            [tf.constant(0), initial_input, self.get_initial_cache(max_seq_len), output_sequence]
+            inputs,
+            shapes
         )
 
         output = tf.transpose(output_sequence.stack(), (1, 0, 2))
@@ -475,13 +489,14 @@ class TransformerInputEmbedding(Model):
         if self.freeze_embeddings:
             embedding = K.stop_gradient(embedding)
         embedding = self.embedding_dense(embedding)
-
         embedding = self.dropout(embedding, self.dropout_weight > 0)
 
         if self.batch_norm:
             embedding = self.batch_norm(embedding, training=True)
 
+        print(embedding.shape)
         embedding = self.position_encoding(embedding, start=start)
+        print(embedding.shape)
         return embedding
 
 

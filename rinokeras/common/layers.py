@@ -377,7 +377,7 @@ class PositionEmbedding(Model):
         """
         assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
 
-        sequence_length = tf.shape(inputs)[1]
+        sequence_length = tf.shape(inputs)[1] if inputs.shape[1].value is None else inputs.shape[1].value
         seq_pos = tf.cast(tf.range(start, sequence_length + start)
                           [None, :], tf.float32)  # 1-index positions
 
