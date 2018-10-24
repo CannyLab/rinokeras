@@ -52,6 +52,21 @@ def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):
 
 
 def convert_to_attention_mask(sequence, mask):
+    """Automatically convert from None/1D/2D/3D mask to a boolean 3D attention mask.
+    Note this does NOT allow for varying the input mask during training. We could replace
+    the python if statements with tensorflow conditionals to allow this, but for the
+    moment this is really a helper function and assumes that the type of mask
+    passed in is fixed.
+
+    Args:
+        sequence (tf.Tensor): Tensor of shape [batch_size, sequence_length, ndim]
+        mask: Optional[Tensor] of shape [batch_size]
+                                     or [batch_size, sequence_length]
+                                     or [batch_size, sequence_length, sequence_length]
+
+    Returns:
+        Optional[tf.Tensor[bool]]: Tensor of shape [batch_size, sequence_length, sequence_length]
+    """
     if mask is None:
         return None
     if len(mask.shape) == 1:
