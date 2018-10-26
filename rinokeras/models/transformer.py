@@ -54,10 +54,7 @@ class TransformerMultiAttention(Model):
     def call(self, inputs, mask):
         target, source = inputs
         norm_target = self.norm(target)
-        print('test', norm_target.shape)
         attention = self.multi_attention((norm_target, source), mask=mask)
-        print('attention', attention.shape)
-        # assert attention.shape[1] == 1
         return attention + target
 
 
