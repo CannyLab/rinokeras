@@ -74,18 +74,19 @@ class Stack(Model):
     """
     def __init__(self, layers: Optional[Sequence[Any]] = None, *args, **kwargs) -> None:
         super(Stack, self).__init__(*args, **kwargs)
-        self._call = None
-        self._layer_list = tf.contrib.checkpoint.List()
+        # self._call = None
+        # self._layer_list = tf.contrib.checkpoint.List()
         if layers is not None:
             for layer in layers:
                 self.add(layer)
 
     def add(self, layer):
-        self._layer_list.append(layer)
+        # self._layer_list.append(layer)
+        self._layers.append(layer)
 
     def call(self, inputs, **kwargs):
         output = inputs
-        for layer in self._layer_list:
+        for layer in self._layers:
             output = layer(output, **kwargs)
         return output
 
