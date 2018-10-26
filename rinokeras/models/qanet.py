@@ -195,6 +195,7 @@ class QANetInputEmbedding(Model):
         self.dropout_weight = 0 if dropout is None else dropout
         self.dropout = Dropout(self.dropout_weight)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
+        self.position_embedding = PositionEmbedding()
 
     def call(self, inputs):
         """Calls the input embedding on the new inputs
@@ -268,7 +269,6 @@ class QANetEncoderBlock(Model):
                  activity_regularizer=None,
                  *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        # self.position_embedding = PositionEmbedding()
         self.conv_stack = Stack([QANetConvBlock(hidden_size, 7, dropout,
                                                 kernel_regularizer=kernel_regularizer,
                                                 bias_regularizer=bias_regularizer,
@@ -298,7 +298,6 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-        # inputs = self.position_embedding(inputs)
         conv_out = self.layer_drop(self.conv_stack(inputs, mask=padding_mask), inputs,
                                    training=self.dropout_weight > 0)
         res_attn = self.layer_drop(self.self_attention(conv_out, mask=self_attention_mask), conv_out,

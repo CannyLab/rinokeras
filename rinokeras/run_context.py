@@ -73,7 +73,11 @@ class epoch(ABC):
 class train_epoch(epoch):
 
     def run_iteration(self):
-        losses, summary = self.trainer.train(self.handle)
+        if self.summary_writer is not None:
+            losses, summary = self.trainer.train(self.handle)
+        else:
+            losses = self.trainer.train(self.handle)
+            summary = None
         self.process_iteration(losses, summary)
         return self.losses / self.n_minibatches, self.n_minibatches
 
@@ -81,7 +85,11 @@ class train_epoch(epoch):
 class test_epoch(epoch):
 
     def run_iteration(self):
-        losses, summary = self.trainer.loss(self.handle)
+        if self.summary_writer is not None:
+            losses, summary = self.trainer.loss(self.handle)
+        else:
+            losses = self.trainer.loss(self.handle)
+            summary = None
         self.process_iteration(losses, summary)
         return self.losses / self.n_minibatches, self.n_minibatches
 

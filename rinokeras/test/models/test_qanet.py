@@ -13,8 +13,8 @@ def test_qanet():
 
     context = np.random.randint(0, 1000, (32, 100), dtype=np.int32)
     query = np.random.randint(0, 1000, (32, 10), dtype=np.int32)
-    context_chars = np.random.randint(0, 1000, (32, 100, 16), dtype=np.int32)
-    query_chars = np.random.randint(0, 1000, (32, 10, 16), dtype=np.int32)
+    context_chars = np.random.randint(0, 26, (32, 100, 16), dtype=np.int32)
+    query_chars = np.random.randint(0, 26, (32, 10, 16), dtype=np.int32)
     answer_index_1 = np.random.randint(0, 100, (32,), dtype=np.int32)
     answer_index_2 = np.random.randint(0, 100, (32,), dtype=np.int32)
 
@@ -26,3 +26,7 @@ def test_qanet():
 
     output = output.numpy()
     assert output.shape == (32, 100, qanet.d_model), 'Output shape does not match'
+
+if __name__ == '__main__':
+    tf.enable_eager_execution()
+    test_qanet()
