@@ -5,7 +5,7 @@ from tensorflow.keras.layers import Embedding, Dense, Conv1D, SeparableConv1D, D
 import numpy as np
 
 import rinokeras as rk
-from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway
+from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway, LayerDropout
 from rinokeras.common.attention import ContextQueryAttention, SelfAttention
 
 
@@ -283,6 +283,8 @@ class QANetEncoderBlock(Model):
                                              kernel_regularizer=kernel_regularizer,
                                              bias_regularizer=bias_regularizer,
                                              activity_regularizer=activity_regularizer)
+        self.dropout_weight = 0 if dropout is None else dropout
+        self.layer_drop = LayerDropout(self.dropout_weight)
 
     def call(self, inputs, self_attention_mask, padding_mask):
         """Computes the encoding on the context
@@ -296,9 +298,11 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-        conv_out = self.conv_stack(inputs, mask=padding_mask)
-        res_attn = self.self_attention(conv_out, mask=self_attention_mask)
-        output = self.feed_forward(res_attn)
+        conv_out = self.layer_drop(self.conv_stack(inputs, mask=padding_mask), inputs,
+                                   training=self.dropout_weight > 0)
+        res_attn = self.layer_drop(self.self_attention(conv_out, mask=self_attention_mask), conv_out,
+                                   training=self.dropout_weight > 0)
+        output = self.layer_drop(self.feed_forward(res_attn), res_attn, training=self.dropout_weight > 0)
         return output
 
 

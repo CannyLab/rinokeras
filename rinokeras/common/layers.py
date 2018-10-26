@@ -224,17 +224,15 @@ class LayerDropout(Model):
         Any: Either inputs or output of layer_call function.
     """
 
-    def __init__(self, layer_output: Callable[[], Any], inputs: Any, rate: float, *args, **kwargs) -> None:
+    def __init__(self, rate: float, *args, **kwargs) -> None:
         super(LayerDropout, self).__init__(*args, **kwargs)
-        self.layer_output = layer_output
-        self.inputs = inputs
         self.rate = rate
 
-    def call(self, training=False):
+    def call(self, layer_output, inputs, training=False):
         if training:
-            return K.switch(K.random_uniform([]) > self.rate, self.layer_output(), self.inputs)
+            return K.switch(K.random_uniform([]) > self.rate, layer_output, inputs)
         else:
-            return self.layer_output()
+            return layer_output
 
 
 class MaskInput(Layer):
