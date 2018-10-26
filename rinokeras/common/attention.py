@@ -347,8 +347,7 @@ class MultiHeadAttentionMap(Model):
         return output
 
     def _split_heads(self, tensor):
-        assert len(tensor.shape) == 3, 'Tensor dimension invalid. Expected 3, Received {}'.format(
-            len(tensor.shape))
+        tensor.shape.assert_has_rank(3)
         batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
         feature_size = tensor.shape.as_list()[2]
         new_feature_size = feature_size // self.n_heads
@@ -358,8 +357,7 @@ class MultiHeadAttentionMap(Model):
         return tensor
 
     def _combine_heads(self, tensor):
-        assert len(tensor.shape) == 4, 'Tensor dimension invalid. Expected 4, Received {}'.format(
-            len(tensor.shape))
+        tensor.shape.assert_has_rank(4)
         tensor = tf.transpose(tensor, (0, 2, 1, 3))
         batch_size, tensorlen = tf.shape(tensor)[0], tf.shape(tensor)[1]
         feature_size = tensor.shape.as_list()[-1]
