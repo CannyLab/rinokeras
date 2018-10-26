@@ -204,8 +204,6 @@ class Residual(Model):
 
     def call(self, inputs, *args, **kwargs):
         layer_out = self.layer(inputs, *args, **kwargs)
-        if isinstance(inputs, tuple):
-            inputs = inputs[0]
         residual = inputs + layer_out
 
         return residual
@@ -228,11 +226,12 @@ class LayerDropout(Model):
         super(LayerDropout, self).__init__(*args, **kwargs)
         self.rate = rate
 
-    def call(self, layer_output, inputs, training=False):
-        if training:
-            return K.switch(K.random_uniform([]) > self.rate, layer_output, inputs)
-        else:
-            return layer_output
+    def call(self, layer, inputs, *args, **kwargs):
+        K.is_train_phase(
+            K.switch(K.random_uniform([]), layer(inputs, *args, **kwargs)),
+            inputs,
+            training=K.learning_phase()
+        )
 
 
 class MaskInput(Layer):
@@ -300,8 +299,7 @@ class Highway(Model):
         self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
 
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
@@ -445,5 +443,19 @@ class PositionEmbedding2D(PositionEmbedding):
         return inputs + position_embedding
 
 
+class GatedTanh(Model):
+
+    def __init__(self, n_units, kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None):
+        super().__init__()
+        self.fc = Dense(n_units, 'tanh', kernel_regularizer=kernel_regularizer,
+                        bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.gate = Dense(n_units, 'sigmoid', kernel_regularizer=kernel_regularizer,
+                          bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+
+    def call(self, inputs):
+        return self.fc(inputs) * self.gate(inputs)
+
+
 __all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
-           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose']
+           'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose',
+           'GatedTanh']

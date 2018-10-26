@@ -5,7 +5,6 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dense, Embedding, Dropout, BatchNormalization, Lambda
 import tensorflow.keras.backend as K
-import numpy as np
 
 import rinokeras as rk
 from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, EmbeddingTranspose
@@ -26,8 +25,7 @@ class TransformerSelfAttention(Model):
             'scaled_dot', n_heads, dropout,
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
-            activity_regularizer=activity_regularizer
-        )
+            activity_regularizer=activity_regularizer)
 
     def call(self, inputs, mask):
         norm_input = self.norm(inputs)
@@ -51,10 +49,10 @@ class TransformerMultiAttention(Model):
         )
         self.norm = LayerNorm()
 
-    def call(self, inputs, mask):
-        target, source = inputs
+    def call(self, target, source, mask):
         norm_target = self.norm(target)
-        attention = self.multi_attention((norm_target, source), mask=mask)
+        norm_source = self.norm(source)
+        attention = self.multi_attention((norm_target, norm_source), mask=mask)
         return attention + target
 
 
@@ -71,13 +69,12 @@ class TransformerFeedForward(Model):
                                        kernel_regularizer=kernel_regularizer,
                                        bias_regularizer=bias_regularizer,
                                        activity_regularizer=activity_regularizer)
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, inputs):
         norm_input = self.norm(inputs)
         dense_out = self.feed_forward(norm_input)
-        dense_out = self.dropout(dense_out, training=self.dropout_weight > 0)
+        dense_out = self.dropout(dense_out)
         return dense_out + inputs
 
 
@@ -144,23 +141,25 @@ class TransformerDecoderBlock(Model):
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
 
-    def call(self, inputs, self_attention_mask=None, cross_attention_mask=None):
-        encoder_outputs, decoder_inputs, cache = inputs  # Parse the encoder outputs from the input tensor
-
-        # The cross-attention mask should have shape [batch_size x target_len x input_len]
-
-        # Compute the selt-attention over the decoder inputs. This uses the self-attention
-        # mask to control for the future outputs.
-        # This generates a tensor of size [batch_size x target_len x d_model]
-        if cache is not None:
+    def call(self, decoder_inputs, encoder_outputs, self_attention_mask=None,
+             cross_attention_mask=None):
+        if isinstance(decoder_inputs, tuple):
+            decoder_inputs, cache = decoder_inputs
             seqpos = cache['seqpos']
             cache[self.name] = cache[self.name].write(seqpos, K.squeeze(decoder_inputs, 1))
             all_inputs = cache[self.name].stack()
             all_inputs = tf.transpose(all_inputs, (1, 0, 2))
         else:
             all_inputs = decoder_inputs
+            cache = None
+        # The cross-attention mask should have shape [batch_size x target_len x input_len]
+
+        # Compute the selt-attention over the decoder inputs. This uses the self-attention
+        # mask to control for the future outputs.
+        # This generates a tensor of size [batch_size x target_len x d_model]
         print('decoder_inputs', decoder_inputs.shape)
-        target_selfattn = self.self_attention((decoder_inputs, all_inputs), mask=self_attention_mask)
+        target_selfattn = self.self_attention(
+            decoder_inputs, all_inputs, mask=self_attention_mask)
         print('target_selfattn', target_selfattn.shape)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
@@ -168,11 +167,12 @@ class TransformerDecoderBlock(Model):
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention = self.multi_attention((target_selfattn, encoder_outputs), mask=cross_attention_mask)
+        encdec_attention = self.multi_attention(
+            target_selfattn, encoder_outputs, mask=cross_attention_mask)
         print('encdec_attention', encdec_attention.shape)
         output = self.feed_forward(encdec_attention)
         print('output', output.shape)
-        return [encoder_outputs, output, cache]
+        return output if cache is None else (output, cache)
 
 
 class TransformerEncoder(Model):
@@ -213,6 +213,7 @@ class TransformerEncoder(Model):
         inputs.shape.assert_has_rank(3)
 
         # We need to make sure that the input shapes are correct for the mask
+        assertions = []
         if encoder_mask is not None:
             # Check the dimension of the mask
             encoder_mask.shape.assert_has_rank(3)
@@ -220,12 +221,12 @@ class TransformerEncoder(Model):
             last_two_dims_equal = tf.assert_equal(tf.shape(encoder_mask)[-1], tf.shape(encoder_mask)[-2],
                                                   message='Last two mask dimensions must match')
             sequence_len_match = tf.assert_equal(tf.shape(encoder_mask)[-2], tf.shape(inputs)[1],
-                                                 message='Sequence dimension between mask and inputs do not match')
-            with tf.control_dependencies([last_two_dims_equal, sequence_len_match]):
-                output = self.encoding_stack(inputs, self_attention_mask=encoder_mask)
-        else:
-            # Compute the output of the encoding stack
+                                                 message='Sequence dimension beotween mask and inputs do not match')
+            assertions = [last_two_dims_equal, sequence_len_match]
+
+        with tf.control_dependencies(assertions):
             output = self.encoding_stack(inputs, self_attention_mask=encoder_mask)
+
         return output
 
 
@@ -258,8 +259,8 @@ class TransformerDecoder(Model):
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
-    def call(self, inputs, encoder_mask=None, decoder_mask=None, mask_future=False,
-             shift_target_sequence_right=False, seqpos=1):
+    def call(self, target_input, encoder_output, encoder_mask=None, decoder_mask=None, mask_future=False,
+             shift_target_sequence_right=False, seqpos=1, cache=None):
         """
             Args:
                 inputs: a tuple of (encoder_output, target_embedding)
@@ -272,7 +273,7 @@ class TransformerDecoder(Model):
                 a tuple of (encoder_output, output)
                     output: a Tensor with shape [batch_size, sequence_length, d_model]
         """
-        encoder_output, target_input, cache = inputs
+
         if shift_target_sequence_right:
             target_input = self.shift_target_sequence_right(target_input)
         print('shifted_target_input', target_input.shape)
@@ -294,14 +295,18 @@ class TransformerDecoder(Model):
             self_attention_mask = self.get_self_attention_mask(batch_size, sequence_length, decoder_mask, mask_future)
             # Build the cross-attention mask. This is an upper-left block matrix which takes care of the masking
             # of the output shapes
-            cross_attention_mask = self.get_cross_attention_mask(inputs, encoder_mask, decoder_mask)
+            cross_attention_mask = self.get_cross_attention_mask(
+                encoder_output, target_input, encoder_mask, decoder_mask)
 
             # Now actually do the decoding which should take us to the right dimension
             print('target_embedding', target_embedding.shape)
-            _, decoder_output, cache = self.decoding_stack(
-                (encoder_output, target_embedding, cache),
+            decoder_output = self.decoding_stack(
+                target_embedding if cache is None else (target_embedding, cache),
+                encoder_outputs=encoder_output,
                 self_attention_mask=self_attention_mask,
                 cross_attention_mask=cross_attention_mask)
+            if cache is not None:
+                decoder_output, _ = decoder_output
             output = self.output_layer(decoder_output)
 
             return output
@@ -317,9 +322,10 @@ class TransformerDecoder(Model):
 
         def decoding_step(i, target_input, cache, output_sequence):
             print('target_input', target_input.shape)
-            output = self((encoder_output, target_input, cache), encoder_mask=encoder_mask,
+            output = self(target_input, encoder_output, encoder_mask=encoder_mask,
                           decoder_mask=None, shift_target_sequence_right=False,
-                          mask_future=False, seqpos=i + 1)
+                          mask_future=False, cache=cache,
+                          seqpos=i + 1)
             cache['seqpos'] = i + 1
 
             target_input = output
@@ -333,7 +339,8 @@ class TransformerDecoder(Model):
 
         inputs = [tf.constant(0), initial_input, self.get_initial_cache(max_seq_len), output_sequence]
         shapes = [inputs[0].shape, tf.TensorShape((None, None, initial_input.shape[-1])),
-                  {name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs[2].items()}, tf.TensorShape(None)]
+                  {name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs[2].items()},
+                  tf.TensorShape(None)]
         _, _, _, output_sequence = tf.while_loop(
             lambda i, *_: i < max_seq_len,
             decoding_step,
@@ -395,7 +402,7 @@ class TransformerDecoder(Model):
 
     # This is an upper left block matrix which masks the attention for things that don't
     # exist within the internals.
-    def get_cross_attention_mask(self, inputs, encoder_mask, decoder_mask):
+    def get_cross_attention_mask(self, encoder_output, decoder_input, encoder_mask, decoder_mask):
         if encoder_mask is None and decoder_mask is None:
             cross_attention_mask = None
         elif encoder_mask is None:
@@ -403,15 +410,15 @@ class TransformerDecoder(Model):
             # The decoding mask should have shape [batch_size x target_len x target_len]
             # meaning all we have to do is pad the mask out properly
             cross_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
-                                                (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
+                                                (1, tf.shape(encoder_output)[1], 1)), (0, 2, 1))
         elif decoder_mask is None:
             cross_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
-                                                (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
+                                                (1, 1, tf.shape(decoder_input)[1])), (0, 2, 1))
         else:
             dec_attention_mask = tf.transpose(tf.tile(decoder_mask[:, 1, :][:, None, :],
-                                              (1, tf.shape(inputs[0])[1], 1)), (0, 2, 1))
+                                              (1, tf.shape(encoder_output)[1], 1)), (0, 2, 1))
             enc_attention_mask = tf.transpose(tf.tile(encoder_mask[:, 1, :][:, :, None],
-                                              (1, 1, tf.shape(inputs[1])[1])), (0, 2, 1))
+                                              (1, 1, tf.shape(decoder_input)[1])), (0, 2, 1))
             cross_attention_mask = tf.logical_and(enc_attention_mask, dec_attention_mask)
 
         return cross_attention_mask
@@ -472,8 +479,7 @@ class TransformerInputEmbedding(Model):
         self.discrete = discrete
         self.freeze_embeddings = freeze_embeddings
         self.position_encoding = PositionEmbedding()
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
 
     def call(self, inputs, start=1):
@@ -486,10 +492,10 @@ class TransformerInputEmbedding(Model):
         if self.freeze_embeddings:
             embedding = K.stop_gradient(embedding)
         embedding = self.embedding_dense(embedding)
-        embedding = self.dropout(embedding, self.dropout_weight > 0)
+        embedding = self.dropout(embedding)
 
         if self.batch_norm:
-            embedding = self.batch_norm(embedding, training=True)
+            embedding = self.batch_norm(embedding)
 
         print(embedding.shape)
         embedding = self.position_encoding(embedding, start=start)
@@ -628,7 +634,8 @@ class Transformer(Model):
                                         output_dtype=target_dtype, encoder_mask=encoder_mask,
                                         preembed_hook=preembed_hook)
 
-    def call(self, inputs, encoder_mask=None, decoder_mask=None, shift_target_sequence_right=True, training=True):
+    def call(self, source_sequence, target_sequence, encoder_mask=None,
+             decoder_mask=None, shift_target_sequence_right=True, mask_future=True):
 
         # Unpack the source and target sequences from the encoder.
         # If we're discrete, then:
@@ -638,8 +645,6 @@ class Transformer(Model):
         # If we're not discrete, then:
         # Source Sequence: [batch_size x source_length x input_feature_shape]
         # Target Sequence: [batch_size x target_length x output_feature_shape]
-        source_sequence, target_sequence = inputs
-        mask_future = training
 
         # Generate the masks for the encoder and decoder. There are a lot of different ways that
         # the attention masks could be passed in, so this method handles a lot of these different
@@ -665,8 +670,8 @@ class Transformer(Model):
         # tensor of shape [batch_size x target_length x d_model]
         # from the encoder output.
         decoder_output = self.decoder(
-            (encoder_output, target_sequence, None), encoder_mask=encoder_mask, decoder_mask=decoder_mask,
+            target_sequence, encoder_output, encoder_mask=encoder_mask, decoder_mask=decoder_mask,
             shift_target_sequence_right=shift_target_sequence_right, mask_future=mask_future,
-            seqpos=1)
+            cache=None, seqpos=1)
 
         return decoder_output
