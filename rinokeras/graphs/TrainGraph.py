@@ -29,6 +29,7 @@ class TrainGraph(TestGraph):
         self.return_grad_summaries = return_grad_summaries
         super().__init__(loss_function, loss_args, loss_kwargs, *args,
                          return_loss_summaries=return_loss_summaries, **kwargs)
+        self._default_operation = 'update'
 
     def build(self, *args, **kwargs):
         K.set_learning_phase(1)

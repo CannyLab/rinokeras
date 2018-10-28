@@ -228,9 +228,8 @@ class LayerDropout(Model):
 
     def call(self, layer, inputs, *args, **kwargs):
         output = K.in_train_phase(
-            K.switch(K.random_uniform([]), layer(inputs, *args, **kwargs), inputs),
-            layer(inputs, *args, **kwargs),
-            training=K.learning_phase())
+            K.switch(K.random_uniform([]) > self.rate, layer(inputs, *args, **kwargs), inputs),
+            layer(inputs, *args, **kwargs))
         return output
 
 

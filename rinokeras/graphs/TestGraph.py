@@ -26,6 +26,7 @@ class TestGraph(RinokerasGraph):
         self.return_loss_summaries = return_loss_summaries
         self.build(*loss_args, **loss_kwargs)
         self.create_summaries()
+        self._default_operation = 'loss'
 
     def build(self, *args, **kwargs):
         K.set_learning_phase(0)
@@ -120,9 +121,12 @@ class TestGraph(RinokerasGraph):
         return results
 
     def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+        if ops == 'default':
+            ops = self._default_operation
+
         if ops == 'update':
             return self.update(*args, **kwargs)
-        elif ops in ['loss', 'default']:
+        elif ops == 'loss':
             return self.loss(*args, **kwargs)
         else:
             return self._run_tensor(ops, *args, **kwargs)
