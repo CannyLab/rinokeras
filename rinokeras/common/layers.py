@@ -227,11 +227,11 @@ class LayerDropout(Model):
         self.rate = rate
 
     def call(self, layer, inputs, *args, **kwargs):
-        K.is_train_phase(
-            K.switch(K.random_uniform([]), layer(inputs, *args, **kwargs)),
-            inputs,
-            training=K.learning_phase()
-        )
+        output = K.in_train_phase(
+            K.switch(K.random_uniform([]), layer(inputs, *args, **kwargs), inputs),
+            layer(inputs, *args, **kwargs),
+            training=K.learning_phase())
+        return output
 
 
 class MaskInput(Layer):

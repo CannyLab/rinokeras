@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Dense, Embedding, Dropout, BatchNormalizatio
 import tensorflow.keras.backend as K
 
 import rinokeras as rk
-from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, EmbeddingTranspose
+from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, EmbeddingTranspose, LayerDropout
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 
 
@@ -103,12 +103,13 @@ class TransformerEncoderBlock(Model):
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
+        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, inputs, self_attention_mask=None):
 
         # Perform a multi-headed self-attention across the inputs.
-        res_attn = self.self_attention(inputs, mask=self_attention_mask)
-        output = self.feed_forward(res_attn)
+        res_attn = self.layer_drop(self.self_attention, inputs, mask=self_attention_mask)
+        output = self.layer_drop(self.feed_forward, res_attn)
         return output
 
 
@@ -141,6 +142,7 @@ class TransformerDecoderBlock(Model):
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
+        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, decoder_inputs, encoder_outputs, self_attention_mask=None,
              cross_attention_mask=None):
@@ -158,21 +160,17 @@ class TransformerDecoderBlock(Model):
         # Compute the selt-attention over the decoder inputs. This uses the self-attention
         # mask to control for the future outputs.
         # This generates a tensor of size [batch_size x target_len x d_model]
-        print('decoder_inputs', decoder_inputs.shape)
-        target_selfattn = self.self_attention(
-            decoder_inputs, source=all_inputs, mask=self_attention_mask)
-        print('target_selfattn', target_selfattn.shape)
+        target_selfattn = self.layer_drop(
+            self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention = self.multi_attention(
-            target_selfattn, source=encoder_outputs, mask=cross_attention_mask)
-        print('encdec_attention', encdec_attention.shape)
-        output = self.feed_forward(encdec_attention)
-        print('output', output.shape)
+        encdec_attention = self.layer_drop(
+            self.multi_attention, target_selfattn, source=encoder_outputs, mask=cross_attention_mask)
+        output = self.layer_drop(self.feed_forward, encdec_attention)
         return output if cache is None else (output, cache)
 
 

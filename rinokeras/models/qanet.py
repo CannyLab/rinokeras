@@ -76,8 +76,7 @@ class QANetFeedForward(Model):
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer)
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, inputs):
         """Compute a feed-forward pass on the inputs
@@ -90,7 +89,7 @@ class QANetFeedForward(Model):
 
         norm_input = self.norm(inputs)
         dense_out = self.feed_forward(norm_input)
-        dense_out = self.dropout(dense_out, training=self.dropout_weight > 0)
+        dense_out = self.dropout(dense_out)
         return dense_out + inputs
 
 
@@ -121,8 +120,7 @@ class QANetConvBlock(Model):
         self.conv_layer = SeparableConv1D(filters, kernel_size, padding='same',
                                           depthwise_regularizer=kernel_regularizer,
                                           pointwise_regularizer=kernel_regularizer)
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, inputs, mask):
         """
@@ -139,7 +137,7 @@ class QANetConvBlock(Model):
             norm_input = norm_input * mask[:, :, None]
 
         conv_out = self.conv_layer(norm_input)
-        conv_out = self.dropout(conv_out, training=self.dropout_weight > 0)
+        conv_out = self.dropout(conv_out)
 
         return conv_out + inputs
 
@@ -192,8 +190,7 @@ class QANetInputEmbedding(Model):
 
         self.highway = Stack([Highway(dropout=dropout) for _ in range(2)])
 
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
         self.position_embedding = PositionEmbedding()
 
@@ -215,8 +212,8 @@ class QANetInputEmbedding(Model):
         word_embedding = self.word_embedding(words)
         # char_embedding -> Tensor with shape (batch_size, input_length, 16, 200)
         char_embedding = self.char_embedding(chars)
-        word_embedding = self.dropout(word_embedding, training=self.dropout_weight > 0)
-        char_embedding = self.dropout(char_embedding, training=self.dropout_weight > 0)
+        word_embedding = self.dropout(word_embedding)
+        char_embedding = self.dropout(char_embedding)
         # char_embedding -> Tensor with shape (batch_size * input_length, 16, 200)
         char_embedding = tf.reshape(char_embedding, (batch_size * input_length,
                                                      char_embedding.shape[2],  # These .shapes stay b/c they're constant
@@ -283,8 +280,7 @@ class QANetEncoderBlock(Model):
                                              kernel_regularizer=kernel_regularizer,
                                              bias_regularizer=bias_regularizer,
                                              activity_regularizer=activity_regularizer)
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.layer_drop = LayerDropout(self.dropout_weight)
+        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, inputs, self_attention_mask, padding_mask):
         """Computes the encoding on the context
@@ -298,11 +294,9 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-        conv_out = self.layer_drop(self.conv_stack(inputs, mask=padding_mask), inputs,
-                                   training=self.dropout_weight > 0)
-        res_attn = self.layer_drop(self.self_attention(conv_out, mask=self_attention_mask), conv_out,
-                                   training=self.dropout_weight > 0)
-        output = self.layer_drop(self.feed_forward(res_attn), res_attn, training=self.dropout_weight > 0)
+        conv_out = self.layer_drop(self.conv_stack, inputs, mask=padding_mask)
+        res_attn = self.layer_drop(self.self_attention, conv_out, mask=self_attention_mask)
+        output = self.layer_drop(self.feed_forward, res_attn)
         return output
 
 
@@ -371,8 +365,7 @@ class QANet(Model):
                                                bias_regularizer=bias_regularizer,
                                                activity_regularizer=activity_regularizer)
 
-        self.dropout_weight = 0 if dropout is None else dropout
-        self.dropout = Dropout(self.dropout_weight)
+        self.dropout = Dropout(0 if dropout is None else dropout)
         self.model_encoder = Stack([QANetEncoderBlock(n_conv=2,
                                                       n_heads=self.n_heads,
                                                       filter_size=self.d_filter,
@@ -426,7 +419,7 @@ class QANet(Model):
                                                                mask=context_query_mask)
         context_query_projection = self.model_encoder_projection(
             context_query_attention)
-        context_query_attention = self.dropout(context_query_attention, training=self.dropout_weight > 0)
+        context_query_attention = self.dropout(context_query_attention)
         output = self.model_encoder(
             context_query_projection, self_attention_mask=context_mask, padding_mask=context_mask)
 
