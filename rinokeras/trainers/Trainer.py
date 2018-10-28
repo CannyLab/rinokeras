@@ -7,8 +7,6 @@ import time
 import contextlib
 import os
 
-from .graphs import EagerGraph, RunGraph, MultiGPUGraph
-
 
 class Trainer(ABC):
 
@@ -134,18 +132,12 @@ class Trainer(ABC):
             }
 
             if optimizer in optimizers:
-                self._optimizer = optimizers[optimizer](learning_rate=self._learning_rate)
+                self.optimizer = optimizers[optimizer](learning_rate=self._learning_rate)
             else:
                 raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
         # Setup gradient clipping
         self._clip_gradients = self._get_gradient_clip_function(gradient_clipping, gradient_clipping_bounds)
-
-        if tf.executing_eagerly():
-            self._eager_graph = EagerGraph(self._optimizer, self.loss_function, self.grads_function)
-
-        self._has_placeholders: bool = False
-        self._has_dataset_handle: bool = False
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
@@ -211,7 +203,7 @@ class Trainer(ABC):
             loss_packed = self.loss_function(*args, **kwargs)
             total_loss, _ = self._unpack_losses(loss_packed)
             loss_to_optimize = total_loss if not self._add_model_losses else total_loss + sum(self._model.losses)
-            grads = self._optimizer.compute_gradients(loss_to_optimize, self._model.variables)
+            grads = self.optimizer.compute_gradients(loss_to_optimize, self._model.variables)
 
         # By default all of these norms use L2 TODO: Add additional norm types to the options
         grads = self._clip_gradients(grads)
@@ -235,60 +227,7 @@ class Trainer(ABC):
 
         return total_loss, losses
 
-    def _run_graph(self,
-                   ops: Union[str, Sequence[tf.Tensor]],
-                   *args,
-                   learning_rate: float = 1e-3,
-                   input_data_format: Optional[str] = None,
-                   **kwargs):
-        """Runs the model on an input batch, automatically choosing which method to run with.
-
-        Args:
-            ops (Union[str, Sequence[tf.Tensor]]): Ops to run on the graph, or update/loss string
-            *args: Positional arguments to loss function or a handle to a tf.data.Iterator
-            learning_rate (float, optional): Learning rate for optimizer
-            input_data_format (Optional[str], optional): If model set up for placeholder and dataset training,
-                                                         allows you to choose the input data format.
-            **kwargs: Keyword arguments to loss function
-
-        Returns:
-            result: Result of running ops on graph
-
-        Raises:
-            ValueError: If run in graph mode and no placeholders/handles are set up, or if you specify a type
-                        with input_data_format that the trainer is not set up for.
-        """
-        self._optimizer._lr = learning_rate
-        assert input_data_format in [None, 'placeholders', 'handle'], \
-            "<input_data_format> must be one of [None, 'placeholders', 'handle']"
-        if tf.executing_eagerly():
-            assert isinstance(ops, str), 'Can only run update or loss in eager mode with trainer'
-            result = self._eager_graph.run(ops, *args, **kwargs)
-        elif self._has_placeholders and input_data_format != 'handle':
-            result = self._placeholder_graph.run(ops, *args, **kwargs)
-        elif self._has_dataset_handle and input_data_format != 'placeholders':
-            # This will fail if you pass in the wrong arguments.
-            # Not sure if we should catch this error specifically or not.
-            result = self._dataset_graph.run(ops, *args, **kwargs)
-        else:
-            raise ValueError("Either placeholders/handle not set up, or input_data_format incorrectly specified.")
-        return result
-
-    def run(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], *args, **kwargs):
-        """Runs ops on graph. Use this to get the value of any arbitrary tensor, do not use for training.
-
-        Args:
-            ops (Union[str, Sequence[tf.Tensor]]): Ops to run on the graph
-            *args: Positional arguments to loss function
-            **kwargs: Keyword arguments to loss function
-
-        Returns:
-            Result of running ops on graph
-        """
-        result = self._run_graph(ops, *args, **kwargs)
-        return result
-
-    def train(self, *args, learning_rate: Optional[float] = None, **kwargs):
+    def __deprecated__train(self, *args, learning_rate: Optional[float] = None, **kwargs):
         """Trains model on an input batch. Can specify the learning rate.
         See the class docstring for full usage instructions.
 
@@ -332,59 +271,6 @@ class Trainer(ABC):
                 raise RuntimeError("Must run inside a tf.Session context.")
             sess.run(self._increment_param_updates)
         return loss
-
-    def loss(self, *args, **kwargs):
-        """Evaluates loss function on an input batch. See the class docstring for full usage instructions.
-
-        Args:
-            *args: Positional arguments to loss function
-            **kwargs: Keyword arguments to loss function
-
-        Returns:
-            loss (Union[float, tf.Tensor]): Model loss on input batch
-        """
-        loss = self._run_graph('loss', *args, **kwargs)
-        return loss
-
-    def setup_from_placeholders(self, *args, **kwargs) -> None:
-        """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
-
-        Args:
-            *args: Placeholders for positional arguments to loss function
-            **kwargs: Placeholders for keyword arguments to loss function
-        """
-        if self.num_gpus <= 1:
-            self._placeholder_graph = RunGraph(
-                self._optimizer, self.loss_function, self.grads_function, args, kwargs,
-                return_loss_summaries=self.return_loss_summaries,
-                return_grad_summaries=self.return_grad_summaries)
-        else:
-            self._placeholder_graph = MultiGPUGraph(
-                self._optimizer, self.loss_function, self.grads_function, args, kwargs,
-                num_gpus=self.num_gpus,
-                return_loss_summaries=self.return_loss_summaries,
-                return_grad_summaries=self.return_grad_summaries)
-        self._has_placeholders = True
-
-    def setup_from_dataset(self, dataset) -> None:
-        """Sets up dataset handles so that you can call trainer.train or trainer.loss and just pass in the
-        iterator handle.
-
-        Args:
-            dataset (tf.data.Dataset): A dataset with appropriate output_types shapes that you plan on training with
-        """
-        if self.num_gpus <= 1:
-            self._dataset_graph = RunGraph.from_dataset(
-                self._optimizer, self.loss_function, self.grads_function, dataset,
-                return_loss_summaries=self.return_loss_summaries,
-                return_grad_summaries=self.return_grad_summaries)
-        else:
-            self._dataset_graph = MultiGPUGraph.from_dataset(
-                self._optimizer, self.loss_function, self.grads_function, dataset,
-                num_gpus=self.num_gpus,
-                return_loss_summaries=self.return_loss_summaries,
-                return_grad_summaries=self.return_grad_summaries)
-        self._has_dataset_handle = True
 
     @property
     def num_param_updates(self) -> int:

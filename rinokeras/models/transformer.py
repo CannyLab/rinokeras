@@ -49,7 +49,8 @@ class TransformerMultiAttention(Model):
         )
         self.norm = LayerNorm()
 
-    def call(self, target, source, mask):
+    def call(self, target, source=None, mask=None):
+        assert source is not None
         norm_target = self.norm(target)
         norm_source = self.norm(source)
         attention = self.multi_attention((norm_target, norm_source), mask=mask)
@@ -159,7 +160,7 @@ class TransformerDecoderBlock(Model):
         # This generates a tensor of size [batch_size x target_len x d_model]
         print('decoder_inputs', decoder_inputs.shape)
         target_selfattn = self.self_attention(
-            decoder_inputs, all_inputs, mask=self_attention_mask)
+            decoder_inputs, source=all_inputs, mask=self_attention_mask)
         print('target_selfattn', target_selfattn.shape)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
@@ -168,7 +169,7 @@ class TransformerDecoderBlock(Model):
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
         encdec_attention = self.multi_attention(
-            target_selfattn, encoder_outputs, mask=cross_attention_mask)
+            target_selfattn, source=encoder_outputs, mask=cross_attention_mask)
         print('encdec_attention', encdec_attention.shape)
         output = self.feed_forward(encdec_attention)
         print('output', output.shape)

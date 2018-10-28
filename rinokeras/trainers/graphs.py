@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Sequence, Callable, Union, Dict, Any
+from typing import List, Tuple, Sequence, Callable, Union, Dict, Any, Optional
 
 import tensorflow as tf
+import tensorflow.keras.backend as K
+from tqdm import tqdm
 
 
 class AbstractGraph(ABC):
@@ -9,9 +11,7 @@ class AbstractGraph(ABC):
     _num_graphs: int = 0
 
     def __init__(self,
-                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
-                 grads_function: Callable,
                  *args,
                  **kwargs) -> None:
         super().__init__()
@@ -20,9 +20,8 @@ class AbstractGraph(ABC):
             self._name += '_{}'.format(AbstractGraph._num_graphs)
         AbstractGraph._num_graphs += 1
 
-        self.optimizer = optimizer
         self.loss_function = loss_function
-        self.grads_function = grads_function
+        self.progress_bar = None
 
     def _unpack_losses(self, losses: Union[tf.Tensor, Sequence[tf.Tensor]]):
         """Optionally unpacks a sequence of losses
@@ -41,6 +40,26 @@ class AbstractGraph(ABC):
             losses = (losses,)
 
         return total_loss, losses
+
+    def add_progress_bar(self, data_len: Optional[int] = None, epoch_num: Optional[int] = None):
+        desc = None if epoch_num is None else 'Epoch {:>3}'.format(epoch_num)
+        progress_bar = tqdm(total=data_len, desc=desc, leave=False,
+                            dynamic_ncols=True, smoothing=0.1)
+        progress_bar.__enter__()
+        self.progress_bar = progress_bar
+
+    def update_progress_bar(self, postfix=None):
+        if self.progress_bar is not None:
+            self.progress_bar.update()
+            self.progress_bar.set_postfix(postfix)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.progress_bar.__exit__()
+        self.progress_bar = None
+        return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     @abstractmethod
     def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
@@ -64,7 +83,9 @@ class EagerGraph(AbstractGraph):
                  *args,
                  **kwargs) -> None:
         assert tf.executing_eagerly(), "Cannot use EagerGraph when not in tf eager mode."
-        super(EagerGraph, self).__init__(optimizer, loss_function, grads_function, *args, **kwargs)
+        super(EagerGraph, self).__init__(loss_function, *args, **kwargs)
+        self.optimizer = optimizer
+        self.grads_function = grads_function
 
     def run(self, ops: str, *args, **kwargs) -> Union[tf.Tensor, Tuple]:  # type: ignore
         if ops == 'update':
@@ -85,6 +106,7 @@ class EagerGraph(AbstractGraph):
         Returns:
             loss (Union[float, tf.Tensor]): Model loss on input batch
         """
+        K.set_learning_phase(1)
         grads, loss = self.grads_function(*args, **kwargs)
         self.optimizer.apply_gradients(grads)
         return loss
@@ -99,11 +121,12 @@ class EagerGraph(AbstractGraph):
         Returns:
             loss (Union[tf.Tensor, Tuple]): Model loss on input batch
         """
+        K.set_learning_phase(0)
         loss = self.loss_function(*args, **kwargs)
         return loss
 
 
-class RunGraph(AbstractGraph):
+class TestGraph(AbstractGraph):
     """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
 
         Args:
@@ -112,30 +135,24 @@ class RunGraph(AbstractGraph):
     """
 
     def __init__(self,
-                 optimizer: tf.train.Optimizer,
                  loss_function: Callable,
-                 grads_function: Callable,
                  loss_args: Sequence,
                  loss_kwargs: Dict,
                  *args,
                  return_loss_summaries: bool = False,
-                 return_grad_summaries: bool = False,
                  **kwargs) -> None:
-        super(RunGraph, self).__init__(optimizer, loss_function, grads_function, *args, **kwargs)
+        super().__init__(loss_function, *args, **kwargs)
         self.return_loss_summaries = return_loss_summaries
-        self.return_grad_summaries = return_grad_summaries
         self.build(*loss_args, **loss_kwargs)
         self.create_summaries()
 
     def build(self, *args, **kwargs):
-        grads, loss_packed = self.grads_function(*args, **kwargs)
+        K.set_learning_phase(0)
+        loss_packed = self.loss_function(*args, **kwargs)
         loss, losses = self._unpack_losses(loss_packed)
 
-        update_op = self.optimizer.apply_gradients(grads)
         self.total_loss = loss
         self.losses = losses
-        self.grads = grads
-        self.update_op = update_op
         self.args_in = args
         self.kwargs_in = kwargs
         self.handle = None
@@ -145,18 +162,11 @@ class RunGraph(AbstractGraph):
             with tf.name_scope('losses'):
                 for i, loss in enumerate(self.losses):
                     tf.summary.scalar(str(i), loss)
-        if self.return_grad_summaries:
-            with tf.name_scope('gradients'):
-                for grad, var in self.grads:
-                    name = var.name.replace(':', '_')
-                    tf.summary.histogram(name, grad)
         self.summaries = tf.summary.merge_all()
 
     @classmethod
     def from_dataset(cls,
-                     optimizer: tf.train.Optimizer,
                      loss_function: Callable,
-                     grads_function: Callable,
                      dataset: tf.data.Dataset,
                      *args,
                      **kwargs):
@@ -174,7 +184,7 @@ class RunGraph(AbstractGraph):
         else:
             loss_args = (batch,)
 
-        new_class = cls(optimizer, loss_function, grads_function, loss_args, loss_kwargs, *args, **kwargs)
+        new_class = cls(loss_function, loss_args, loss_kwargs, *args, **kwargs)
         new_class.handle = handle
         return new_class
 
@@ -237,24 +247,7 @@ class RunGraph(AbstractGraph):
             return self._run_tensor(ops, *args, **kwargs)
 
     def update(self, *args, **kwargs) -> Union[float, Tuple]:
-        """Updates the model with placeholders in graph mode.
-
-        Args:
-            *args: Positional arguments to the loss function
-            **kwargs: Keyword arguments to the loss function
-
-        Returns:
-            loss (Union[float, Tuple]): Model loss on input batch
-
-        Raises:
-            RuntimeError: If not run inside a tf.Session context
-        """
-        if self.return_loss_summaries or self.return_grad_summaries:
-            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], *args, **kwargs)
-            return loss, summaries
-        else:
-            _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
-            return loss
+        raise RuntimeError("Called update on a TestGraph. To train the model, you must use a TrainGraph.")
 
     def loss(self, *args, **kwargs) -> Union[float, Tuple]:
         """Gets loss of model with placeholders in graph mode.
@@ -275,7 +268,98 @@ class RunGraph(AbstractGraph):
             return self._run_tensor(self.losses, *args, **kwargs)
 
 
-class MultiGPUGraph(RunGraph):
+class TrainGraph(TestGraph):
+    """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+
+        Args:
+            *args: Placeholders for positional arguments to loss function
+            **kwargs: Placeholders for keyword arguments to loss function
+    """
+
+    def __init__(self,
+                 optimizer: tf.train.Optimizer,
+                 loss_function: Callable,
+                 grads_function: Callable,
+                 loss_args: Sequence,
+                 loss_kwargs: Dict,
+                 *args,
+                 return_loss_summaries: bool = False,
+                 return_grad_summaries: bool = False,
+                 **kwargs) -> None:
+        self.return_grad_summaries = return_grad_summaries
+        super().__init__(loss_function, loss_args, loss_kwargs, *args,
+                         return_loss_summaries=return_loss_summaries, **kwargs)
+
+    def build(self, *args, **kwargs):
+        K.set_learning_phase(1)
+        grads, loss_packed = self.grads_function(*args, **kwargs)
+        loss, losses = self._unpack_losses(loss_packed)
+
+        update_op = self.optimizer.apply_gradients(grads)
+        self.total_loss = loss
+        self.losses = losses
+        self.grads = grads
+        self.update_op = update_op
+        self.args_in = args
+        self.kwargs_in = kwargs
+        self.handle = None
+
+    def create_summaries(self):
+        if self.return_grad_summaries:
+            with tf.name_scope('gradients'):
+                for grad, var in self.grads:
+                    name = var.name.replace(':', '_')
+                    tf.summary.histogram(name, grad)
+        super().create_summaries()
+
+    @classmethod
+    def from_dataset(cls,  # type: ignore
+                     optimizer: tf.train.Optimizer,
+                     loss_function: Callable,
+                     grads_function: Callable,
+                     dataset: tf.data.Dataset,
+                     *args,
+                     **kwargs):
+        handle = tf.placeholder(tf.string, shape=[])
+        iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
+        batch = iterator.get_next()
+
+        loss_args: tuple = ()
+        loss_kwargs: dict = {}
+
+        if isinstance(batch, dict):
+            loss_kwargs = batch
+        elif isinstance(batch, list) or isinstance(batch, tuple):
+            loss_args = tuple(batch)
+        else:
+            loss_args = (batch,)
+
+        new_class = cls(optimizer, loss_function, grads_function, loss_args, loss_kwargs, *args, **kwargs)
+        new_class.handle = handle
+        return new_class
+
+    def update(self, *args, **kwargs) -> Union[float, Tuple]:
+        """Updates the model with placeholders in graph mode.
+
+        Args:
+            *args: Positional arguments to the loss function
+            **kwargs: Keyword arguments to the loss function
+
+        Returns:
+            loss (Union[float, Tuple]): Model loss on input batch
+
+        Raises:
+            RuntimeError: If not run inside a tf.Session context
+        """
+        if self.return_loss_summaries or self.return_grad_summaries:
+            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], *args, **kwargs)
+            return loss, summaries
+        else:
+            _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
+            return loss
+
+
+class MultiGPUGraph(TrainGraph):
 
     def __init__(self,
                  optimizer: tf.train.Optimizer,
