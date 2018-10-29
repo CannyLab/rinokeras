@@ -3,11 +3,12 @@ import warnings
 
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Dense, Embedding, Dropout, BatchNormalization, Lambda
+from tensorflow.keras.layers import Embedding, Dropout, BatchNormalization, Lambda
 import tensorflow.keras.backend as K
 
 import rinokeras as rk
 from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, EmbeddingTranspose, LayerDropout
+from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 
 
@@ -180,7 +181,7 @@ class TransformerEncoder(Model):
     """
 
     def __init__(self,
-                 embedding_layer: Model,
+                 embedding_layer: Optional[Model],
                  n_layers: int,
                  n_heads: int,
                  d_model: int,
@@ -208,7 +209,8 @@ class TransformerEncoder(Model):
             Returns:
                 output: a Tensor with shape [batch_size, sequence_length, d_model]
         """
-        inputs = self.embedding_layer(inputs)
+        if self.embedding_layer is not None:
+            inputs = self.embedding_layer(inputs)
         inputs.shape.assert_has_rank(3)
 
         # We need to make sure that the input shapes are correct for the mask
@@ -236,8 +238,8 @@ class TransformerDecoder(Model):
 
     # TODO: Not sure about beam search, other methods of decoding for NLP.
     def __init__(self,
-                 embedding_layer: Model,
-                 output_layer: Model,
+                 embedding_layer: Optional[Model],
+                 output_layer: Optional[Model],
                  n_layers: int,
                  n_heads: int,
                  d_model: int,
@@ -275,9 +277,12 @@ class TransformerDecoder(Model):
 
         if shift_target_sequence_right:
             target_input = self.shift_target_sequence_right(target_input)
-        print('shifted_target_input', target_input.shape)
-        target_embedding = self.embedding_layer(target_input, start=seqpos)
-        print('embedded', target_embedding.shape)
+
+        if self.embedding_layer is not None:
+            target_embedding = self.embedding_layer(target_input, start=seqpos)
+        else:
+            target_embedding = target_input
+
         if cache is not None and mask_future:
             warnings.warn("Future masking should be unnecessary when using caching and will probably cause an error. \
                            If you think it's necessary, feel free to suppress this warning.")
@@ -298,7 +303,6 @@ class TransformerDecoder(Model):
                 encoder_output, target_input, encoder_mask, decoder_mask)
 
             # Now actually do the decoding which should take us to the right dimension
-            print('target_embedding', target_embedding.shape)
             decoder_output = self.decoding_stack(
                 target_embedding if cache is None else (target_embedding, cache),
                 encoder_outputs=encoder_output,
@@ -306,7 +310,11 @@ class TransformerDecoder(Model):
                 cross_attention_mask=cross_attention_mask)
             if cache is not None:
                 decoder_output, _ = decoder_output
-            output = self.output_layer(decoder_output)
+
+            if self.output_layer is not None:
+                output = self.output_layer(decoder_output)
+            else:
+                output = decoder_output
 
             return output
 

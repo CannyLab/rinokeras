@@ -1,11 +1,12 @@
 from typing import Optional
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Embedding, Dense, Conv1D, SeparableConv1D, Dropout, BatchNormalization
+from tensorflow.keras.layers import Embedding, Conv1D, SeparableConv1D, Dropout, BatchNormalization
 import numpy as np
 
 import rinokeras as rk
 from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway, LayerDropout
+from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.attention import ContextQueryAttention, SelfAttention
 
 
@@ -294,7 +295,7 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-        conv_out = self.layer_drop(self.conv_stack, inputs, mask=padding_mask)
+        conv_out = self.layer_drop(self.conv_stack, inputs, mask=padding_mask)  # TODO: drop each conv layer independently instead of all together
         res_attn = self.layer_drop(self.self_attention, conv_out, mask=self_attention_mask)
         output = self.layer_drop(self.feed_forward, res_attn)
         return output

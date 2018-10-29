@@ -2,6 +2,12 @@ import collections
 from typing import Optional, Sequence, Any, Union, Callable
 
 import tensorflow as tf
+from tensorflow.python.eager import context
+from tensorflow.python.framework import common_shapes
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import standard_ops
+from tensorflow.python.ops import gen_math_ops
+from tensorflow.python.ops import nn
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Dense, Conv1D, Conv2D, Dropout, Conv2DTranspose, \
     BatchNormalization, Flatten, Activation, Embedding
@@ -179,6 +185,39 @@ class DenseTranspose(Layer):
 
     def call(self, x):
         return K.dot(x - K.stop_gradient(self.other_layer.b), K.transpose(K.stop_gradient(self.other_layer.W)))
+
+
+class WeightNormDense(Dense):
+
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.scale = self.add_weight(
+            'g',
+            [self.units],
+            initializer='ones',
+            dtype=self.dtype,
+            trainable=True)
+
+    def call(self, inputs):
+        inputs = ops.convert_to_tensor(inputs, dtype=self.dtype)
+        rank = common_shapes.rank(inputs)
+        if rank > 2:
+            # Broadcasting is required for the inputs.
+            outputs = standard_ops.tensordot(inputs, self.kernel, [[rank - 1], [0]])
+            if not context.executing_eagerly():
+                shape = inputs.get_shape().as_list()
+                output_shape = shape[:-1] + [self.units]
+                outputs.set_shape(output_shape)
+        else:
+            outputs = gen_math_ops.mat_mul(inputs, self.kernel)
+
+        scale = self.scale / (tf.norm(self.kernel, 2, 0) + 1e-8)
+        outputs = outputs * scale
+        if self.use_bias:
+            outputs = nn.bias_add(outputs, self.bias)
+        if self.activation is not None:
+            return self.activation(outputs)
+        return outputs
 
 
 class EmbeddingTranspose(Model):

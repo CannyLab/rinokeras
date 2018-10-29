@@ -2,8 +2,10 @@ from typing import Optional, Callable
 
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Layer, Dense, Dropout
+from tensorflow.keras.layers import Layer, Dropout
 import tensorflow.keras.backend as K  # pylint: disable=E0611
+
+from .layers import WeightNormDense as Dense
 
 
 class LuongAttention(Layer):
@@ -423,7 +425,7 @@ class ContextQueryAttention(Model):
         self.apply_mask = ApplyAttentionMask()
         self.trilinear_similarity = TrilinearSimilarity(dropout, regularizer=regularizer)
 
-    def call(self, query, context, mask=None):
+    def call(self, query, context=None, mask=None):
         """
         Args:
             (query, context) ->
@@ -433,7 +435,7 @@ class ContextQueryAttention(Model):
         Returns:
             outputs: a Tensor with shape [batch_size, context_length, 4 * d_model]
         """
-
+        assert context is not None
         # similarity -> Tensor with shape [batch_size, context_length, query_length]
         similarity = self.trilinear_similarity((query, context))
         masked_similarity = self.apply_mask(similarity, mask=mask)
