@@ -328,7 +328,6 @@ class TransformerDecoder(Model):
         initial_input = tf.zeros((shape), dtype=output_dtype)
 
         def decoding_step(i, target_input, cache, output_sequence):
-            print('target_input', target_input.shape)
             output = self(target_input, encoder_output, encoder_mask=encoder_mask,
                           decoder_mask=None, shift_target_sequence_right=False,
                           mask_future=False, cache=cache,
@@ -504,9 +503,7 @@ class TransformerInputEmbedding(Model):
         if self.batch_norm:
             embedding = self.batch_norm(embedding)
 
-        print(embedding.shape)
         embedding = self.position_encoding(embedding, start=start)
-        print(embedding.shape)
         return embedding
 
 
@@ -634,7 +631,6 @@ class Transformer(Model):
         # the attention masks could be passed in, so this method handles a lot of these different
         # mask shapes.
         encoder_mask = rk.utils.convert_to_attention_mask(source_sequence, encoder_mask)
-        print(encoder_mask.shape)
         # Compute the encoder output
         encoder_output = self.encoder(source_sequence, encoder_mask=encoder_mask)
         return self.decoder.fast_decode(encoder_output, max_seq_len, output_size=self.out_size,
