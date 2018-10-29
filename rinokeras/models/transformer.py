@@ -96,21 +96,22 @@ class TransformerEncoderBlock(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(TransformerEncoderBlock, self).__init__()
+        super().__init__()
         self.self_attention = TransformerSelfAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_1 = LayerDropout(0 if dropout is None else dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
-        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_2 = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, inputs, self_attention_mask=None):
 
         # Perform a multi-headed self-attention across the inputs.
-        res_attn = self.layer_drop(self.self_attention, inputs, mask=self_attention_mask)
-        output = self.layer_drop(self.feed_forward, res_attn)
+        res_attn = self.layer_drop_1(self.self_attention, inputs, mask=self_attention_mask)
+        output = self.layer_drop_2(self.feed_forward, res_attn)
         return output
 
 
@@ -136,14 +137,16 @@ class TransformerDecoderBlock(Model):
         self.self_attention = TransformerMultiAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_1 = LayerDropout(0 if dropout is None else dropout)
         self.multi_attention = TransformerMultiAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_2 = LayerDropout(0 if dropout is None else dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
-        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_3 = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, decoder_inputs, encoder_outputs, self_attention_mask=None,
              cross_attention_mask=None):
@@ -161,7 +164,7 @@ class TransformerDecoderBlock(Model):
         # Compute the selt-attention over the decoder inputs. This uses the self-attention
         # mask to control for the future outputs.
         # This generates a tensor of size [batch_size x target_len x d_model]
-        target_selfattn = self.layer_drop(
+        target_selfattn = self.layer_drop_1(
             self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
@@ -169,9 +172,9 @@ class TransformerDecoderBlock(Model):
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention = self.layer_drop(
+        encdec_attention = self.layer_drop_2(
             self.multi_attention, target_selfattn, source=encoder_outputs, mask=cross_attention_mask)
-        output = self.layer_drop(self.feed_forward, encdec_attention)
+        output = self.layer_drop_3(self.feed_forward, encdec_attention)
         return output if cache is None else (output, cache)
 
 
@@ -451,7 +454,7 @@ class TransformerInputEmbedding(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(TransformerInputEmbedding, self).__init__()
+        super().__init__()
         self.embedding_dense = Lambda(lambda x: x)
         self.using_dense_embedding = False
         if discrete:

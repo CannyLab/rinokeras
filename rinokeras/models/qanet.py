@@ -273,15 +273,17 @@ class QANetEncoderBlock(Model):
                                                 activity_regularizer=activity_regularizer)
                                  for _ in range(n_conv)],
                                 name='conv_blocks')
+        self.layer_drop_1 = LayerDropout(0 if dropout is None else dropout)
         self.self_attention = QANetSelfAttention(n_heads, dropout,
                                                  kernel_regularizer=kernel_regularizer,
                                                  bias_regularizer=bias_regularizer,
                                                  activity_regularizer=activity_regularizer)
+        self.layer_drop_2 = LayerDropout(0 if dropout is None else dropout)
         self.feed_forward = QANetFeedForward(filter_size, hidden_size, dropout,
                                              kernel_regularizer=kernel_regularizer,
                                              bias_regularizer=bias_regularizer,
                                              activity_regularizer=activity_regularizer)
-        self.layer_drop = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_3 = LayerDropout(0 if dropout is None else dropout)
 
     def call(self, inputs, self_attention_mask, padding_mask):
         """Computes the encoding on the context
@@ -295,9 +297,9 @@ class QANetEncoderBlock(Model):
         :return: The convolutional stack + the self-attention
         :rtype: tf.Tensor
         """
-        conv_out = self.layer_drop(self.conv_stack, inputs, mask=padding_mask)  # TODO: drop each conv layer independently instead of all together
-        res_attn = self.layer_drop(self.self_attention, conv_out, mask=self_attention_mask)
-        output = self.layer_drop(self.feed_forward, res_attn)
+        conv_out = self.layer_drop_1(self.conv_stack, inputs, mask=padding_mask)  # TODO: drop each conv layer independently instead of all together
+        res_attn = self.layer_drop_2(self.self_attention, conv_out, mask=self_attention_mask)
+        output = self.layer_drop_3(self.feed_forward, res_attn)
         return output
 
 
