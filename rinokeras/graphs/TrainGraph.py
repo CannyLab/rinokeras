@@ -36,7 +36,8 @@ class TrainGraph(TestGraph):
         grads, loss_packed = self.grads_function(*args, **kwargs)
         loss, losses = self._unpack_losses(loss_packed)
 
-        update_op = self.optimizer.apply_gradients(grads)
+        self._global_step = tf.train.get_or_create_global_step()
+        update_op = self.optimizer.apply_gradients(grads, global_step=self._global_step)
         self.total_loss = loss
         self.losses = losses
         self.grads = grads

@@ -151,3 +151,11 @@ class TestGraph(RinokerasGraph):
             return self._run_tensor([self.losses, self.summaries], *args, **kwargs)
         else:
             return self._run_tensor(self.losses, *args, **kwargs)
+
+    @property
+    def global_step(self) -> int:
+        global_step = tf.train.get_or_create_global_step()
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+        return tf.train.global_step(sess, global_step)
