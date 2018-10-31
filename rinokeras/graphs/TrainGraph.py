@@ -7,18 +7,27 @@ from .TestGraph import TestGraph, Inputs, Outputs, Losses, Gradients
 
 
 class TrainGraph(TestGraph):
-    """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+    """
+    Constructs a keras model and sets up ops to automatically run the loss function, etc.
 
-        Args:
-            *args: Placeholders for positional arguments to loss function
-            **kwargs: Placeholders for keyword arguments to loss function
+    Args:
+        model (Callable[[Inputs], Outputs]): Function that builds the model. This can be as simple
+            as a keras model that maps inputs to outputs, or can perform arbitrarily complex operations.
+            Importantly, it does not actually need to be a keras model.
+        optimizer (tf.train.Optimizer): The TF optimizer to use
+        loss_function (Callable[[Tuple[Inputs, Outputs]], Losses]): Function that maps inputs and
+            outputs to losses
+        grads_function (Callable[[Tuple[Inputs, Outputs]], Tuple[Gradients, Losses]]): Function that
+            calls the loss function and returns gradients
+        return_loss_summaries (bool, default=False): Whether to return TF summaries for losses.
+        return_grad_summaries (bool, default=False): Whether to return TF summaries for gradients.
     """
 
     def __init__(self,
                  model: Callable[[Inputs], Outputs],
                  optimizer: tf.train.Optimizer,
                  loss_function: Callable[[Tuple[Inputs, Outputs]], Losses],
-                 grads_function: Callable[[Tuple[Inputs, Outputs]], Tuple[Losses, Gradients]],
+                 grads_function: Callable[[Tuple[Inputs, Outputs]], Tuple[Gradients, Losses]],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
                  return_grad_summaries: bool = False,

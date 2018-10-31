@@ -3,6 +3,7 @@ from typing import Sequence, Union, Any, Callable, Dict, Tuple
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
+import rinokeras as rk
 from .RinokerasGraph import RinokerasGraph
 
 Inputs = Union[tf.Tensor, Sequence[tf.Tensor], Dict[str, tf.Tensor]]
@@ -13,7 +14,15 @@ Gradients = Sequence[Tuple[tf.Tensor, tf.Variable]]
 
 class TestGraph(RinokerasGraph):
     """
+    Constructs a keras model and sets up ops to automatically run the loss function, etc.
 
+    Args:
+        model (Callable[[Inputs], Outputs]): Function that builds the model. This can be as simple
+            as a keras model that maps inputs to outputs, or can perform arbitrarily complex operations.
+            Importantly, it does not actually need to be a keras model.
+        loss_function (Callable[[Tuple[Inputs, Outputs]], Losses]): Function that maps inputs and
+            outputs to losses
+        return_loss_summaries (bool, default=False): Whether to return TF summaries.
     """
 
     def __init__(self,
@@ -35,6 +44,11 @@ class TestGraph(RinokerasGraph):
         self.return_loss_summaries = return_loss_summaries
         self.build()
         self.create_summaries()
+
+    @classmethod
+    def from_experiment(cls, experiment: rk.train.Experiment, inputs: Union[Inputs, tf.data.Dataset], **kwargs):
+        loss_function = experiment.loss_function
+        return cls(lambda inputs: experiment.build_model(experiment.models, inputs), loss_function, inputs, **kwargs)
 
     def build(self):
         K.set_learning_phase(0)
