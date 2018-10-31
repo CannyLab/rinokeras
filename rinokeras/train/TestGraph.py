@@ -1,15 +1,12 @@
-from typing import Sequence, Union, Any, Callable, Dict, Tuple
+from typing import Sequence, Union, Any, Callable, Dict, Tuple, Optional
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
+from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from rinokeras.train import Experiment
 from .RinokerasGraph import RinokerasGraph
-
-Inputs = Union[tf.Tensor, Sequence[tf.Tensor], Dict[str, tf.Tensor]]
-Outputs = Union[tf.Tensor, Sequence[tf.Tensor], Dict[str, tf.Tensor]]
-Losses = Union[tf.Tensor, Sequence[tf.Tensor]]
-Gradients = Sequence[Tuple[tf.Tensor, tf.Variable]]
+from .train_utils import Inputs, Outputs, Losses
 
 
 class TestGraph(RinokerasGraph):
@@ -30,7 +27,7 @@ class TestGraph(RinokerasGraph):
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
-                 distribution_strategy=tf.contrib.distribute.DistributionStrategy,
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy,
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self.handle = None
@@ -70,7 +67,7 @@ class TestGraph(RinokerasGraph):
             to_reduce = [(loss, central_device) for loss in losses]
             reduced_losses = self.distribution_strategy.batch_reduce(
                 tf.VariableAggregation.MEAN, to_reduce)
-            self.loss = self.distribution_strategy.unwrap(reduced_total)[0]
+            self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
             self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
 
         self._default_operation = 'loss'
@@ -98,17 +95,15 @@ class TestGraph(RinokerasGraph):
             raise ValueError("Type of placeholders and inputs did not match. Received \
                               {} and {}.".format(type(placeholders), type(inputs)))
 
-    def _get_feed_dict(self, inputs: Union[bytes, Inputs]) -> Dict[tf.placeholder, Any]:
-        if self.handle is not None:
-            assert isinstance(inputs, bytes), 'Must pass in only string handle to dataset'
-            feed_dict = {self.handle: inputs}
-            return feed_dict
+    def _get_feed_dict(self, inputs: Optional[Inputs]) -> Optional[Dict[tf.placeholder, Any]]:
+        if inputs is None:
+            return {}
 
-        feed_dict = {}
+        feed_dict: Dict[tf.placeholder, Any] = {}
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Union[bytes, Inputs]) -> Any:
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -145,7 +140,7 @@ class TestGraph(RinokerasGraph):
     def update(self, inputs: Optional[Inputs] = None) -> Losses:
         raise RuntimeError("Called update on a TestGraph. To train the model, you must use a TrainGraph.")
 
-    def loss(self, inputs: Union[bytes, Inputs]) -> Losses:
+    def loss(self, inputs: Optional[Inputs] = None) -> Losses:
         """Gets loss of model with placeholders in graph mode.
 
         Args:
