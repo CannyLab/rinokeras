@@ -5,39 +5,47 @@ import tensorflow.keras.backend as K
 
 from .RinokerasGraph import RinokerasGraph
 
+Inputs = Union[tf.Tensor, Sequence[tf.Tensor], Dict[str, tf.Tensor]]
+Outputs = Union[tf.Tensor, Sequence[tf.Tensor], Dict[str, tf.Tensor]]
+Losses = Union[tf.Tensor, Sequence[tf.Tensor]]
+Gradients = Sequence[Tuple[tf.Tensor, tf.Variable]]
+
 
 class TestGraph(RinokerasGraph):
-    """Sets up placeholders so that you can call trainer.train or trainer.loss as if you're in eager mode.
+    """
 
-        Args:
-            *args: Placeholders for positional arguments to loss function
-            **kwargs: Placeholders for keyword arguments to loss function
     """
 
     def __init__(self,
-                 loss_function: Callable,
-                 loss_args: Sequence,
-                 loss_kwargs: Dict,
-                 *args,
+                 model: Callable[[Inputs], Outputs],
+                 loss_function: Callable[[Tuple[Inputs, Outputs]], Losses],
+                 inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
                  **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
+        self.handle = None
+        if isinstance(inputs, tf.data.Dataset):
+            self.handle = tf.placeholder(tf.string, shape=[])
+            self.iterator = tf.data.Iterator.from_string_handle(
+                self.handle, inputs.output_types, inputs.output_shapes)
+            inputs = self.iterator.get_next()
+        self.inputs = inputs
+        self.model = model
         self.loss_function = loss_function
         self.return_loss_summaries = return_loss_summaries
-        self.build(*loss_args, **loss_kwargs)
+        self.build()
         self.create_summaries()
-        self._default_operation = 'loss'
 
-    def build(self, *args, **kwargs):
+    def build(self):
         K.set_learning_phase(0)
-        loss_packed = self.loss_function(*args, **kwargs)
+        self._global_step = tf.train.get_or_create_global_step()
+        self.outputs = self.model(self.inputs)
+        loss_packed = self.loss_function(self.inputs, self.outputs)
         loss, losses = self._unpack_losses(loss_packed)
 
         self.total_loss = loss
         self.losses = losses
-        self.args_in = args
-        self.kwargs_in = kwargs
-        self.handle = None
+        self._default_operation = 'loss'
 
     def create_summaries(self):
         if self.return_loss_summaries:
@@ -46,58 +54,33 @@ class TestGraph(RinokerasGraph):
                     tf.summary.scalar(str(i), loss)
         self.summaries = tf.summary.merge_all()
 
-    @classmethod
-    def from_dataset(cls,
-                     loss_function: Callable,
-                     dataset: tf.data.Dataset,
-                     *args,
-                     **kwargs):
-        handle = tf.placeholder(tf.string, shape=[])
-        iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
-        batch = iterator.get_next()
-
-        loss_args: tuple = ()
-        loss_kwargs: dict = {}
-
-        if isinstance(batch, dict):
-            loss_kwargs = batch
-        elif isinstance(batch, list) or isinstance(batch, tuple):
-            loss_args = tuple(batch)
+    def _map_to_placeholders(self, placeholders, inputs, feed_dict):
+        if isinstance(placeholders, tf.placeholder):
+            feed_dict[placeholders] = inputs
+        elif isinstance(placeholders, list) and isinstance(inputs, list):
+            for ph, input_ in zip(placeholders, inputs):
+                self._map_to_placeholders(ph, input_, feed_dict)
+        elif isinstance(placeholders, tuple) and isinstance(inputs, tuple):
+            for ph, input_ in zip(placeholders, inputs):
+                self._map_to_placeholders(ph, input_, feed_dict)
+        elif isinstance(placeholders, dict) and isinstance(inputs, dict):
+            for key, ph in placeholders:
+                self._map_to_placeholders(ph, inputs[key], feed_dict)
         else:
-            loss_args = (batch,)
+            raise ValueError("Type of placeholders and inputs did not match. Received \
+                              {} and {}.".format(type(placeholders), type(inputs)))
 
-        new_class = cls(loss_function, loss_args, loss_kwargs, *args, **kwargs)
-        new_class.handle = handle
-        return new_class
-
-    def _get_feed_dict(self, *args, **kwargs) -> Dict[tf.placeholder, Any]:
+    def _get_feed_dict(self, inputs: Union[bytes, Inputs]) -> Dict[tf.placeholder, Any]:
         if self.handle is not None:
-            assert len(kwargs) == 0, 'Graph is set up from a handle, not from placeholders.'
-            assert len(args) == 1 and isinstance(args[0], bytes), 'Must pass in only string handle to dataset'
-            feed_dict = {self.handle: args[0]}
+            assert isinstance(inputs, bytes), 'Must pass in only string handle to dataset'
+            feed_dict = {self.handle: inputs}
             return feed_dict
 
-        if len(args) != len(self.args_in):
-            raise ValueError("Expected {} positional arguments, but received {}.".format(
-                len(self.args_in), len(args))
-            )
-
-        if len(kwargs) != len(self.kwargs_in):
-            raise ValueError("Expected {} keyword arguments, but received {}.".format(
-                len(self.kwargs_in), len(kwargs))
-            )
-
         feed_dict = {}
-        for arg_in, arg in zip(self.args_in, args):
-            feed_dict[arg_in] = arg
-        for kw in self.kwargs_in:
-            try:
-                feed_dict[self.kwargs_in[kw]] = kwargs[kw]
-            except KeyError:
-                raise KeyError("Expected keyword argument '{}'".format(kw))
+        self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Union[bytes, Inputs]) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -115,26 +98,26 @@ class TestGraph(RinokerasGraph):
         if sess is None:
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
 
-        feed_dict = self._get_feed_dict(*args, **kwargs)
+        feed_dict = self._get_feed_dict(inputs)
 
         results = sess.run(ops, feed_dict=feed_dict)
         return results
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], *args, **kwargs) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Union[bytes, Inputs]) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
         if ops == 'update':
-            return self.update(*args, **kwargs)
+            return self.update(inputs)
         elif ops == 'loss':
-            return self.loss(*args, **kwargs)
+            return self.loss(inputs)
         else:
-            return self._run_tensor(ops, *args, **kwargs)
+            return self._run_tensor(ops, inputs)
 
-    def update(self, *args, **kwargs) -> Union[float, Tuple]:
+    def update(self, inputs: Union[bytes, Inputs]) -> Losses:
         raise RuntimeError("Called update on a TestGraph. To train the model, you must use a TrainGraph.")
 
-    def loss(self, *args, **kwargs) -> Union[float, Tuple]:
+    def loss(self, inputs: Union[bytes, Inputs]) -> Losses:
         """Gets loss of model with placeholders in graph mode.
 
         Args:
@@ -148,14 +131,13 @@ class TestGraph(RinokerasGraph):
             RuntimeError: If not run inside a tf.Session context
         """
         if self.return_loss_summaries:
-            return self._run_tensor([self.losses, self.summaries], *args, **kwargs)
+            return self._run_tensor([self.losses, self.summaries], inputs)
         else:
-            return self._run_tensor(self.losses, *args, **kwargs)
+            return self._run_tensor(self.losses, inputs)
 
     @property
     def global_step(self) -> int:
-        global_step = tf.train.get_or_create_global_step()
         sess = tf.get_default_session()
         if sess is None:
             raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-        return tf.train.global_step(sess, global_step)
+        return tf.train.global_step(sess, self._global_step)

@@ -1,9 +1,9 @@
-from typing import Sequence, Union, Callable, Dict, Tuple
+from typing import Union, Callable, Tuple
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
-from .TestGraph import TestGraph
+from .TestGraph import TestGraph, Inputs, Outputs, Losses, Gradients
 
 
 class TrainGraph(TestGraph):
@@ -15,21 +15,19 @@ class TrainGraph(TestGraph):
     """
 
     def __init__(self,
+                 model: Callable[[Inputs], Outputs],
                  optimizer: tf.train.Optimizer,
-                 loss_function: Callable,
-                 grads_function: Callable,
-                 loss_args: Sequence,
-                 loss_kwargs: Dict,
-                 *args,
+                 loss_function: Callable[[Tuple[Inputs, Outputs]], Losses],
+                 grads_function: Callable[[Tuple[Inputs, Outputs]], Tuple[Losses, Gradients]],
+                 inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
                  return_grad_summaries: bool = False,
                  **kwargs) -> None:
+
         self.optimizer = optimizer
         self.grads_function = grads_function
         self.return_grad_summaries = return_grad_summaries
-        super().__init__(loss_function, loss_args, loss_kwargs, *args,
-                         return_loss_summaries=return_loss_summaries, **kwargs)
-        self._default_operation = 'update'
+        super().__init__(model, loss_function, inputs, return_loss_summaries=return_loss_summaries, **kwargs)
 
     def build(self, *args, **kwargs):
         K.set_learning_phase(1)
@@ -37,14 +35,16 @@ class TrainGraph(TestGraph):
         loss, losses = self._unpack_losses(loss_packed)
 
         self._global_step = tf.train.get_or_create_global_step()
+        self.outputs = self.model(self.inputs)
+        grads, loss_packed = self.grads_function(self.inputs, self.outputs)
+        loss, losses = self._unpack_losses
         update_op = self.optimizer.apply_gradients(grads, global_step=self._global_step)
+
         self.total_loss = loss
         self.losses = losses
         self.grads = grads
         self.update_op = update_op
-        self.args_in = args
-        self.kwargs_in = kwargs
-        self.handle = None
+        self._default_operation = 'update'
 
     def create_summaries(self):
         if self.return_grad_summaries:
@@ -54,33 +54,7 @@ class TrainGraph(TestGraph):
                     tf.summary.histogram(name, grad)
         super().create_summaries()
 
-    @classmethod
-    def from_dataset(cls,  # type: ignore
-                     optimizer: tf.train.Optimizer,
-                     loss_function: Callable,
-                     grads_function: Callable,
-                     dataset: tf.data.Dataset,
-                     *args,
-                     **kwargs):
-        handle = tf.placeholder(tf.string, shape=[])
-        iterator = tf.data.Iterator.from_string_handle(handle, dataset.output_types, dataset.output_shapes)
-        batch = iterator.get_next()
-
-        loss_args: tuple = ()
-        loss_kwargs: dict = {}
-
-        if isinstance(batch, dict):
-            loss_kwargs = batch
-        elif isinstance(batch, list) or isinstance(batch, tuple):
-            loss_args = tuple(batch)
-        else:
-            loss_args = (batch,)
-
-        new_class = cls(optimizer, loss_function, grads_function, loss_args, loss_kwargs, *args, **kwargs)
-        new_class.handle = handle
-        return new_class
-
-    def update(self, *args, **kwargs) -> Union[float, Tuple]:
+    def update(self, inputs: Union[bytes, Inputs]) -> Losses:
         """Updates the model with placeholders in graph mode.
 
         Args:
@@ -94,8 +68,8 @@ class TrainGraph(TestGraph):
             RuntimeError: If not run inside a tf.Session context
         """
         if self.return_loss_summaries or self.return_grad_summaries:
-            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], *args, **kwargs)
+            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], inputs)
             return loss, summaries
         else:
-            _, loss = self._run_tensor([self.update_op, self.losses], *args, **kwargs)
+            _, loss = self._run_tensor([self.update_op, self.losses], inputs)
             return loss
