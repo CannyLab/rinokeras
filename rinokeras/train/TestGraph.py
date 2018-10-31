@@ -30,14 +30,15 @@ class TestGraph(RinokerasGraph):
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
+                 distribution_strategy=tf.contrib.distribute.DistributionStrategy,
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self.handle = None
         if isinstance(inputs, tf.data.Dataset):
-            self.handle = tf.placeholder(tf.string, shape=[])
-            self.iterator = tf.data.Iterator.from_string_handle(
-                self.handle, inputs.output_types, inputs.output_shapes)
+            inputs = distribution_strategy.distribute_dataset(inputs)
+            self.iterator = inputs.make_initializable_iterator()
             inputs = self.iterator.get_next()
+        self.distribution_strategy = distribution_strategy
         self.inputs = inputs
         self.model = model
         self.loss_function = loss_function
@@ -53,12 +54,23 @@ class TestGraph(RinokerasGraph):
     def build(self):
         K.set_learning_phase(0)
         self._global_step = tf.train.get_or_create_global_step()
-        self.outputs = self.model(self.inputs)
-        loss_packed = self.loss_function(self.inputs, self.outputs)
-        loss, losses = self._unpack_losses(loss_packed)
 
-        self.total_loss = loss
-        self.losses = losses
+        def distributed_loss_fn(inputs):
+            outputs = self.model(self.inputs)
+            loss_packed = self.loss_function(self.inputs, outputs)
+            loss, losses = self._unpack_losses(loss_packed)
+            return loss, losses
+
+        with self.distribution_strategy.scope():
+            loss, losses = self.distribution_strategy.call_for_each_tower(
+                distributed_loss_fn, self.inputs)
+            reduced_total = self.distribution_strategy.reduce(
+                tf.VariableAggregation.MEAN, loss)
+            reduced_losses = self.distribution_strategy.batch_reduce(
+                tf.VariableAggregation.MEAN, losses)
+            self.loss = self.distribution_strategy.unwrap(reduced_total)[0]
+            self.losses = tuple(self.distribution_strategy.unwrap(loss) for loss in reduced_losses)
+
         self._default_operation = 'loss'
 
     def create_summaries(self):
