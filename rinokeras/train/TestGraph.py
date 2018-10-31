@@ -35,7 +35,7 @@ class TestGraph(RinokerasGraph):
         super().__init__(**kwargs)
         self.handle = None
         if isinstance(inputs, tf.data.Dataset):
-            inputs = distribution_strategy.distribute_dataset(inputs)
+            inputs = distribution_strategy.distribute_dataset(lambda: inputs)
             self.iterator = inputs.make_initializable_iterator()
             inputs = self.iterator.get_next()
         self.distribution_strategy = distribution_strategy
@@ -56,20 +56,22 @@ class TestGraph(RinokerasGraph):
         self._global_step = tf.train.get_or_create_global_step()
 
         def distributed_loss_fn(inputs):
-            outputs = self.model(self.inputs)
-            loss_packed = self.loss_function(self.inputs, outputs)
+            outputs = self.model(inputs)
+            loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
             return loss, losses
 
+        central_device = self.distribution_strategy.parameter_devices[0]
         with self.distribution_strategy.scope():
             loss, losses = self.distribution_strategy.call_for_each_tower(
                 distributed_loss_fn, self.inputs)
             reduced_total = self.distribution_strategy.reduce(
-                tf.VariableAggregation.MEAN, loss)
+                tf.VariableAggregation.MEAN, loss, central_device)
+            to_reduce = [(loss, central_device) for loss in losses]
             reduced_losses = self.distribution_strategy.batch_reduce(
-                tf.VariableAggregation.MEAN, losses)
+                tf.VariableAggregation.MEAN, to_reduce)
             self.loss = self.distribution_strategy.unwrap(reduced_total)[0]
-            self.losses = tuple(self.distribution_strategy.unwrap(loss) for loss in reduced_losses)
+            self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
 
         self._default_operation = 'loss'
 
@@ -129,7 +131,7 @@ class TestGraph(RinokerasGraph):
         results = sess.run(ops, feed_dict=feed_dict)
         return results
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Union[bytes, Inputs]) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
@@ -140,7 +142,7 @@ class TestGraph(RinokerasGraph):
         else:
             return self._run_tensor(ops, inputs)
 
-    def update(self, inputs: Union[bytes, Inputs]) -> Losses:
+    def update(self, inputs: Optional[Inputs] = None) -> Losses:
         raise RuntimeError("Called update on a TestGraph. To train the model, you must use a TrainGraph.")
 
     def loss(self, inputs: Union[bytes, Inputs]) -> Losses:
