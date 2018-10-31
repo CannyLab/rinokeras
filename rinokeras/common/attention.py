@@ -1,4 +1,4 @@
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
 
 import tensorflow as tf
 from tensorflow.keras import Model
@@ -240,7 +240,7 @@ class AttentionMap(Model):
     """
 
     def __init__(self,
-                 similarity_metric,
+                 similarity_metric: Callable[[Tuple[tf.Tensor, tf.Tensor]], tf.Tensor],
                  attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
                  dropout: Optional[float] = None) -> None:
         super(AttentionMap, self).__init__()
