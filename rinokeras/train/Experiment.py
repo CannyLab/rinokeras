@@ -7,8 +7,8 @@ import time
 import contextlib
 import os
 
-import rinokeras as rk
-from rinokeras.graphs.TestGraph import Inputs, Outputs, Losses, Gradients
+from rinokeras.common import optimizers as rinokeras_optimizers
+from .train_utils import Inputs, Outputs, Losses, Gradients
 
 
 class Experiment(ABC):
@@ -31,8 +31,10 @@ class Experiment(ABC):
 
         if isinstance(models, Model):
             self.models = models
+            self._models = [models]
         elif isinstance(models, tuple) or isinstance(models, list):
             self.models = list(models)
+            self._models = list(models)
         else:
             raise TypeError(
                 "Unrecognized input for models. Expected Model or list of Models, \
@@ -72,11 +74,11 @@ class Experiment(ABC):
             'adadelta': tf.train.AdadeltaOptimizer,
             'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
             'ftrl': tf.train.FtrlOptimizer,
-            'adamax': rk.common.optimizers.AdaMaxOptimizer,
+            'adamax': rinokeras_optimizers.AdaMaxOptimizer,
         }
 
         if optimizer in optimizers:
-             = optimizers[optimizer](learning_rate=self._learning_rate)
+            return optimizers[optimizer](learning_rate=self._learning_rate)
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
@@ -157,20 +159,20 @@ class Experiment(ABC):
             Losses: Different losses returned by loss_function
         """
         # TODO: fix this for multiple models
-        variables = sum((model.variables for model in self.models), [])
+        variables = sum((model.variables for model in self._models), [])
         if tf.executing_eagerly():
             with tf.GradientTape() as tape:
                 loss_packed = self.loss_function(inputs, outputs)
                 total_loss, _ = self._unpack_losses(loss_packed)
-                loss_to_optimize = total_loss + sum(sum(model.losses) for model in self.models)
+                loss_to_optimize = total_loss + sum(sum(model.losses) for model in self._models)
 
             grads = tape.gradient(loss_to_optimize, variables)
             grads = zip(grads, variables)
         else:
             loss_packed = self.loss_function(inputs, outputs)
             total_loss, _ = self._unpack_losses(loss_packed)
-            loss_to_optimize = total_loss + sum(sum(model.losses) for model in self.models)
-            grads = .compute_gradients(loss_to_optimize, variables)
+            loss_to_optimize = total_loss + sum(sum(model.losses) for model in self._models)
+            grads = self.optimizer.compute_gradients(loss_to_optimize, variables)
 
         # By default all of these norms use L2 TODO: Add additional norm types to the options
         grads = self._clip_gradients(grads)
