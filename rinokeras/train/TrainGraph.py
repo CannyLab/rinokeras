@@ -39,27 +39,21 @@ class TrainGraph(TestGraph):
                  return_grad_summaries: bool = False,
                  gradient_clip_type: str = 'none',
                  gradient_clip_bounds: Union[float, Tuple[float, float]] = 1.0,
-                 distribution_strategy: DistributionStrategy = OneDeviceStrategy,
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
                  **kwargs) -> None:
 
         self.optimizer = optimizer
         self.return_grad_summaries = return_grad_summaries
+        self.initial_learning_rate = learning_rate
 
-        with tf.variable_scope(self._name):
-            self._learning_rate = tf.get_variable('learning_rate', shape=(), dtype=tf.float32,
-                                                  initializer=tf.constant_initializer(learning_rate),
-                                                  trainable=False)
-            if not tf.executing_eagerly():
-                self._update_learning_rate_ph = tf.placeholder(tf.float32, shape=(), name='learning_rate_placeholder')
-                self._update_learning_rate_op = tf.assign(self._learning_rate, self._update_learning_rate_ph)
+        if gradient_clip_type != 'none':
+            raise NotImplementedError("Haven't implemented clipping with distributed strategies yet.")
+        self._clip_gradients = self._get_gradient_clip_function(
+            gradient_clip_type, gradient_clip_bounds)
 
-            self.optimizer = self._get_optimizer(optimizer)
-
-        self._clip_gradients = self._get_gradient_clip_function(gradient_clip_type, gradient_clip_bounds)
-
-        # Setup gradient clipping
-        super().__init__(model, build_model, loss_function, inputs, return_loss_summaries=return_loss_summaries,
-                         distribution_strategy=distribution_strategy, **kwargs)
+        super().__init__(
+            model, build_model, loss_function, inputs, return_loss_summaries=return_loss_summaries,
+            distribution_strategy=distribution_strategy, **kwargs)
 
     @classmethod
     def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset]):
@@ -72,73 +66,52 @@ class TrainGraph(TestGraph):
             gradient_clip_bounds=experiment.gradient_clipping_bounds,
             distribution_strategy=experiment.distribution_strategy)
 
-    def build(self, *args, **kwargs):
-        K.set_learning_phase(1)
+    def _distributed_fn(self):
+        self._distributed_global_step = tf.train.get_or_create_global_step()
 
-        def distributed_grads_fn(inputs):
-            outputs = self.model(inputs)
-            grads, loss_packed = self.grads_function(inputs, outputs)
+        def loss_fn(inputs):
+            outputs = self.build_model(self.model, inputs)
+            loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
+            loss += sum(self.model.losses)
+            return loss, losses
+
+        def grads_fn(inputs):
+            if tf.executing_eagerly():
+                with tf.GradientTape() as tape:
+                    loss, losses = loss_fn(inputs)
+                grads = tape.gradient(loss, self.model.variables)
+                grads = zip(grads, self.model.variables)
+            else:
+                loss, losses = loss_fn(inputs)
+                grads = self.optimizer.compute_gradients(loss, self.model.variables)
+
             return grads, loss, losses
 
-        central_device = self.distribution_strategy.parameter_devices[0]
-        with self.distribution_strategy.scope():
-            grads, loss, losses = self.distribution_strategy.call_for_each_tower(
-                distributed_grads_fn, self.inputs)
+        self._distributed_grads, self._distributed_total_loss, self._distributed_losses = \
+            self.distribution_strategy.call_for_each_tower(grads_fn, self.inputs)
 
-            reduced_total = self.distribution_strategy.reduce(
-                tf.VariableAggregation.MEAN, loss, central_device)
-            to_reduce = [(loss, central_device) for loss in losses]
-            reduced_losses = self.distribution_strategy.batch_reduce(
-                tf.VariableAggregation.MEAN, to_reduce)
+        self.update_op = self.optimizer._distributed_apply(
+            self.distribution_strategy, self._distributed_grads,
+            global_step=self._distributed_global_step)
 
-            update_op = self.optimizer._distributed_apply(
-                self.distribution_strategy, grads, global_step=self._global_step)
+    def _initialize_graph(self):
+        K.set_learning_phase(1)
+        with tf.variable_scope(self._name):
+            self._learning_rate = tf.get_variable(
+                'learning_rate', shape=(), dtype=tf.float32,
+                 initializer=tf.constant_initializer(self.initial_learning_rate), trainable=False)
+            if not tf.executing_eagerly():
+                self._update_learning_rate_ph = tf.placeholder(
+                    tf.float32, shape=(), name='learning_rate_placeholder')
+                self._update_learning_rate_op = tf.assign(
+                    self._learning_rate, self._update_learning_rate_ph)
 
-            self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
-            self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
-            self.grads = grads  # TODO: fix this for gradient summaries
-            self.update_op = update_op
+            self.optimizer = self._get_optimizer(self.optimizer)
 
-        self.total_loss = loss
-        self.losses = losses
-        self.grads = grads
-        self.update_op = update_op
+    def _finalize_graph(self):
         self._default_operation = 'update'
-
-    def grads_function(self,
-                       inputs: Inputs,
-                       outputs: Outputs,
-                       model: Model) -> Tuple[Gradients, Losses]:
-        """Computes the gradient of the loss function wrt model parameters.
-
-        Args:
-            inputs (Inputs): Inputs to the build_model function
-            outputs (Outputs): Outputs from the build_model function
-
-        Returns:
-            Gradients: Gradients of the model parameters
-            Losses: Different losses returned by loss_function
-        """
-        # TODO: fix this for multiple models
-        if tf.executing_eagerly():
-            with tf.GradientTape() as tape:
-                loss_packed = self.loss_function(inputs, outputs)
-                total_loss, _ = self._unpack_losses(loss_packed)
-                loss_to_optimize = total_loss + sum(model.losses)
-
-            grads = tape.gradient(loss_to_optimize, model.variables)
-            grads = zip(grads, model.variables)
-        else:
-            loss_packed = self.loss_function(inputs, outputs)
-            total_loss, _ = self._unpack_losses(loss_packed)
-            loss_to_optimize = total_loss + sum(model.losses)
-            grads = self.optimizer.compute_gradients(loss_to_optimize, model.variables)
-
-        # By default all of these norms use L2 TODO: Add additional norm types to the options
-        grads = self._clip_gradients(grads)
-
-        return grads, loss_packed
+        self.summaries = tf.summary.merge_all()
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
@@ -194,13 +167,13 @@ class TrainGraph(TestGraph):
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
-    def create_summaries(self):
+    def _create_summaries(self):
+        super()._create_summaries()
         if self.return_grad_summaries:
             with tf.name_scope('gradients'):
                 for grad, var in self.grads:
                     name = var.name.replace(':', '_')
                     tf.summary.histogram(name, grad)
-        super().create_summaries()
 
     def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
         if ops == 'default':
@@ -229,7 +202,8 @@ class TrainGraph(TestGraph):
             RuntimeError: If not run inside a tf.Session context
         """
         if self.return_loss_summaries or self.return_grad_summaries:
-            _, loss, summaries = self._run_tensor([self.update_op, self.losses, self.summaries], inputs)
+            _, loss, summaries = self._run_tensor(
+                [self.update_op, self.losses, self.summaries], inputs)
             return loss, summaries
         else:
             _, loss = self._run_tensor([self.update_op, self.losses], inputs)
@@ -247,4 +221,5 @@ class TrainGraph(TestGraph):
             sess = tf.get_default_session()
             if sess is None:
                 raise RuntimeError("Must be executed inside tf.Session context.")
-            sess.run(self._update_learning_rate_op, feed_dict={self._update_learning_rate_ph: value})
+            sess.run(
+                self._update_learning_rate_op, feed_dict={self._update_learning_rate_ph: value})

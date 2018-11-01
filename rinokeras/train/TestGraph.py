@@ -29,20 +29,22 @@ class TestGraph(RinokerasGraph):
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
-                 distribution_strategy: DistributionStrategy = OneDeviceStrategy,
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
                  **kwargs) -> None:
         super().__init__(**kwargs)
         if isinstance(inputs, tf.data.Dataset):
             inputs = distribution_strategy.distribute_dataset(lambda: inputs)
             self.iterator = inputs.make_initializable_iterator()
             inputs = self.iterator.get_next()
+        else:
+            self.iterator = None
         self.distribution_strategy = distribution_strategy
         self.inputs = inputs
         self.model = model
+        self.build_model = build_model
         self.loss_function = loss_function
         self.return_loss_summaries = return_loss_summaries
         self.build()
-        self.create_summaries()
 
     @classmethod
     def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset]):
@@ -51,51 +53,62 @@ class TestGraph(RinokerasGraph):
             return_loss_summaries=experiment.return_loss_summaries,
             distribution_strategy=experiment.distribution_strategy)
 
-    def build(self):
-        K.set_learning_phase(0)
+    def _distributed_fn(self):
 
-        def distributed_loss_fn(inputs):
-            outputs = self.model(inputs)
+        self._distributed_global_step = tf.train.get_or_create_global_step()
+
+        def loss_fn(inputs):
+            outputs = self.build_model(self.model, inputs)
             loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
             return loss, losses
 
+        self._distributed_total_loss, self._distributed_losses = \
+            self.distribution_strategy.call_for_each_tower(loss_fn, self.inputs)
+
+    def _reduce_distributed_ops(self):
         central_device = self.distribution_strategy.parameter_devices[0]
-        with self.distribution_strategy.scope():
-            loss, losses = self.distribution_strategy.call_for_each_tower(
-                distributed_loss_fn, self.inputs)
-            reduced_total = self.distribution_strategy.reduce(
-                tf.VariableAggregation.MEAN, loss, central_device)
-            to_reduce = [(loss, central_device) for loss in losses]
-            reduced_losses = self.distribution_strategy.batch_reduce(
-                tf.VariableAggregation.MEAN, to_reduce)
-            self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
-            self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
 
+        reduced_total = self.distribution_strategy.reduce(
+            tf.VariableAggregation.MEAN, self._distributed_total_loss, central_device)
+        to_reduce = [(loss, central_device) for loss in self._distributed_losses]
+        reduced_losses = self.distribution_strategy.batch_reduce(
+            tf.VariableAggregation.MEAN, to_reduce)
+
+        self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
+        self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
+        self._global_step = self.distribution_strategy.unwrap(self._distributed_global_step)[0]
+
+    def _initialize_graph(self):
+        K.set_learning_phase(0)
+
+    def _finalize_graph(self):
         self._default_operation = 'loss'
+        self.summaries = tf.summary.merge_all()
 
-    def create_summaries(self):
+    def _create_summaries(self):
         if self.return_loss_summaries:
             with tf.name_scope('losses'):
                 for i, loss in enumerate(self.losses):
                     tf.summary.scalar(str(i), loss)
-        self.summaries = tf.summary.merge_all()
 
-    def _map_to_placeholders(self, placeholders, inputs, feed_dict):
-        if isinstance(placeholders, tf.placeholder):
-            feed_dict[placeholders] = inputs
-        elif isinstance(placeholders, list) and isinstance(inputs, list):
-            for ph, input_ in zip(placeholders, inputs):
-                self._map_to_placeholders(ph, input_, feed_dict)
-        elif isinstance(placeholders, tuple) and isinstance(inputs, tuple):
-            for ph, input_ in zip(placeholders, inputs):
-                self._map_to_placeholders(ph, input_, feed_dict)
-        elif isinstance(placeholders, dict) and isinstance(inputs, dict):
-            for key, ph in placeholders:
-                self._map_to_placeholders(ph, inputs[key], feed_dict)
-        else:
-            raise ValueError("Type of placeholders and inputs did not match. Received \
-                              {} and {}.".format(type(placeholders), type(inputs)))
+    def initialize(self):
+        if self.iterator is not None:
+            sess = self._get_session()
+            sess.run(self.iterator.initializer)
+        return self
+
+    def build(self):
+        self._initialize_graph()
+
+        with self.distribution_strategy.scope():
+
+            # Create distributed ops
+            self._distributed_fn()
+            self._reduce_distributed_ops()
+
+        self._create_summaries()
+        self._finalize_graph()
 
     def _unpack_losses(self, losses: Losses):
         """Optionally unpacks a sequence of losses

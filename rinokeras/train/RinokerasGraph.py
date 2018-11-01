@@ -19,7 +19,6 @@ class RinokerasGraph(ABC):
         if RinokerasGraph._num_graphs > 0:
             self._name += '_{}'.format(RinokerasGraph._num_graphs)
         RinokerasGraph._num_graphs += 1
-        self._global_step = tf.train.get_or_create_global_step()
 
         self.progress_bar = None
         self.inputs = ()
@@ -62,10 +61,7 @@ class RinokerasGraph(ABC):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-
+        sess = self._get_session()
         feed_dict = self._get_feed_dict(inputs)
 
         results = sess.run(ops, feed_dict=feed_dict)
@@ -84,13 +80,23 @@ class RinokerasGraph(ABC):
             self.progress_bar.update()
             self.progress_bar.set_postfix(postfix)
 
+    def initialize(self):
+        return self
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        self.progress_bar.__exit__()
+        if self.progress_bar is not None:
+            self.progress_bar.__exit__()
         self.progress_bar = None
         return exc_type is None or exc_type == tf.errors.OutOfRangeError
+
+    def _get_session(self) -> tf.Session:
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+        return sess
 
     @abstractmethod
     def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
@@ -98,7 +104,5 @@ class RinokerasGraph(ABC):
 
     @property
     def global_step(self) -> int:
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+        sess = self._get_session()
         return tf.train.global_step(sess, self._global_step)
