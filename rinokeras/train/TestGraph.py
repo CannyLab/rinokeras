@@ -1,6 +1,7 @@
 from typing import Sequence, Union, Any, Callable, Dict, Tuple, Optional
 
 import tensorflow as tf
+from tensorflow.keras import Model
 import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
@@ -23,14 +24,14 @@ class TestGraph(RinokerasGraph):
     """
 
     def __init__(self,
-                 model: Callable[[Inputs], Outputs],
+                 model: Model,
+                 build_model: Callable[[Inputs], Outputs],
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
                  distribution_strategy: DistributionStrategy = OneDeviceStrategy,
                  **kwargs) -> None:
         super().__init__(**kwargs)
-        self.handle = None
         if isinstance(inputs, tf.data.Dataset):
             inputs = distribution_strategy.distribute_dataset(lambda: inputs)
             self.iterator = inputs.make_initializable_iterator()
@@ -44,13 +45,14 @@ class TestGraph(RinokerasGraph):
         self.create_summaries()
 
     @classmethod
-    def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset], **kwargs):
-        loss_function = experiment.loss_function
-        return cls(lambda inputs: experiment.build_model(experiment.models, inputs), loss_function, inputs, **kwargs)
+    def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset]):
+        return cls(
+            experiment.model, experiment.build_model, experiment.loss_function, inputs,
+            return_loss_summaries=experiment.return_loss_summaries,
+            distribution_strategy=experiment.distribution_strategy)
 
     def build(self):
         K.set_learning_phase(0)
-        self._global_step = tf.train.get_or_create_global_step()
 
         def distributed_loss_fn(inputs):
             outputs = self.model(inputs)
@@ -95,50 +97,34 @@ class TestGraph(RinokerasGraph):
             raise ValueError("Type of placeholders and inputs did not match. Received \
                               {} and {}.".format(type(placeholders), type(inputs)))
 
-    def _get_feed_dict(self, inputs: Optional[Inputs]) -> Optional[Dict[tf.placeholder, Any]]:
-        if inputs is None:
-            return {}
-
-        feed_dict: Dict[tf.placeholder, Any] = {}
-        self._map_to_placeholders(self.inputs, inputs, feed_dict)
-        return feed_dict
-
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
-        """Runs the network for a specific tensor
+    def _unpack_losses(self, losses: Losses):
+        """Optionally unpacks a sequence of losses
 
         Args:
-            ops (Union[tf.Tensor, Sequence[tf.Tensor]]): op or sequence of ops to run
-            *args: Positional arguments to the loss function
-            **kwargs: Keyword arguments to the loss function
+            losses (Union[tf.Tensor, Sequence[tf.Tensor]]): Loss tensor or sequence of loss tensors with
+                first tensor being total loss
 
         Returns:
-            Result of running ops
-
-        Raises:
-            RuntimeError: If not run inside a tf.Session context
+            tf.Tensor, Union[tf.Tensor, Sequence[tf.Tensor]]: Total loss, and sequence of loss tensors
         """
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
+        if isinstance(losses, tuple) or isinstance(losses, list):
+            total_loss = losses[0]
+        else:
+            total_loss = losses
+            losses = (losses,)
 
-        feed_dict = self._get_feed_dict(inputs)
-
-        results = sess.run(ops, feed_dict=feed_dict)
-        return results
+        return total_loss, losses
 
     def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
-        if ops == 'update':
-            return self.update(inputs)
-        elif ops == 'loss':
+        if ops == 'loss':
             return self.loss(inputs)
+        elif isinstance(ops, str):
+            raise ValueError("Unrecognized op on graph: {}".format(ops))
         else:
             return self._run_tensor(ops, inputs)
-
-    def update(self, inputs: Optional[Inputs] = None) -> Losses:
-        raise RuntimeError("Called update on a TestGraph. To train the model, you must use a TrainGraph.")
 
     def loss(self, inputs: Optional[Inputs] = None) -> Losses:
         """Gets loss of model with placeholders in graph mode.
@@ -158,9 +144,3 @@ class TestGraph(RinokerasGraph):
         else:
             return self._run_tensor(self.losses, inputs)
 
-    @property
-    def global_step(self) -> int:
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("Must be run inside of a tf.Session context when in non-eager mode.")
-        return tf.train.global_step(sess, self._global_step)
