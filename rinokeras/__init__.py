@@ -1,8 +1,6 @@
 import rinokeras.utils  # noqa: F401
-import rinokeras.common as layers
-import rinokeras.models
-import rinokeras.trainers
-import rinokeras.train
-import rinokeras.graphs
+import rinokeras.common  # noqa: F401
+import rinokeras.models  # noqa: F401
+import rinokeras.train  # noqa: F401
 
-__all__ = ['common', 'models', 'rl', 'test', 'trainers', 'utils', 'layers', 'graphs', 'train']
+__all__ = ['common', 'models', 'rl', 'test', 'utils', 'train']
