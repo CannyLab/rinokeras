@@ -46,8 +46,6 @@ class TrainGraph(TestGraph):
         self.return_grad_summaries = return_grad_summaries
         self.initial_learning_rate = learning_rate
 
-        if gradient_clip_type != 'none':
-            raise NotImplementedError("Haven't implemented clipping with distributed strategies yet.")
         self._clip_gradients = self._get_gradient_clip_function(
             gradient_clip_type, gradient_clip_bounds)
 
@@ -70,7 +68,7 @@ class TrainGraph(TestGraph):
         self._distributed_global_step = tf.train.get_or_create_global_step()
 
         def loss_fn(inputs):
-            outputs = self.build_model(self.model, inputs)
+            outputs = self.build_model(inputs)
             loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
             loss += sum(self.model.losses)
@@ -86,6 +84,9 @@ class TrainGraph(TestGraph):
                 loss, losses = loss_fn(inputs)
                 grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
+            grads = self._clip_gradients(grads)
+            # for g, v in grads:
+                # print(v.name, v)
             return grads, loss, losses
 
         self._distributed_grads, self._distributed_total_loss, self._distributed_losses = \

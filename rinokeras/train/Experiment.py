@@ -17,7 +17,7 @@ class Experiment(ABC):
                  gradient_clipping_bounds: Union[float, Tuple[float, float]] = (-1, 1),
                  return_loss_summaries: bool = False,
                  return_grad_summaries: bool = False,
-                 distribution_strategy: DistributionStrategy = OneDeviceStrategy) -> None:
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0')) -> None:
         super().__init__()
         self.model = model
         self.optimizer = optimizer

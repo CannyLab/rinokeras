@@ -58,7 +58,7 @@ class TestGraph(RinokerasGraph):
         self._distributed_global_step = tf.train.get_or_create_global_step()
 
         def loss_fn(inputs):
-            outputs = self.build_model(self.model, inputs)
+            outputs = self.build_model(inputs)
             loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
             return loss, losses
