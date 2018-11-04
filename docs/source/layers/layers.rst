@@ -2,7 +2,7 @@ Common
 =====================================
 
 .. toctree::
-    :caption: Common Layers
+    :caption: Layers
     :maxdepth: 2
 
     common/stack
@@ -11,3 +11,6 @@ Common
     common/random_noise
     common/position_embedding
     common/layer_norm
+    common/activations
+    common/dropout
+    common/transpose

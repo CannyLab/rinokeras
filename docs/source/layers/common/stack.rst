@@ -12,6 +12,11 @@ Stack
         :members:
         :undoc-members:
         :show-inheritance:
+
+    .. autoclass:: Deconv2DStack
+        :members:
+        :undoc-members:
+        :show-inheritance:
     
     .. autoclass:: DenseStack
         :members:
