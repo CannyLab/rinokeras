@@ -1,7 +1,7 @@
 # Rinokeras
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/5e5663d0c80240a8a05a44a5e6df0ad6)](https://www.codacy.com/app/DavidMChan/rinokeras?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=CannyLab/rinokeras&amp;utm_campaign=Badge_Grade)
 [![Build Status](https://travis-ci.org/CannyLab/rinokeras.svg?branch=master)](https://travis-ci.org/CannyLab/rinokeras)
-[![Docs Status](https://readthedocs.org/projects/rinokeras/badge/?version=latest)
+[![Docs Status](https://readthedocs.org/projects/rinokeras/badge/?version=latest)](https://rinokeras.readthedocs.io/en/latest/)
 
 ### Documentation
 
