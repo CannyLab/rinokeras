@@ -1,8 +1,12 @@
 """
 Various utility functions that are commonly used in our models and during training.
 """
-
+from typing import Sequence, Tuple, Optional, Union
 import tensorflow as tf
+
+from rinokeras.common import optimizers as rinokeras_optimizers
+
+Gradients = Sequence[Tuple[Optional[tf.Tensor], tf.Variable]]
 
 
 def convert_padding_mask_to_attention_mask(sequence, padding_mask):
@@ -144,3 +148,51 @@ class PiecewiseSchedule(object):
         # t does not belong to any of the pieces, so doom.
         assert self._outside_value is not None
         return self._outside_value
+
+
+def clip_gradients(grads: Gradients, clip_type: str, clip_bounds: Union[float, Tuple[float, float]]) -> Gradients:
+
+    def apply_clipping(g):
+        if clip_type in ['none', 'None']:
+            pass
+        elif clip_type == 'value':
+            assert isinstance(clip_bounds, (tuple, list)) and len(clip_bounds) == 2, \
+                'Expected list or tuple of length 2, received {}'.format(clip_bounds)
+            g = tf.clip_by_value(g, clip_bounds[0], clip_bounds[1])
+        elif clip_type in ['norm', 'global_norm', 'average_norm']:
+            assert isinstance(clip_bounds, (int, float)) and clip_bounds > 0, \
+                'Expected positive float, received {}'.format(clip_bounds)
+            g = tf.clip_by_norm(g, clip_bounds)
+        else:
+            raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))
+
+        return g
+
+    return [(apply_clipping(g), v) for g, v in grads if g is not None and v.trainable]
+
+
+def get_optimizer(optimizer, learning_rate=1e-3):
+    if isinstance(optimizer, tf.train.Optimizer):
+        return optimizer
+    elif not isinstance(optimizer, str):
+        raise TypeError("Unrecognized input for optimizer. Expected TF optimizer or string. \
+                         Received {}.".format(type(optimizer)))
+
+    def momentum_opt(learning_rate):
+        return tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.8)
+
+    optimizers = {
+        'adam': tf.train.AdamOptimizer,
+        'rmsprop': tf.train.RMSPropOptimizer,
+        'sgd': tf.train.GradientDescentOptimizer,
+        'momentum': momentum_opt,
+        'adadelta': tf.train.AdadeltaOptimizer,
+        'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
+        'ftrl': tf.train.FtrlOptimizer,
+        'adamax': rinokeras_optimizers.AdaMaxOptimizer,
+    }
+
+    if optimizer in optimizers:
+        return optimizers[optimizer](learning_rate=learning_rate)
+    else:
+        raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
