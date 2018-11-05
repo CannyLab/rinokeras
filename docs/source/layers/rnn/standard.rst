@@ -1,4 +1,4 @@
-RNN
+Standard RNN
 =====================================
 
 .. automodule:: rinokeras.common.rnn

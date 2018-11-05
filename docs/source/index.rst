@@ -13,7 +13,7 @@ Installation
 
 For now, you can install with pip in develop mode using:
 
-``pip install --no-deps -e .``
+``pip install -e .``
 
 ################
 About the Name
@@ -21,11 +21,8 @@ About the Name
 
 Keras is Greek for 'horn', and rhinoceroses have horns, thus the name, rinokeras 
 
-####################
-Table of Contents
-####################
-
 .. toctree::
+    :hidden:
     :caption: Introduction
     :maxdepth: 2
 
@@ -34,6 +31,7 @@ Table of Contents
     changelog
 
 .. toctree::
+    :hidden:
     :caption: Models
     :maxdepth: 2
 
@@ -42,18 +40,42 @@ Table of Contents
     models/resnet
 
 .. toctree::
+    :hidden:
     :caption: Layers
     :maxdepth: 2
 
+    layers/layers
     layers/attention
-    layers/common
-    layers/losses
-    layers/rnn
-    layers/RMC
-    layers/distributions
+    layers/recurrent
 
 .. toctree::
-    :caption: Trainers
+    :hidden:
+    :caption: Other
     :maxdepth: 2
 
-    trainers/trainers
+    layers/losses
+    layers/distributions
+    layers/optimizers
+
+.. toctree::
+    :hidden:
+    :caption: Utilities
+    :maxdepth: 2
+
+    utils/utils
+
+.. toctree::
+    :hidden:
+    :caption: RL
+    :maxdepth: 2
+
+    rl/policies
+    rl/trainers
+
+.. toctree::
+    :hidden:
+    :caption: Train
+    :maxdepth: 2
+
+    train/graphs
+    train/experiments

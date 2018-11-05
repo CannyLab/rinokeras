@@ -16,7 +16,7 @@ def test_transformer():
     source = tf.constant(source)
     target = tf.constant(target)
 
-    output = transformer((source, target))
+    output = transformer(source, target)
 
     output = output.numpy()
     assert output.shape == (32, 10, 1000), 'Output shape does not match'
