@@ -3,6 +3,7 @@ Various utility functions that are commonly used in our models and during traini
 """
 from typing import Sequence, Tuple, Optional, Union
 import tensorflow as tf
+import tensorflow.keras.backend as K
 
 from rinokeras.common import optimizers as rinokeras_optimizers
 
@@ -196,3 +197,17 @@ def get_optimizer(optimizer, learning_rate=1e-3):
         return optimizers[optimizer](learning_rate=learning_rate)
     else:
         raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
+
+
+def load_distributed(distribution_strategy, model, filename):
+    with distribution_strategy.scope():
+        model.load_weights(filename)
+        weights = model.get_weights()
+        assign_ops = []
+        for layer in model.layers:
+            num_param = len(layer.weights)
+            layer_weights = weights[:num_param]
+            for sw, w in zip(layer.weights, layer_weights):
+                assign_ops.append(distribution_strategy.unwrap(sw.assign(w)))
+            weights = weights[num_param:]
+        K.get_session().run(assign_ops)

@@ -267,6 +267,7 @@ class QANetEncoderBlock(Model):
                  activity_regularizer=None,
                  *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        # self.layer_drop = LayerDropout(0 if dropout is None else dropout)
         self.conv_stack = Stack([QANetConvBlock(hidden_size, 7, dropout,
                                                 kernel_regularizer=kernel_regularizer,
                                                 bias_regularizer=bias_regularizer,
@@ -300,6 +301,12 @@ class QANetEncoderBlock(Model):
         conv_out = self.layer_drop_1(self.conv_stack, inputs, mask=padding_mask)  # TODO: drop each conv layer independently instead of all together
         res_attn = self.layer_drop_2(self.self_attention, conv_out, mask=self_attention_mask)
         output = self.layer_drop_3(self.feed_forward, res_attn)
+        # def subcall(inputs):
+            # conv_out = self.conv_stack(inputs, mask=padding_mask)
+            # res_attn = self.self_attention(conv_out, mask=self_attention_mask)
+            # output = self.feed_forward(res_attn)
+            # return output
+        # output = self.layer_drop(subcall, inputs)
         return output
 
 

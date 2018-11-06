@@ -229,7 +229,7 @@ class EmbeddingTranspose(Model):
 
     def call(self, inputs):
         embed_mat = self.embedding.weights[0]
-        return K.dot(inputs, K.transpose(embed_mat))
+        return K.dot(inputs, K.stop_gradient(K.transpose(embed_mat)))
 
 
 class Residual(Model):
@@ -444,7 +444,7 @@ class PositionEmbedding2D(PositionEmbedding):
 
         power = tf.range(0, hidden_size.value, 4,
                          dtype=tf.float32) / hidden_size.value
-        divisor = 10000 ** power
+        divisor = 1000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
 
