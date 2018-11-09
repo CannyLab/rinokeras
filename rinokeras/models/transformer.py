@@ -322,12 +322,14 @@ class TransformerDecoder(Model):
             return output
 
     def fast_decode(self, encoder_output, max_seq_len, output_size=None,
-                    output_dtype=tf.float32, encoder_mask=None, preembed_hook=None):
+                    output_dtype=tf.float32, encoder_mask=None, initial_input=None,
+                    preembed_hook=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
         batch_size = tf.shape(encoder_output)[0]
-        shape = (batch_size, 1) if discrete else (batch_size, 1, output_size)
-        initial_input = tf.zeros((shape), dtype=output_dtype)
+        if initial_input is not None:
+            shape = (batch_size, 1) if discrete else (batch_size, 1, output_size)
+            initial_input = tf.zeros((shape), dtype=output_dtype)
 
         def decoding_step(i, target_input, cache, output_sequence):
             if preembed_hook is not None:
@@ -339,7 +341,7 @@ class TransformerDecoder(Model):
                           seqpos=i + 1)
             cache['seqpos'] = i + 1
 
-            if discrete: 
+            if discrete:
                 output = tf.argmax(output, axis=-1, output_type=output_dtype)
 
             target_input = output
@@ -624,7 +626,7 @@ class Transformer(Model):
             activity_regularizer=self.activity_regularizer)
 
     # Test decoding. Does not use the fast-decode method (which would make this much more effective)
-    def test_decode(self, source_sequence, max_seq_len, encoder_mask=None, preembed_hook=None):
+    def test_decode(self, source_sequence, max_seq_len, encoder_mask=None, initial_input=None, preembed_hook=None):
         if self.preembedded:
             if preembed_hook is None:
                 raise ValueError('Need embedding hook for test-decode when using pre-embedded vectors')
@@ -640,7 +642,7 @@ class Transformer(Model):
         encoder_output = self.encoder(source_sequence, encoder_mask=encoder_mask)
         return self.decoder.fast_decode(encoder_output, max_seq_len, output_size=output_size,
                                         output_dtype=target_dtype, encoder_mask=encoder_mask,
-                                        preembed_hook=preembed_hook)
+                                        initial_input=initial_input, preembed_hook=preembed_hook)
 
     def call(self, source_sequence, target_sequence, encoder_mask=None,
              decoder_mask=None, shift_target_sequence_right=True, mask_future=True):
