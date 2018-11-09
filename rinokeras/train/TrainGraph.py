@@ -101,7 +101,7 @@ class TrainGraph(TestGraph):
         with tf.variable_scope(self._name):
             self._learning_rate = tf.get_variable(
                 'learning_rate', shape=(), dtype=tf.float32,
-                 initializer=tf.constant_initializer(self.initial_learning_rate), trainable=False)
+                initializer=tf.constant_initializer(self.initial_learning_rate), trainable=False)
             if not tf.executing_eagerly():
                 self._update_learning_rate_ph = tf.placeholder(
                     tf.float32, shape=(), name='learning_rate_placeholder')
