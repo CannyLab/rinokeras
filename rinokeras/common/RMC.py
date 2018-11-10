@@ -44,7 +44,7 @@ class RelationalMemoryCoreCell(tf.keras.Model):
         self.w_o = tf.keras.layers.Dense(self._mem_size, use_bias=False)
         self.u_o = tf.keras.layers.Dense(self._mem_size)
 
-    def call(self, inputs, states):
+    def call(self,  inputs, states):
         h_state, m_state = states
 
         # h_state : [batch_size x mem_slots x mem_size]

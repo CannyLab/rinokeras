@@ -326,7 +326,6 @@ class Highway(Model):
     From the paper: https://arxiv.org/abs/1607.06450
     """
     def __init__(self,
-                 convolution: bool = False,
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
                  dropout: Optional[float] = None,
@@ -334,7 +333,6 @@ class Highway(Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super(Highway, self).__init__()
-        self._convolution = convolution
         self.activation = activation
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
         self.dropout = Dropout(0 if dropout is None else dropout)
@@ -345,36 +343,18 @@ class Highway(Model):
 
     def build(self, input_shape):
         units = input_shape[-1]
-        if self._convolution:
-            self.gate = Conv1D(filters=units,
-                               kernel_size=1,
-                               padding='same',
-                               activation='sigmoid',
-                               use_bias=True,
-                               bias_initializer=self._gate_initializer,
-                               kernel_regularizer=self.kernel_regularizer,
-                               bias_regularizer=self.bias_regularizer,
-                               activity_regularizer=self.activity_regularizer)
-            self.layer = Conv1D(filters=units,
-                                kernel_size=1,
-                                padding='same',
-                                activation=self.activation,
-                                kernel_regularizer=self.kernel_regularizer,
-                                bias_regularizer=self.bias_regularizer,
-                                activity_regularizer=self.activity_regularizer)
-        else:
-            self.gate = Dense(units=units,
-                              activation='sigmoid',
-                              use_bias=True,
-                              bias_initializer=self._gate_initializer,
-                              kernel_regularizer=self.kernel_regularizer,
-                              bias_regularizer=self.bias_regularizer,
-                              activity_regularizer=self.activity_regularizer)
-            self.layer = Dense(units=units,
-                               activation=self.activation,
-                               kernel_regularizer=self.kernel_regularizer,
-                               bias_regularizer=self.bias_regularizer,
-                               activity_regularizer=self.activity_regularizer)
+        self.gate = Dense(units=units,
+                          activation='sigmoid',
+                          use_bias=True,
+                          bias_initializer=self._gate_initializer,
+                          kernel_regularizer=self.kernel_regularizer,
+                          bias_regularizer=self.bias_regularizer,
+                          activity_regularizer=self.activity_regularizer)
+        self.layer = Dense(units=units,
+                           activation=self.activation,
+                           kernel_regularizer=self.kernel_regularizer,
+                           bias_regularizer=self.bias_regularizer,
+                           activity_regularizer=self.activity_regularizer)
 
     def call(self, inputs):
         gated = self.gate(inputs)
