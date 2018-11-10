@@ -188,6 +188,7 @@ def get_optimizer(optimizer, learning_rate=1e-3):
         'sgd': tf.train.GradientDescentOptimizer,
         'momentum': momentum_opt,
         'adadelta': tf.train.AdadeltaOptimizer,
+        'adagrad': tf.train.AdagradOptimizer,
         'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
         'ftrl': tf.train.FtrlOptimizer,
         'adamax': rinokeras_optimizers.AdaMaxOptimizer,
