@@ -327,7 +327,7 @@ class TransformerDecoder(Model):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
         batch_size = tf.shape(encoder_output)[0]
-        if initial_input is not None:
+        if initial_input is None:
             shape = (batch_size, 1) if discrete else (batch_size, 1, output_size)
             initial_input = tf.zeros((shape), dtype=output_dtype)
 
@@ -470,14 +470,12 @@ class TransformerInputEmbedding(Model):
                     # We have to correct if the input embedding isn't quite right
                     self.embedding = Embedding(n_symbols, embedding_initializer.shape[1],
                                                weights=[embedding_initializer],
-                                               mask_zero=True,
                                                trainable=not freeze_embeddings)
                     self.embedding_dense = Dense(embed_size)
                     self.using_dense_embedding = True
                 else:
                     self.embedding = Embedding(n_symbols, embed_size,
-                                               weights=[embedding_initializer],
-                                               mask_zero=True)
+                                               weights=[embedding_initializer])
             else:
                 self.embedding = Embedding(n_symbols, embed_size)
         else:
