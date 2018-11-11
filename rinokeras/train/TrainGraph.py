@@ -158,6 +158,7 @@ class TrainGraph(TestGraph):
             'sgd': tf.train.GradientDescentOptimizer,
             'momentum': momentum_opt,
             'adadelta': tf.train.AdadeltaOptimizer,
+            'adagrad': tf.train.AdagradOptimizer,
             'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
             'ftrl': tf.train.FtrlOptimizer,
             'adamax': rinokeras_optimizers.AdaMaxOptimizer,
