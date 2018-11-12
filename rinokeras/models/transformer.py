@@ -348,8 +348,9 @@ class TransformerDecoder(Model):
 
             return i + 1, target_input, cache, output_sequence.write(i, tf.squeeze(output, 1))
 
+        output_shape = (None, None) if discrete else (None, None, output_size)
         inputs = [tf.constant(0), initial_input, self.get_initial_cache(max_seq_len), output_sequence]
-        shapes = [inputs[0].shape, tf.TensorShape((None, None, initial_input.shape[-1])),
+        shapes = [inputs[0].shape, tf.TensorShape(output_shape),
                   {name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs[2].items()},
                   tf.TensorShape(None)]
         _, _, _, output_sequence = tf.while_loop(
