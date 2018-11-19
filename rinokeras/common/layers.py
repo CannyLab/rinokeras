@@ -290,7 +290,7 @@ class MaskInput(Layer):
         self.percentage = percentage
         self.mask_token = mask_token
 
-    def call(self, inputs: tf.Tensor, valid_mask: Optional[tf.Tensor]=None):
+    def call(self, inputs: tf.Tensor, valid_mask: Optional[tf.Tensor] = None):
         """
         Args:
             inputs (tf.Tensor[ndims=2, int]): Tensor of values to mask
@@ -301,10 +301,16 @@ class MaskInput(Layer):
             bert_mask: Locations in the input that were masked
         """
 
-        bert_mask = K.random_uniform(K.shape(inputs)) < self.percentage
+        discrete = inputs.dtype not in [tf.float32, tf.float64]
+        mask_shape = K.shape(inputs) if discrete else K.shape(inputs)[:-1]
+
+        bert_mask = K.random_uniform(mask_shape) < self.percentage
 
         if valid_mask is not None:
             bert_mask &= valid_mask
+
+        if not discrete:
+            bert_mask = tf.expand_dims(bert_mask, -1)
 
         masked_inputs = inputs * tf.cast(~bert_mask, inputs.dtype)  # type: ignore
 
@@ -312,8 +318,14 @@ class MaskInput(Layer):
         random_bert_mask = (K.random_uniform(K.shape(bert_mask)) < 0.1) & ~token_bert_mask
         true_bert_mask = ~token_bert_mask & ~random_bert_mask
         masked_inputs += self.mask_token * tf.cast(bert_mask & token_bert_mask, inputs.dtype)  # type: ignore
-        masked_inputs += K.random_uniform(K.shape(bert_mask), 0, self.mask_token, dtype=inputs.dtype) \
-            * tf.cast(bert_mask & random_bert_mask, inputs.dtype)
+
+        if discrete:
+            masked_inputs += K.random_uniform(K.shape(bert_mask), 0, self.mask_token, dtype=inputs.dtype) \
+                * tf.cast(bert_mask & random_bert_mask, inputs.dtype)
+        else:
+            masked_inputs += (K.random_normal(K.shape(masked_inputs)) + inputs) \
+                * tf.cast(bert_mask & random_bert_mask, inputs.dtype)
+
         masked_inputs += inputs * tf.cast(bert_mask & true_bert_mask, inputs.dtype)
 
         return masked_inputs, bert_mask
