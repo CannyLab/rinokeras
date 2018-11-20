@@ -1,5 +1,6 @@
 from typing import Optional, List
 import warnings
+from collections import namedtuple
 
 import tensorflow as tf
 from tensorflow.keras import Model
@@ -10,6 +11,8 @@ import rinokeras as rk
 from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, EmbeddingTranspose, LayerDropout
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
+
+DecoderResult = namedtuple('DecoderResult', ['seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])
 
 
 class TransformerSelfAttention(Model):
@@ -323,44 +326,75 @@ class TransformerDecoder(Model):
 
     def fast_decode(self, encoder_output, max_seq_len, output_size=None,
                     output_dtype=tf.float32, encoder_mask=None, initial_input=None,
-                    preembed_hook=None):
+                    preembed_hook=None, stopping_criterion=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
         batch_size = tf.shape(encoder_output)[0]
+
         if initial_input is None:
             shape = (batch_size, 1) if discrete else (batch_size, 1, output_size)
             initial_input = tf.zeros((shape), dtype=output_dtype)
 
-        def decoding_step(i, target_input, cache, output_sequence):
+        if stopping_criterion is not None:
+            assert callable(stopping_criterion), \
+                'stopping_criterion must be a function that takes in the output at a timestep and returns \
+                 whether the timestep has finished'
+
+        def decoding_step(seqpos, inputs, cache, output_sequence, is_finished):
             if preembed_hook is not None:
                 target_input = preembed_hook(target_input)
 
-            output = self(target_input, encoder_output, encoder_mask=encoder_mask,
+            output = self(inputs, encoder_output, encoder_mask=encoder_mask,
                           decoder_mask=None, shift_target_sequence_right=False,
                           mask_future=False, cache=cache,
-                          seqpos=i + 1)
-            cache['seqpos'] = i + 1
+                          seqpos=seqpos + 1)
+            cache['seqpos'] = seqpos + 1
 
             if discrete:
                 output = tf.argmax(output, axis=-1, output_type=output_dtype)
-
             target_input = output
+            output = tf.squeeze(output, 1)
 
-            return i + 1, target_input, cache, output_sequence.write(i, tf.squeeze(output, 1))
+            if stopping_criterion is not None:
+                is_finished_new = stopping_criterion(output)
+                assert is_finished_new.dtype == tf.bool, 'stopping_criterion must return a boolean tensor'
+                is_finished = is_finished | is_finished_new
 
-        inputs = [tf.constant(0), initial_input, self.get_initial_cache(max_seq_len), output_sequence]
-        shapes = [inputs[0].shape, tf.TensorShape((None, None, initial_input.shape[-1])),
-                  {name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs[2].items()},
-                  tf.TensorShape(None)]
-        _, _, _, output_sequence = tf.while_loop(
-            lambda i, *_: i < max_seq_len,
+            result = DecoderResult(
+                seqpos=seqpos + 1,
+                inputs=target_input,
+                cache=cache,
+                output_sequence=output_sequence.write(seqpos, output),
+                is_finished=is_finished)
+
+            return result
+
+        output_shape = (None, None) if discrete else (None, None, output_size)
+
+        inputs = DecoderResult(
+            seqpos=tf.constant(0),
+            inputs=initial_input,
+            cache=self.get_initial_cache(max_seq_len),
+            output_sequence=output_sequence,
+            is_finished=tf.zeros((batch_size,), dtype=tf.bool))
+
+        shapes = DecoderResult(
+            seqpos=inputs.seqpos.shape,
+            inputs=tf.TensorShape(output_shape),
+            cache={name: getattr(el, 'shape', tf.TensorShape(None)) for name, el in inputs.cache.items()},
+            output_sequence=tf.TensorShape(None),
+            is_finished=inputs.is_finished.shape)
+
+        result  = tf.while_loop(
+            lambda seqpos, inputs, cache, output_sequence, is_finished: ~tf.reduce_all(is_finished, 0),
             decoding_step,
             inputs,
-            shapes
+            shapes,
+            maximum_iterations=max_seq_len
         )
 
         stack_shape = (1, 0) if discrete else (1, 0, 2)
-        output = tf.transpose(output_sequence.stack(), stack_shape)
+        output = tf.transpose(result.output_sequence.stack(), stack_shape)
         return output
 
     def shift_target_sequence_right(self, target_sequence: tf.Tensor) -> tf.Tensor:
