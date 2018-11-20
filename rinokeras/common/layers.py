@@ -1,5 +1,5 @@
 import collections
-from typing import Optional, Sequence, Any, Union, Callable
+from typing import Optional, Sequence, Any, Union, Callable, Tuple
 
 import tensorflow as tf
 from tensorflow.python.eager import context
@@ -14,20 +14,31 @@ from tensorflow.keras.layers import Layer, Dense, Conv1D, Conv2D, Dropout, Conv2
 import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 
-class RandomNoise(Layer):
+class RandomGaussNoise(tf.keras.layers.Layer):
     """
     Adds gaussian random noise to input with trainable standard deviation.
     """
 
-    def __init__(self, shape: Sequence[int], initial: float) -> None:
-        super(RandomNoise, self).__init__()
-        self._shape = shape
-        self._logstd = self.add_variable('logstd', shape, dtype=tf.float32,
-                                         initializer=tf.constant_initializer(initial))
+    def __init__(self, noise_shape: Optional[Tuple[int, ...]] = None, initial_logstd: float = 0) -> None:
+        super().__init__()
+        self._noise_shape = noise_shape
+        self._initial_logstd = initial_logstd
+
+    def build(self, input_shape):
+        if self._noise_shape is not None:
+            shape = self._noise_shape
+            if not input_shape[1:].is_compatible_with(tuple(dim if dim != 1 else None for dim in shape)):
+                raise ValueError("Shapes {} and {} are incompatible and cannot be broadcasted".format(
+                    input_shape[1:], shape))
+        else:
+            shape = input_shape[1:]
+        self._logstd = self.add_variable(
+            'logstd', shape, dtype=tf.float32, initializer=tf.constant_initializer(self._initial_logstd))
+        super().build(input_shape)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
-        epsilon = tf.random_normal(self._shape)
-        return inputs + epsilon * tf.exp(self._logstd)
+        epsilon = tf.random_normal(tf.shape(inputs))
+        return inputs + epsilon * tf.expand_dims(tf.exp(self._logstd), 0)
 
     @property
     def logstd(self) -> tf.Tensor:
@@ -474,6 +485,6 @@ class GatedTanh(Model):
         return self.fc(inputs) * self.gate(inputs)
 
 
-__all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
+__all__ = ['RandomGaussNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
            'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose',
            'GatedTanh']
