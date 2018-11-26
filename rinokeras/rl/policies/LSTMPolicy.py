@@ -1,111 +1,96 @@
-import tensorflow as tf
+from typing import Tuple
+from functools import reduce
+from operator import mul
 
-from rinokeras.common.rnn import EagerLSTM
+import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras.layers import LSTM, Input, Reshape
+import tensorflow.keras.backend as K
+import numpy as np
+
+from rinokeras.common.layers import Stack, DenseStack
 from .StandardPolicy import StandardPolicy
+
 
 class LSTMPolicy(StandardPolicy):
 
     def __init__(self,
-                 obs_shape,
-                 ac_shape,
-                 discrete,
-                 action_method='greedy',
-                 use_conv=False,
-                 embedding_architecture=[64, 64],
-                 logit_architecture=[64, 64],
-                 value_architecture=[64],
-                 lstm_cell_size=256,
-                 use_reward=False,
-                 initial_logstd=0):
+                 action_shape: Tuple[int, ...],
+                 action_space: str,
+                 embedding_model: Model,
+                 model_dim: int = 64,
+                 n_layers_logits: int = 1,
+                 n_layers_value: int = 1,
+                 lstm_cell_size: int = 256,
+                 take_greedy_actions: bool = False,
+                 initial_logstd: float = 0,
+                 **kwargs) -> None:
 
-        self._lstm_cell_size = lstm_cell_size
-        self._use_reward = use_reward
-        super().__init__(obs_shape, ac_shape, discrete, action_method, use_conv,
-                         embedding_architecture, logit_architecture,
-                         value_architecture, initial_logstd)
+        super().__init__(
+            action_shape, action_space, embedding_model, model_dim, n_layers_logits,
+            n_layers_value, take_greedy_actions, initial_logstd, **kwargs)
+        self.lstm_cell_size = lstm_cell_size
 
-    def _setup_agent(self):
-        super()._setup_agent()
-        self._memory_function = self._setup_memory_function()
+        self.memory_function = self._setup_memory_function()
+        if not tf.executing_eagerly():
+            self._memory_in = (Input((lstm_cell_size,)), Input((lstm_cell_size,)))
+        self._current_memory = None
 
     def _setup_memory_function(self):
-        if tf.executing_eagerly():
-            memory_func = EagerLSTM(self._lstm_cell_size,
-                                    return_sequences=True,
-                                    return_state=True)
-        else:
-            memory_func = tf.keras.layers.LSTM(self._lstm_cell_size,
-                                               return_sequences=True,
-                                               return_state=True)
-        return memory_func
+        return LSTM(self.lstm_cell_size, return_sequences=True, return_state=True)
 
-    def build(self):
+    def call(self, obs, training=False):
+
+        self._obs = obs
+
+        bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
+        obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
+
+        embedding = self.embedding_model(obs)
+
+        embedding = tf.reshape(embedding, (bs, seqlen, embedding.shape[-1]))
+        memory_out, memory_h, memory_c = self.memory_function(
+            embedding, initial_state=K.in_train_phase(None, self._memory_in, training=training))
+        memory_state = (memory_h, memory_c)
+        memory_out = tf.reshape(memory_out, (bs * seqlen, memory_out.shape[-1]))
+
+        logits = self.logits_function(memory_out)
+
+        value = tf.squeeze(self.value_function(memory_out), -1)
+        action = self.action_distribution(logits, greedy=self.take_greedy_actions)
+
+        value = tf.reshape(value, (bs, seqlen))
+        logits = tf.reshape(logits, (bs, seqlen) + self.action_shape)
+
+        self._action = action
+        self._value = value
+        self._memory_state = memory_state
+
+        if training:
+            return logits, value
+        else:
+            return action, memory_state
+
+    def predict(self, obs):
         if not self.built:
-            dummy_obs = tf.zeros((1, 1) + self._obs_shape, dtype=tf.float32)
-            dummy_rew = tf.zeros((1, 1, 1))
+            raise RuntimeError("Policy is not built, please call the policy before running predict.")
 
-            embedding = self._embedding_function(dummy_obs)
-            if self._use_reward:
-                embedding = tf.concat((embedding, dummy_rew), -1)
-            memory_embed, memory_h, memory_c = self._memory_function(embedding)
-            logits = self._logits_function(memory_embed)
-            self._value_function(memory_embed)
-            self._action_function(logits)
-            self.built = True
+        # expand time dimension of observation
+        obs = obs[:, None]
 
-    def call(self, obs, is_training=False):
-        if self._use_reward:
-            obs, rew = obs
-            # rew = np.asarray(rew, dtype=np.float32)
-        # if obs.dtype == np.uint8:
-            # obs = np.asarray(obs, np.float32) / 255
-        # else:
-            # obs = np.asarray(obs, np.float32)
-        
-        ob_dim = len(self._obs_shape)
-        if obs.ndim == ob_dim:
-            obs = obs[None, None]
-        elif obs.ndim == ob_dim + 1:
-            obs = obs[None]
-        elif obs.ndim != ob_dim + 2:
-            raise ValueError("Received observation of incorrect size. Expected {}. Received {}.".format(
-                (None, None) + self._obs_shape, obs.shape))
-
-        batch_size, timesteps = obs.shape[:2]
-        rew = tf.reshape(rew, (batch_size, timesteps, 1))
-
-        embedding = self._embedding_function(obs)
-        if self._use_reward:
-            if (rew.ndim == 2):
-                rew = tf.expand_dims(rew, 2)
-            embedding = tf.concat((embedding, rew), 2)
-
-        # embedding = tf.reshape(embedding, (batch_size, timesteps, embedding.shape[-1]))
-        memory_embed, memory_h, memory_c = self._memory_function(embedding, initial_state=self._memory)
-        self._memory = (memory_h, memory_c)
-        memory_embed = tf.reshape(memory_embed, (batch_size * timesteps, memory_embed.shape[-1]))
-            
-        logits = self._logits_function(memory_embed)
-        logits = tf.reshape(logits, (batch_size, timesteps) + self._ac_shape)
-        if is_training:
-            value = self._value_function(memory_embed)
-            return logits, tf.squeeze(value)
+        if tf.executing_eagerly():
+            self._memory_in = self._current_memory
+            action, memory = self.call(obs, is_training=False)
+            action = action.numpy()
         else:
-            action = self._action_function(logits)
-            return action.numpy() if tf.executing_eagerly() else action
+            sess = self._get_session()
+            if self._current_memory is None:
+                self._current_memory = np.zeros((obs.shape[0], self.lstm_cell_size), dtype=np.float32), \
+                    np.zeros((obs.shape[0], self.lstm_cell_size), dtype=np.float32)
+            action, memory = sess.run(
+                [self._action, self._memory_state], feed_dict={self._obs: obs, self._memory_in: self._current_memory})
+        self._current_memory = memory
+        return action[0]  # remove batch dimension
 
-    def clear_memory(self):
-        self._memory = None
-
-    def make_copy(self):
-        return self.__class__(self._obs_shape,
-                              self._ac_shape,
-                              self._discrete,
-                              self._action_method,
-                              self._use_conv,
-                              self._embedding_architecture,
-                              self._logit_architecture,
-                              self._value_architecture,
-                              self._lstm_cell_size,
-                              self._use_reward,
-                              self._initial_logstd)
+    def clear_memory(self) -> None:
+        self._current_memory = None

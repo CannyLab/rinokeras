@@ -33,18 +33,18 @@ class StandardPolicy(Model):
             raise ValueError("action_space must be one of <discrete, continuous>, received {}".format(action_space))
 
         self.action_shape = action_shape
+        self.action_space = action_space
         self.model_dim = model_dim
         self.n_layers_logits = n_layers_logits
         self.n_layers_value = n_layers_value
+        self.take_greedy_actions = take_greedy_actions
+        self.initial_logstd = initial_logstd
 
         self.embedding_model = embedding_model
         self.logits_function = self._setup_logits_function()
         self.value_function = self._setup_value_function()
         self.action_distribution = CategoricalPd(name='action') if action_space == 'discrete' \
-            else DiagGaussianPd(initial_logstd=initial_logstd, name='action')
-
-        self._take_greedy_actions = take_greedy_actions
-        self._initial_logstd = initial_logstd
+            else DiagGaussianPd(action_shape, initial_logstd=initial_logstd, name='action')
 
     def _setup_logits_function(self, activation=None):
         ac_dim = reduce(mul, self.action_shape)
@@ -59,19 +59,27 @@ class StandardPolicy(Model):
         value_function = DenseStack(self.n_layers_value * [self.model_dim] + [1], output_activation=None)
         return value_function
 
-    def call(self, obs, is_training=False):
+    def call(self, obs, training=False):
         self._obs = obs
+
+        if self._obs.shape[1].value is None:
+            bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
+            obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
 
         embedding = self.embedding_model(obs)
         logits = self.logits_function(embedding)
 
-        value = self.value_function(embedding)
-        action = self.action_distribution(logits, greedy=self._take_greedy_actions)
+        value = tf.squeeze(self.value_function(embedding), -1)
+        action = self.action_distribution(logits, greedy=self.take_greedy_actions)
+
+        if self._obs.shape[1].value is None:
+            value = tf.reshape(value, (bs, seqlen))
+            logits = tf.reshape(logits, (bs, seqlen) + self.action_shape)
 
         self._action = action
         self._value = value
 
-        if is_training:
+        if training:
             return logits, value
         else:
             return action
@@ -79,11 +87,16 @@ class StandardPolicy(Model):
     def predict(self, obs):
         if not self.built:
             raise RuntimeError("Policy is not built, please call the policy before running predict.")
+        if self._obs.shape[1].value is None:
+            obs = obs[:, None]  # Expand the time dimension
+
         if tf.executing_eagerly():
-            return self.call(obs, is_training=False).numpy()
+            action = self(obs, training=False).numpy()
         else:
             sess = self._get_session()
-            return sess.run(self._action, feed_dict={self._obs: obs})
+            action = sess.run(self._action, feed_dict={self._obs: obs})[0]
+
+        return action
 
     def logp_actions(self, logits, actions):
         return self.action_distribution.logp_actions(logits, actions)
@@ -96,3 +109,30 @@ class StandardPolicy(Model):
         if sess is None:
             raise RuntimeError("This method must be run inside a tf.Session context")
         return sess
+
+    def get_config(self):
+        config = {
+            'action_shape': self.action_shape,
+            'action_space': self.action_space,
+            'embedding_model': self.embedding_model.__class__.from_config(self.embedding_model.get_config()),
+            'model_dim': self.model_dim,
+            'n_layers_logits': self.n_layers_logits,
+            'n_layers_value': self.n_layers_value,
+            'take_greedy_actions': self.take_greedy_actions,
+            'initial_logstd': self.initial_logstd
+        }
+        return config
+
+    # TODO: This doesn't actually match how keras does from config I think
+    @classmethod
+    def from_config(cls, cfg):
+        return cls(**cfg)
+
+    def clone(self):
+        newcls = self.__class__.from_config(self.get_config())
+        newcls.build(self.input_shape)
+        newcls.set_weights(self.get_weights())
+        return newcls
+
+    def clear_memory(self) -> None:
+        pass

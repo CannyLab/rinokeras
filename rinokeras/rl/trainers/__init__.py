@@ -1,2 +1,2 @@
-from .PolicyGradient import PGTrainer
-from .PPO import PPOTrainer
+from .PolicyGradient import PolicyGradient
+from .PPO import PPO
