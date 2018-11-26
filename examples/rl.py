@@ -1,190 +1,88 @@
 import argparse
-parser = argparse.ArgumentParser(description='Reinforcement Learning Library for Research Purposes')
-parser.add_argument('env', action='store', type=str, help='environment to run on')
-parser.add_argument('alg', action='store', choices=['dqn', 'ppo', 'pg'], help='algorithm to run')
-parser.add_argument('--device', action='store', type=int, default=0, choices=[0, 1], help='which gpu device to run on')
-parser.add_argument('--policy', action='store', default='standard', choices=['standard', 'lstm', 'random'], help='which type of policy to run')
-parser.add_argument('--gamma', action='store', type=float, default=0.99, help='discount factor')
-parser.add_argument('--benchmark', action='store', type=str, default=None, help='where to save results for benchmarking')
-parser.add_argument('--loglevel', action='store', choices=['debug', 'info', 'warning'], default='info', help='hide debugging information')
-parser.add_argument('--max-episode-steps', action='store', type=int, default=-1, help='maximum number of steps to take')
-parser.add_argument('--max-learning-steps', action='store', type=int, default=5000, help='maximum number of learning steps')
-parser.add_argument('--eager', action='store_true', help='run in eager mode')
+import itertools
+
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, Input
+import numpy as np
+import gym
+# import seaborn as sns
+
+from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
+from rinokeras.rl.trainers import PolicyGradient, PPO
+from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
+from rinokeras.train import TrainGraph
+
+parser = argparse.ArgumentParser('Rinokeras RL Example Script')
+parser.add_argument('--env', type=str, default='CartPole-v0', help='Which gym environment to run on')
+parser.add_argument('--policy', type=str, choices=['standard', 'lstm'], default='standard',
+                    help='Which type of policy to run')
+parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
+                    help='Which algorithm to use to train the agent')
+parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
 args = parser.parse_args()
 
-import gym
 env = gym.make(args.env)
+policies = {
+    'standard': StandardPolicy,
+    'lstm': LSTMPolicy}
+algorithms = {
+    'vpg': PolicyGradient,
+    'ppo': PPO}
 
-import os
-import logging
-import itertools
-import pickle as pkl
-
-import numpy as np
-import tensorflow as tf
-if args.eager:
-    import tensorflow.contrib.eager as tfe
-    tf.enable_eager_execution()
-
-if not args.eager:
-    from rinokeras.rl.policies import StandardPolicy, LSTMPolicy, RandomPolicy
-    from rinokeras.rl.trainers import DQNTrainer, PGTrainer, PPOTrainer
-else:
-    from rinokeras.rl.eager.policies import StandardPolicy, LSTMPolicy
-    from rinokeras.rl.eager.trainers import PGTrainer, PPOTrainer
-from rinokeras.rl.utils import ReplayBuffer, PiecewiseSchedule
-from rinokeras.rl.env_runners import PGEnvironmentRunner, DQNEnvironmentRunner
-
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.device)
-
+# Parameters/Hyperparameters
 discrete = not isinstance(env.action_space, gym.spaces.Box)
-ob_shape = env.observation_space.shape
-ac_shape = env.action_space.n if discrete else env.action_space.shape
+action_shape = (env.action_space.n,) if discrete else env.action_space.shape
+model_dim = 64
+gamma = 0.95
+n_rollouts_per_batch = 10
+n_updates_per_batch = 1 if args.alg == 'vpg' else 3
+embedding_model = Dense(model_dim)
 
-action_method = 'greedy' if args.alg == 'dqn' else 'sample'
+# Placeholders
+obs_ph = Input((None,) + env.observation_space.shape)
+act_ph = Input((None,) + (() if discrete else env.action_space.shape), dtype=tf.int32 if discrete else tf.float32)
+val_ph = Input((None,))
+seqlen_ph = Input((), dtype=tf.int32)
 
-benchmark_results = {'args' : args}
+# Setup policy, experiment, graph
+policy = policies[args.policy](
+    action_shape, 'discrete' if discrete else 'continuous', embedding_model, model_dim,
+    initial_logstd=args.logstd, n_layers_logits=1, n_layers_value=1, take_greedy_actions=False)
 
-policy = None
-if args.policy == 'standard':
-    policy = StandardPolicy(ob_shape,
-                            ac_shape,
-                            discrete,
-                            action_method=action_method,
-                            embedding_architecture=None,
-                            value_architecture=[(64,)])
-elif args.policy == 'lstm':
-    policy = LSTMPolicy(ob_shape,
-                        ac_shape,
-                        discrete,
-                        action_method=action_method,
-                        embedding_architecture=None,
-                        value_architecture=[(64,)])
-elif args.policy == 'random':
-    policy = RandomPolicy(ob_shape, ac_shape, discrete)
+experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'))
+graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
-benchmark_results['embedding_architecture'] = policy._embedding_architecture
-benchmark_results['logit_architecture'] = policy._logit_architecture
-benchmark_results['value_architecture'] = policy._value_architecture
-benchmark_results['lstm_cell_size'] = getattr(policy, '_lstm_cell_size', None)
+runner = PGEnvironmentRunner(env, policy, gamma)
+sess = tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
 
-trainer = None
-# TODO: eager won't work b/c I removed ob_shape and ac_shape as arguments, but haven't done so for non-eager code
-if args.alg == 'dqn':
-    trainer = DQNTrainer(ob_shape, ac_shape, policy, discrete, gamma=args.gamma, target_update_freq=1000)
-elif args.alg == 'pg':
-    trainer = PGTrainer(ob_shape, ac_shape, policy, discrete, entcoeff=0)
-elif args.alg == 'ppo':
-    trainer = PPOTrainer(ob_shape, ac_shape, policy, discrete, epsilon=0.1, entcoeff=0)
+all_rewards = []
 
+# Do Training
+for t in itertools.count():
+    rollouts = []
+    for _ in range(n_rollouts_per_batch):
+        rollouts.append(next(runner))  # type: ignore
 
+    batch_rollout = BatchRollout(rollouts, variable_length=True, keep_as_separate_rollouts=True)
 
-runner = None
-max_steps = float('inf') if args.max_episode_steps <= 0 else args.max_episode_steps
-if args.alg == 'dqn':
-    replay_buffer = ReplayBuffer(10 ** 6, 4)
-    runner = DQNEnvironmentRunner(env, policy, replay_buffer, max_episode_steps=max_steps)
-elif args.alg in ['pg', 'ppo']:
-    runner = PGEnvironmentRunner(env, policy, args.gamma, max_episode_steps=max_steps)
+    if args.alg == 'ppo':
+        experiment.update_old_model()
+    for _ in range(n_updates_per_batch):
+        loss = graph.run('update', (batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
 
-benchmark_results['episode_rewards'] = []
-agent_err = [0] * 100
-value_err = [0] * 100
-if not args.eager:
-    sess = tf.InteractiveSession()
-    sess.run(tf.global_variables_initializer())
+    mean_episode_reward = np.mean(batch_rollout.episode_rew)
+    all_rewards.append(mean_episode_reward)
+    mean_episode_steps = np.mean(batch_rollout.seqlens)
+    current_episode_num = runner.episode_num
 
-loglevels = {'debug' : logging.DEBUG, 'info' : logging.INFO, 'warning' : logging.WARNING}
-logging.basicConfig(filename=None, level=loglevels[args.loglevel], format='%(message)s')
+    printstr = []
+    printstr.append('EPISODE: {:>7}'.format(current_episode_num))
+    printstr.append('MEAN REWARD: {:>6.1f}'.format(mean_episode_reward))
+    printstr.append('MEAN EPISODE STEPS: {:>5}'.format(mean_episode_steps))
+    print(', '.join(printstr))
 
-batch_size = 64 if args.alg == 'dqn' else 10
+    if t > 500:
+        break
 
-benchmark_file = None if args.benchmark is None else os.path.join('benchmark', args.benchmark) + '.pkl'
-
-if args.alg == 'dqn':
-    lr_schedule = PiecewiseSchedule([
-                                         (0,                   1e-3),
-                                         (100000, 1e-4),
-                                         (1000000,  5e-5),
-                                    ],
-                                    outside_value=5e-5)
-
-    exploration = PiecewiseSchedule(
-        [
-            (0, 1.0),
-            (1e6, 0.1),
-            (5e6, 0.01),
-        ], outside_value=0.01
-    )
-
-    for t in itertools.count():
-        if trainer.num_param_updates == args.max_learning_steps:
-            from rinokeras.rl.trainers.PPO import PPOTrainer
-            break
-        if benchmark_file and trainer.num_param_updates % 1000 == 0:
-            with open(benchmark_file, 'wb') as f:
-                pkl.dump(benchmark_results, f)
-        done = runner.step(exploration.value(t))
-        if done:
-            logging.debug(runner.summary)
-            benchmark_results['episode_rewards'].append(runner.episode_rew)
-            runner.reset()
-
-        if t > 50000 and t % 4 == 0 and replay_buffer.can_sample(batch_size):
-            batch = replay_buffer.sample(batch_size)
-            err = trainer.train(batch, lr_schedule.value(t))
-            agent_err[trainer.num_param_updates % 100] = err
-
-        if t % 10000 == 0:
-            printstr = ''
-            printstr += 'Timestep {:>6}, '.format(runner.episode_num)
-            printstr += 'Param Updates {:>6}, '.format(trainer.num_param_updates)
-            printstr += 'Reward {:>7.2f}, '.format(np.mean(benchmark_results['episode_rewards'][-100:]))
-            printstr += 'Err {:>5.2f}, '.format(np.mean(agent_err[:trainer.num_param_updates]))
-            printstr += 'Exploration {:.5f}'.format(exploration.value(t))
-            logging.debug(printstr)
-
-else:
-    lr_mult = 1.0
-    lr_schedule = PiecewiseSchedule([
-                                         (0,                   1e-3*lr_mult),
-                                         (300, 1e-4*lr_mult),
-                                         (10000,  5e-5*lr_mult),
-                                    ],
-                                    outside_value=5e-5*lr_mult)
-
-    for t in itertools.count():
-        if trainer.num_param_updates == args.max_learning_steps:
-            break
-        if benchmark_file and trainer.num_param_updates % 1000 == 0:
-            with open(benchmark_file, 'wb') as f:
-                pkl.dump(benchmark_results, f)
-        rollouts = []
-        for _ in range(batch_size):
-            runner.reset()
-            policy.clear_memory()
-            rollouts.append(runner.get_rollout())
-            logging.debug(runner.summary)
-            benchmark_results['episode_rewards'].append(runner.episode_rew)
-
-        batch = {key : np.concatenate([rollout[key] for rollout in rollouts]) for key in rollouts[0]}
-        if args.policy == 'lstm':
-            batch['obs'] = batch['obs'].reshape((batch_size, -1) + ob_shape)
-
-        policy.clear_memory()
-        err, v_err = trainer.train(batch, lr_schedule.value(t))
-        agent_err[trainer.num_param_updates % 100] = err
-        value_err[trainer.num_param_updates % 100] = v_err
-
-        if t % 3 == 0:
-            printstr = ''
-            printstr += 'Timestep {:>6}, '.format(runner.episode_num)
-            printstr += 'Param Updates {:>6}, '.format(trainer.num_param_updates)
-            printstr += 'Reward {:>7.2f}, '.format(np.mean(benchmark_results['episode_rewards'][-100:]))
-            printstr += 'Err {:>5.2f}, '.format(np.mean(agent_err[:trainer.num_param_updates]))
-            printstr += 'ValErr {:>5.2f}'.format(np.mean(value_err[:trainer.num_param_updates]))
-            logging.info(printstr)
-if benchmark_file:
-    with open(benchmark_file, 'wb') as f:
-        pkl.dump(benchmark_results, f)
+np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd)]) + '.npy', np.array(all_rewards))
