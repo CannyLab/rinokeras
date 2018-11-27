@@ -5,7 +5,6 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input
 import numpy as np
 import gym
-# import seaborn as sns
 
 from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
 from rinokeras.rl.trainers import PolicyGradient, PPO
@@ -71,6 +70,8 @@ for t in itertools.count():
     for _ in range(n_updates_per_batch):
         loss = graph.run('update', (batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
 
+    curr_std = graph.run(policy.action_distribution.logstd)
+
     mean_episode_reward = np.mean(batch_rollout.episode_rew)
     all_rewards.append(mean_episode_reward)
     mean_episode_steps = np.mean(batch_rollout.seqlens)
@@ -80,6 +81,7 @@ for t in itertools.count():
     printstr.append('EPISODE: {:>7}'.format(current_episode_num))
     printstr.append('MEAN REWARD: {:>6.1f}'.format(mean_episode_reward))
     printstr.append('MEAN EPISODE STEPS: {:>5}'.format(mean_episode_steps))
+    printstr.append('STD: {}'.format(curr_std))
     print(', '.join(printstr))
 
     if t > 500:

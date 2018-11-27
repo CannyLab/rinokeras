@@ -35,6 +35,7 @@ class LSTMPolicy(StandardPolicy):
         if not tf.executing_eagerly():
             self._memory_in = (Input((lstm_cell_size,)), Input((lstm_cell_size,)))
         self._current_memory = None
+        self._action = None
 
     def _setup_memory_function(self):
         return LSTM(self.lstm_cell_size, return_sequences=True, return_state=True)
@@ -51,7 +52,6 @@ class LSTMPolicy(StandardPolicy):
         embedding = tf.reshape(embedding, (bs, seqlen, embedding.shape[-1]))
         memory_out, memory_h, memory_c = self.memory_function(
             embedding, initial_state=K.in_train_phase(None, self._memory_in, training=training))
-        memory_state = (memory_h, memory_c)
         memory_out = tf.reshape(memory_out, (bs * seqlen, memory_out.shape[-1]))
 
         logits = self.logits_function(memory_out)
@@ -62,25 +62,25 @@ class LSTMPolicy(StandardPolicy):
         value = tf.reshape(value, (bs, seqlen))
         logits = tf.reshape(logits, (bs, seqlen) + self.action_shape)
 
-        self._action = action
-        self._value = value
-        self._memory_state = memory_state
-
         if training:
             return logits, value
         else:
-            return action, memory_state
+            return action, memory_h, memory_c
 
     def predict(self, obs):
-        if not self.built:
-            raise RuntimeError("Policy is not built, please call the policy before running predict.")
+        if not tf.executing_eagerly():
+            if not self.built:
+                raise RuntimeError("You must build the model before calling predict")
+            if self._action is None:
+                self._action, memory_h, memory_c = self(self._obs, training=False)
+                self._memory_state = (memory_h, memory_c)
 
         # expand time dimension of observation
         obs = obs[:, None]
 
         if tf.executing_eagerly():
             self._memory_in = self._current_memory
-            action, memory = self.call(obs, is_training=False)
+            action, memory = self.call(obs, training=False)
             action = action.numpy()
         else:
             sess = self._get_session()
