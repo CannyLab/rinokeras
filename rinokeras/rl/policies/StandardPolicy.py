@@ -85,14 +85,15 @@ class StandardPolicy(Model):
             return action
 
     def predict(self, obs):
-        if not self.built:
-            raise RuntimeError("Policy is not built, please call the policy before running predict.")
-        if self._obs.shape[1].value is None:
-            obs = obs[:, None]  # Expand the time dimension
 
         if tf.executing_eagerly():
+            obs = tf.cast(tf.constant(obs), tf.float32)
             action = self(obs, training=False).numpy()
         else:
+            if not self.built:
+                raise RuntimeError("Policy is not built, please call the policy before running predict.")
+            if self._obs.shape[1].value is None:
+                obs = obs[:, None]  # Expand the time dimension
             sess = self._get_session()
             action = sess.run(self._action, feed_dict={self._obs: obs})[0]
 
