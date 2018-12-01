@@ -127,6 +127,10 @@ class Stack(Model):
         }
         return config
 
+    @classmethod
+    def from_config(cls, cfg):
+        return cls(**cfg)
+
 
 class Conv2DStack(Stack):
     """
@@ -265,7 +269,7 @@ class DenseStack(Stack):
             'layers': self.initial_layer_config,
             'batch_norm': self.batch_norm,
             'activation': self.activation,
-            'output_acitvation': self.output_activation
+            'output_activation': self.output_activation
         }
 
         base_config = super().get_config()
