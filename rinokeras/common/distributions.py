@@ -1,55 +1,97 @@
+from abc import ABC, abstractmethod
 from functools import reduce
 from operator import mul
+from typing import Optional, Tuple
 
 import tensorflow as tf
+import numpy as np
+from rinokeras.common.layers import RandomGaussNoise
 
 
-class Pd(tf.keras.layers.Layer):
+class Pd(tf.keras.Model, ABC):
 
-    def __init__(self, out_shape):
-        self._out_shape = out_shape
-        self._out_dim = reduce(mul, out_shape)
-        self.bias = self.add_variable('bias', self._out_dim)
+    @abstractmethod
+    def call(self, logits, greedy=False):
+        return NotImplemented
 
-    def build(self, inputs):
-        self.kernel = self.add_variable('kernel', (inputs[-1], self._out_dim),
-                                        dtype=tf.float32, initializer=tf.keras.initializers.glorot_uniform())
+    @abstractmethod
+    def logp_actions(self, logits, actions):
+        return NotImplemented
 
-    def call(self, inputs):
-        logits = tf.matmul(self.kernel, inputs) + self.bias
-        logits = tf.reshape(logits, (-1,) + self._out_shape)
-        return logits
+    def prob_actions(self, logits, actions):
+        return tf.exp(self.logp(logits, actions))
+
+    @abstractmethod
+    def entropy(self, logits):
+        return NotImplemented
 
 
 class CategoricalPd(Pd):
 
-    def call(self, inputs, sample=False, greedy=False):
-        logits = super().call(inputs)
-        if sample:
-            return tf.squeeze(tf.argmax(logits, -1)) if greedy else tf.squeeze(tf.multinomial(logits, -1))
+    def call(self, logits, greedy=False):
+        if greedy:
+            action = tf.argmax(logits, -1)
         else:
-            return logits
+            if logits.shape.ndims == 2:
+                action = tf.squeeze(tf.multinomial(logits, 1), -1)
+            else:
+
+                fixed_shapes = logits.shape.as_list()[:-1]
+                variable_shapes = tf.shape(logits)[:-1]
+                action_shape = [fs if fs is not None else variable_shapes[i] for i, fs in enumerate(fixed_shapes)]
+
+                logits = tf.reshape(logits, (-1, logits.shape[-1]))
+                action = tf.squeeze(tf.multinomial(logits, 1), -1)
+                action = tf.reshape(action, action_shape)
+
+        return action
+
+    def logp_actions(self, logits, actions):
+        return -tf.nn.sparse_softmax_cross_entropy_with_logits(labels=actions, logits=logits)
+
+    def entropy(self, logits):
+        # Have to calculate these manually b/c logp_action provides probabilities
+        # for a specific action.
+        probs = tf.nn.softmax(logits)
+        logprobs = tf.log(probs)
+        return - tf.reduce_mean(probs * logprobs, axis=-1)
 
 
-class DiagGaussianPd(tf.keras.layers.Layer):
+class DiagGaussianPd(Pd):
 
-    def __init__(self, out_shape, initial):
-        super().__init__(out_shape)
-        self._logstd = self.add_variable('logstd', out_shape, dtype=tf.float32,
-                                         initializer=tf.constant_initializer(initial))
+    def __init__(self,
+                 action_shape: Tuple[int],
+                 noise_shape: Optional[Tuple[int]] = None,
+                 initial_logstd: float = 0, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._action_shape = action_shape
+        self._ndim_action = len(action_shape)
+        self._noise_shape = noise_shape
+        self._initial_logstd = initial_logstd
 
-    def call(self, inputs, sample=False):
-        mean = super().call(inputs)
-        epsilon = tf.random_normal(self.output_shape)
-        return mean + epsilon * self.std
+    def build(self, input_shape):
+        self._add_noise = RandomGaussNoise(self._noise_shape, self._initial_logstd)
+        # super().build(input_shape)
 
-    @property
-    def logstd(self):
-        return self._logstd
+    def call(self, logits, greedy=False):
+        return logits if greedy else self._add_noise(logits)
+
+    def logp_actions(self, logits, actions):
+        sqdiff = tf.squared_difference(actions, logits)
+        reduction_axes = np.arange(-1, -self._ndim_action - 1, -1)
+        divconst = np.log(2.0 * np.pi) * tf.cast(tf.reduce_prod(tf.shape(actions)[1:]), tf.float32) + tf.reduce_sum(self.logstd)
+        return -0.5 * (tf.reduce_sum(sqdiff / self.std, reduction_axes) + divconst)
+
+    def entropy(self, logits):
+        return tf.reduce_sum(self._add_noise.logstd + 0.5 * np.log(2.0 * np.pi * np.e))
 
     @property
     def std(self):
-        return tf.exp(self._logstd)
+        return self._add_noise.std
+
+    @property
+    def logstd(self):
+        return self._add_noise.logstd
 
 
 __all__ = ['Pd', 'CategoricalPd', 'DiagGaussianPd']

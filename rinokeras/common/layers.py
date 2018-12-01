@@ -1,5 +1,5 @@
 import collections
-from typing import Optional, Sequence, Any, Union, Callable
+from typing import Optional, Sequence, Any, Union, Tuple, Dict
 
 import tensorflow as tf
 from tensorflow.python.eager import context
@@ -9,25 +9,36 @@ from tensorflow.python.ops import standard_ops
 from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import nn
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Layer, Dense, Conv1D, Conv2D, Dropout, Conv2DTranspose, \
+from tensorflow.keras.layers import Layer, Dense, Conv2D, Dropout, Conv2DTranspose, \
     BatchNormalization, Flatten, Activation, Embedding
 import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 
-class RandomNoise(Layer):
+class RandomGaussNoise(tf.keras.layers.Layer):
     """
     Adds gaussian random noise to input with trainable standard deviation.
     """
 
-    def __init__(self, shape: Sequence[int], initial: float) -> None:
-        super(RandomNoise, self).__init__()
-        self._shape = shape
-        self._logstd = self.add_variable('logstd', shape, dtype=tf.float32,
-                                         initializer=tf.constant_initializer(initial))
+    def __init__(self, noise_shape: Optional[Tuple[int, ...]] = None, initial_logstd: float = 0) -> None:
+        super().__init__()
+        self._noise_shape = noise_shape
+        self._initial_logstd = initial_logstd
+
+    def build(self, input_shape):
+        if self._noise_shape is not None:
+            shape = self._noise_shape
+            if not input_shape[1:].is_compatible_with(tuple(dim if dim != 1 else None for dim in shape)):
+                raise ValueError("Shapes {} and {} are incompatible and cannot be broadcasted".format(
+                    input_shape[1:], shape))
+        else:
+            shape = input_shape[1:]
+        self._logstd = self.add_weight(
+            'logstd', shape, dtype=tf.float32, initializer=tf.constant_initializer(self._initial_logstd))
+        super().build(input_shape)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
-        epsilon = tf.random_normal(self._shape)
-        return inputs + epsilon * tf.exp(self._logstd)
+        epsilon = tf.random_normal(tf.shape(inputs))
+        return inputs + epsilon * tf.expand_dims(tf.exp(self._logstd), 0)
 
     @property
     def logstd(self) -> tf.Tensor:
@@ -37,6 +48,13 @@ class RandomNoise(Layer):
     def std(self) -> tf.Tensor:
         return tf.exp(self._logstd)
 
+    def get_config(self) -> Dict:
+        config = {
+            'noise_shape': self._noise_shape,
+            'initial_logstd': self._initial_logstd
+        }
+        return config
+
 
 # https://github.com/keras-team/keras/issues/3878
 class LayerNorm(Layer):
@@ -45,12 +63,12 @@ class LayerNorm(Layer):
     """
 
     def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, **kwargs) -> None:
+        super().__init__(**kwargs)
         if isinstance(axis, collections.Sequence):
             self.axis: Sequence[int] = axis
         else:
             self.axis: Sequence[int] = (axis,)
         self.eps = eps
-        super(LayerNorm, self).__init__(**kwargs)
 
     def build(self, input_shape):
         shape = [input_shape[axis] for axis in self.axis]
@@ -70,6 +88,13 @@ class LayerNorm(Layer):
         std = K.std(inputs, axis=self.axis, keepdims=True)
         return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
 
+    def get_config(self) -> Dict:
+        config = {
+            'axis': self.axis,
+            'eps': self.eps
+        }
+        return config
+
 # I presume this is just how Sequential is added but at the moment Sequential
 # requires input size to be specified at the begining
 
@@ -79,7 +104,7 @@ class Stack(Model):
     A re-implementation of Keras's Sequential layer to work well with tf eager.
     """
     def __init__(self, layers: Optional[Sequence[Any]] = None, *args, **kwargs) -> None:
-        super(Stack, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         # self._call = None
         # self._layer_list = tf.contrib.checkpoint.List()
         if layers is not None:
@@ -96,6 +121,12 @@ class Stack(Model):
             output = layer(output, **kwargs)
         return output
 
+    def get_config(self) -> Dict:
+        config = {
+            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layers],
+        }
+        return config
+
 
 class Conv2DStack(Stack):
     """
@@ -110,8 +141,16 @@ class Conv2DStack(Stack):
                  padding: str = 'same',
                  flatten_output: bool = True,
                  **kwargs) -> None:
-        super(Conv2DStack, self).__init__()
+        super().__init__(**kwargs)
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.batch_norm = batch_norm
+        self.activation = activation
+        self.padding = padding
+        self.flatten_output = flatten_output
+
         for fsize, ks, stride in zip(filters, kernel_size, strides):
             self.add(Conv2D(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
@@ -119,6 +158,22 @@ class Conv2DStack(Stack):
             self.add(Activation(activation))
         if flatten_output:
             self.add(Flatten())
+
+    def get_config(self) -> Dict:
+        config = {
+            'filters': self.filters,
+            'kernel_size': self.kernel_size,
+            'strides': self.strides,
+            'batch_norm': self.batch_norm,
+            'activation': self.activation,
+            'padding': self.padding,
+            'flatten_output': self.flatten_output
+        }
+
+        base_config = super().get_config()
+        if 'layers' in base_config:
+            del base_config['layers']
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class Deconv2DStack(Stack):
@@ -136,8 +191,16 @@ class Deconv2DStack(Stack):
                  padding: str = 'same',
                  flatten_output: bool = True,
                  **kwargs) -> None:
-        super(Deconv2DStack, self).__init__()
+        super().__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.batch_norm = batch_norm
+        self.activation = activation
+        self.padding = padding
+        self.flatten_output = flatten_output
+
         for fsize, ks, stride in zip(filters, kernel_size, strides):
             self.add(Conv2DTranspose(fsize, ks, stride, padding=padding, **kwargs))
             if batch_norm:
@@ -145,6 +208,22 @@ class Deconv2DStack(Stack):
             self.add(Activation(activation))
         if flatten_output:
             self.add(Flatten())
+
+    def get_config(self) -> Dict:
+        config = {
+            'filters': self.filters,
+            'kernel_size': self.kernel_size,
+            'strides': self.strides,
+            'batch_norm': self.batch_norm,
+            'activation': self.activation,
+            'padding': self.padding,
+            'flatten_output': self.flatten_output
+        }
+
+        base_config = super().get_config()
+        if 'layers' in base_config:
+            del base_config['layers']
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class DenseStack(Stack):
@@ -157,7 +236,13 @@ class DenseStack(Stack):
                  activation: str = 'relu',
                  output_activation: Optional[str] = None,
                  **kwargs) -> None:
-        super(DenseStack, self).__init__()
+        super().__init__()
+
+        self.initial_layer_config = tuple(layers)
+        self.batch_norm = batch_norm
+        self.activation = activation
+        self.output_activation = output_activation
+
         if layers is None:
             layers = []
         for _, layer in enumerate(layers[:-1]):
@@ -174,6 +259,19 @@ class DenseStack(Stack):
         self.add(Dense(*out_layer, **kwargs))
         if output_activation is not None:
             self.add(Activation(output_activation))
+
+    def get_config(self) -> Dict:
+        config = {
+            'layers': self.initial_layer_config,
+            'batch_norm': self.batch_norm,
+            'activation': self.activation,
+            'output_acitvation': self.output_activation
+        }
+
+        base_config = super().get_config()
+        if 'layers' in base_config:
+            del base_config['layers']
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class DenseTranspose(Layer):
@@ -237,8 +335,8 @@ class Residual(Model):
     Adds a residual connection between layers. If input to layer is a tuple, adds output to the first element
     of the tuple.
     """
-    def __init__(self, layer: Callable) -> None:
-        super(Residual, self).__init__()
+    def __init__(self, layer: Layer, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.layer = layer
 
     def call(self, inputs, *args, **kwargs):
@@ -246,6 +344,13 @@ class Residual(Model):
         residual = inputs + layer_out
 
         return residual
+
+    def get_config(self) -> Dict:
+        config = {
+            'layer': self.layer.__class__.from_config(self.layer.get_config())
+        }
+
+        return config
 
 
 class LayerDropout(Model):
@@ -262,7 +367,7 @@ class LayerDropout(Model):
     """
 
     def __init__(self, rate: float, *args, **kwargs) -> None:
-        super(LayerDropout, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.rate = rate
 
     def call(self, layer, inputs, *args, **kwargs):
@@ -270,6 +375,13 @@ class LayerDropout(Model):
             K.switch(K.random_uniform([]) > self.rate, layer(inputs, *args, **kwargs), inputs),
             layer(inputs, *args, **kwargs))
         return output
+
+    def get_config(self) -> Dict:
+        config = {
+            'rate': self.rate
+        }
+
+        return config
 
 
 class MaskInput(Layer):
@@ -284,7 +396,7 @@ class MaskInput(Layer):
     """
 
     def __init__(self, percentage: float, mask_token: int, *args, **kwargs) -> None:
-        super(MaskInput, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if not 0 <= percentage < 1:
             raise ValueError("Masking percentage must be in [0, 1). Received {}".format(percentage))
         self.percentage = percentage
@@ -330,6 +442,14 @@ class MaskInput(Layer):
 
         return masked_inputs, bert_mask
 
+    def get_config(self) -> Dict:
+        config = {
+            'percentage': self.percentage,
+            'mask_token': self.mask_token
+        }
+
+        return config
+
 
 class Highway(Model):
     """
@@ -343,9 +463,11 @@ class Highway(Model):
                  dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
-        super(Highway, self).__init__()
+                 activity_regularizer=None,
+                 **kwargs) -> None:
+        super().__init__(**kwargs)
         self.activation = activation
+        self.gate_bias = gate_bias
         self._gate_initializer = tf.keras.initializers.Constant(gate_bias)
         self.dropout = Dropout(0 if dropout is None else dropout)
 
@@ -375,6 +497,18 @@ class Highway(Model):
             transformed = self.dropout(transformed)
         return gated * transformed + (1 - gated) * inputs
 
+    def get_config(self) -> Dict:
+        config = {
+            'activation': self.activation,
+            'gate_bias': self.gate_bias,
+            'dropout': self.dropout,
+            'kernel_regularizer': tf.keras.regularizers.serialize(self.kernel_regularizer),
+            'bias_regularizer': tf.keras.regularizers.serialize(self.bias_regularizer),
+            'activity_regularizer': tf.keras.regularizers.serialize(self.activity_regularizer)
+        }
+
+        return config
+
 
 class PositionEmbedding(Model):
     """
@@ -382,8 +516,8 @@ class PositionEmbedding(Model):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self) -> None:
-        super(PositionEmbedding, self).__init__()
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
@@ -420,6 +554,10 @@ class PositionEmbedding(Model):
 
         return inputs + position_embedding
 
+    def get_config(self) -> Dict:
+        config: Dict = {}
+        return config
+
 
 class PositionEmbedding2D(PositionEmbedding):
     """
@@ -427,8 +565,8 @@ class PositionEmbedding2D(PositionEmbedding):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self):
-        super(PositionEmbedding2D, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
@@ -477,6 +615,12 @@ class GatedTanh(Model):
 
     def __init__(self, n_units, kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None):
         super().__init__()
+
+        self.n_units = n_units
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
+
         self.fc = Dense(n_units, 'tanh', kernel_regularizer=kernel_regularizer,
                         bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
         self.gate = Dense(n_units, 'sigmoid', kernel_regularizer=kernel_regularizer,
@@ -485,7 +629,17 @@ class GatedTanh(Model):
     def call(self, inputs):
         return self.fc(inputs) * self.gate(inputs)
 
+    def get_config(self) -> Dict:
+        config = {
+            'n_units': self.n_units,
+            'kernel_regularizer': tf.keras.regularizers.serialize(self.kernel_regularizer),
+            'bias_regularizer': tf.keras.regularizers.serialize(self.bias_regularizer),
+            'activity_regularizer': tf.keras.regularizers.serialize(self.activity_regularizer)
+        }
 
-__all__ = ['RandomNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
+        return config
+
+
+__all__ = ['RandomGaussNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
            'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose',
            'GatedTanh']

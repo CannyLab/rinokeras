@@ -4,134 +4,135 @@ from functools import reduce
 import tensorflow as tf
 import numpy as np
 
+from typing import Tuple
+
 from .Policy import Policy
-from rinokeras.common.layers import Stack, Conv2DStack, DenseStack, RandomNoise
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Reshape
+from rinokeras.common.layers import Stack, DenseStack
+from rinokeras.common.distributions import CategoricalPd, DiagGaussianPd
 
-class StandardPolicy(Policy):
 
-    def __init__(self, 
-                 obs_shape,
-                 ac_shape, 
-                 discrete,
-                 action_method='greedy',
-                 use_conv=False,
-                 embedding_architecture=[64, 64],
-                 logit_architecture=[64, 64],
-                 value_architecture=[64],
-                 initial_logstd=0):
+class StandardPolicy(Model):
 
-        super().__init__(obs_shape, ac_shape, discrete)
-        self._action_method = action_method
-        self._use_conv = use_conv
-        self._embedding_architecture = embedding_architecture
-        self._logit_architecture = logit_architecture
-        self._value_architecture = value_architecture
-        self._initial_logstd = initial_logstd
+    def __init__(self,
+                 action_shape: Tuple[int, ...],
+                 action_space: str,
+                 embedding_model: Model,
+                 model_dim: int = 64,
+                 n_layers_logits: int = 1,
+                 n_layers_value: int = 1,
+                 take_greedy_actions: bool = False,
+                 initial_logstd: float = 0,
+                 **kwargs) -> None:
 
-        self.built = False
-        self._setup_agent()
-        self.build()
+        super().__init__(**kwargs)
+        if not isinstance(action_shape, (tuple, list)):
+            raise TypeError("Expected tuple or list for action shape, received {}".format(type(action_shape)))
+        if action_space not in ['discrete', 'continuous']:
+            raise ValueError("action_space must be one of <discrete, continuous>, received {}".format(action_space))
 
-    def _setup_agent(self):
-        self._embedding_function = self._setup_embedding_function()
-        self._logits_function = self._setup_logit_function()
-        self._value_function = self._setup_value_function()
-        self._action_function = self._setup_action_function()
+        self.action_shape = action_shape
+        self.action_space = action_space
+        self.model_dim = model_dim
+        self.n_layers_logits = n_layers_logits
+        self.n_layers_value = n_layers_value
+        self.take_greedy_actions = take_greedy_actions
+        self.initial_logstd = initial_logstd
 
-    def _setup_action_function(self):
-        if self._discrete and self._action_method == 'greedy':
-            def get_action(logits):
-                return tf.squeeze(tf.argmax(logits, 1))
+        self.embedding_model = embedding_model
+        self.logits_function = self._setup_logits_function()
+        self.value_function = self._setup_value_function()
+        self.action_distribution = CategoricalPd(name='action') if action_space == 'discrete' \
+            else DiagGaussianPd(action_shape, initial_logstd=initial_logstd, name='action')
 
-            return get_action
-        
-        elif self._discrete and self._action_method == 'sample':
-            def get_action(logits):
-                return tf.squeeze(tf.multinomial(logits, 1))
+    def _setup_logits_function(self, activation=None):
+        ac_dim = reduce(mul, self.action_shape)
 
-            return get_action
-
-        elif not self._discrete and self._action_method == 'greedy':
-            def get_action(logits):
-                return tf.squeeze(logits)
-
-            return get_action
-
-        elif not self._discrete and self._action_method == 'sample':
-            get_action = RandomNoise(self._ac_shape, self._initial_logstd)
-
-            return get_action
-
-    def _setup_embedding_function(self):
-        return Conv2DStack(self._embedding_architecture) if self._use_conv \
-            else DenseStack(self._embedding_architecture, output_activation='relu')
-
-    def _setup_logit_function(self, activation=None):
-        ac_dim = reduce(mul, self._ac_shape)
-
-        if self._logit_architecture is None:
-            self._logit_architecture = []
-        logit_function = Stack()
-        logit_function.add(DenseStack(self._logit_architecture + [ac_dim], output_activation=activation))
-        logit_function.add(tf.keras.layers.Reshape(self._ac_shape))
-        return logit_function
+        logits_function = Stack(name='logits')
+        logits_function.add(
+            DenseStack(self.n_layers_logits * [self.model_dim] + [ac_dim], output_activation=activation))
+        logits_function.add(Reshape(self.action_shape))
+        return logits_function
 
     def _setup_value_function(self):
-        if self._value_architecture is None:
-            return None
-        value_function = DenseStack(self._value_architecture + [1])
-        return value_function 
+        value_function = DenseStack(self.n_layers_value * [self.model_dim] + [1], output_activation=None)
+        return value_function
 
-    def build(self):
+    def call(self, obs, training=False):
+        self._obs = obs
+
+        if self._obs.shape[1].value is None:
+            bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
+            obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
+
+        embedding = self.embedding_model(obs)
+        logits = self.logits_function(embedding)
+
+        value = tf.squeeze(self.value_function(embedding), -1)
+        action = self.action_distribution(logits, greedy=self.take_greedy_actions)
+
+        if self._obs.shape[1].value is None:
+            value = tf.reshape(value, (bs, seqlen))
+            logits = tf.reshape(logits, (bs, seqlen) + self.action_shape)
+
+        self._action = action
+        self._value = value
+
+        if training:
+            return logits, value
+        else:
+            return action
+
+    def predict(self, obs):
         if not self.built:
-            dummy_obs = tf.zeros((1,) + self._obs_shape, dtype=tf.float32)
-            
-            embedding = self._embedding_function(dummy_obs)
-            logits = self._logits_function(embedding)
-            self._value_function(embedding)
-            self._action_function(logits)
-            self.built = True
+            raise RuntimeError("Policy is not built, please call the policy before running predict.")
+        if self._obs.shape[1].value is None:
+            obs = obs[:, None]  # Expand the time dimension
 
-    def call(self, obs, is_training=False):
-        if obs.dtype == np.uint8:
-            obs = np.asarray(obs, np.float32) / 255
+        if tf.executing_eagerly():
+            action = self(obs, training=False).numpy()
         else:
-            obs = np.asarray(obs, np.float32)
-        embedding = self._embedding_function(obs)
-        logits = self._logits_function(embedding)
-        if is_training:
-            value = self._value_function(embedding)
-            return logits, tf.squeeze(value)
-        else:
-            action = self._action_function(logits)
-            return action.numpy()
+            sess = self._get_session()
+            action = sess.run(self._action, feed_dict={self._obs: obs})[0]
 
-    def predict(self, obs, return_activations=False):
-        return self.call(obs, is_training=False)
+        return action
 
-    def get_neg_logp_actions(self, logits, actions):
-        if self._discrete:
-            return tf.nn.sparse_softmax_cross_entropy_with_logits(labels=actions, logits=logits)
-        else:
-            return 0.5 * tf.reduce_sum(
-                tf.square((actions - logits) / self._action_function.std), np.arange(1, len(self._ac_shape) + 1)) \
-                + 0.5 * np.log(2.0 * np.pi) * reduce(mul, self._ac_shape) + tf.reduce_sum(self._action_function.logstd)
+    def logp_actions(self, logits, actions):
+        return self.action_distribution.logp_actions(logits, actions)
 
     def entropy(self, logits):
-        if self._discrete:
-            probs = tf.nn.softmax(logits)
-            logprobs = tf.log(probs)
-            return - tf.reduce_sum(probs * logprobs, 1)
-        else:
-            return tf.reduce_sum(self._action_function.logstd + 0.5 * np.log(2.0 * np.pi * np.e))
+        return self.action_distribution.entropy(logits)
 
-    def make_copy(self):
-        return self.__class__(self._obs_shape,
-                              self._ac_shape,
-                              self._discrete,
-                              self._action_method,
-                              self._use_conv,
-                              self._embedding_architecture,
-                              self._logit_architecture,
-                              self._value_architecture,
-                              self._initial_logstd)
+    def _get_session(self):
+        sess = tf.get_default_session()
+        if sess is None:
+            raise RuntimeError("This method must be run inside a tf.Session context")
+        return sess
+
+    def get_config(self):
+        config = {
+            'action_shape': self.action_shape,
+            'action_space': self.action_space,
+            'embedding_model': self.embedding_model.__class__.from_config(self.embedding_model.get_config()),
+            'model_dim': self.model_dim,
+            'n_layers_logits': self.n_layers_logits,
+            'n_layers_value': self.n_layers_value,
+            'take_greedy_actions': self.take_greedy_actions,
+            'initial_logstd': self.initial_logstd
+        }
+        return config
+
+    # TODO: This doesn't actually match how keras does from config I think
+    @classmethod
+    def from_config(cls, cfg):
+        return cls(**cfg)
+
+    def clone(self):
+        newcls = self.__class__.from_config(self.get_config())
+        newcls.build(self.input_shape)
+        newcls.set_weights(self.get_weights())
+        return newcls
+
+    def clear_memory(self) -> None:
+        pass

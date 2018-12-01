@@ -24,7 +24,7 @@ class RinokerasGraph(ABC):
         self.inputs = ()
 
     def _map_to_placeholders(self, placeholders, inputs, feed_dict):
-        if isinstance(placeholders, tf.placeholder):
+        if isinstance(placeholders, tf.Tensor):
             feed_dict[placeholders] = inputs
         elif isinstance(placeholders, list) and isinstance(inputs, list):
             for ph, input_ in zip(placeholders, inputs):

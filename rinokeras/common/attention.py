@@ -189,7 +189,7 @@ class ScaledDotProductSimilarity(Layer):
         """
         key_dim = tf.cast(tf.shape(keys)[-1], tf.float32)
 
-        similarity = tf.matmul(queries, keys, transpose_b=True) / tf.sqrt(key_dim)
+        similarity = tf.matmul(queries / tf.sqrt(key_dim), keys, transpose_b=True)
 
         return similarity
 
@@ -247,6 +247,7 @@ class AttentionMap(Model):
         self.similarity_metric = similarity_metric
         self.attention_function = attention_function
         self.apply_mask = ApplyAttentionMask()
+        assert dropout is not None
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, queries, keys, values, mask=None):
@@ -262,8 +263,10 @@ class AttentionMap(Model):
         similarity = self.similarity_metric(queries, keys)
         masked_similarity = self.apply_mask(similarity, mask=mask)
         # (batch_size, heads, n_queries, n_keyval)
-        weights = self.attention_function(masked_similarity)
-
+        if self.attention_function == tf.nn.softmax:
+            weights = self.attention_function(masked_similarity - tf.reduce_max(masked_similarity, -1, keepdims=True))
+        else:
+            weights = self.attention_function(masked_similarity)
         weights = self.dropout(weights)
         output = tf.matmul(weights, values)
         return output, weights
