@@ -47,12 +47,18 @@ class CategoricalPd(Pd):
         return action
 
     def logp_actions(self, logits, actions):
-        return -tf.nn.sparse_softmax_cross_entropy_with_logits(labels=actions, logits=logits)
+        probs = tf.nn.softmax(logits - tf.reduce_max(logits, -1, keepdims=True))
+        indices = tf.one_hot(actions, depth=probs.shape[-1])
+        prob_act = tf.reduce_max(probs * indices, -1)
+        logp_act = tf.log(prob_act + 1e-8)
+        return logp_act
+        # return -tf.nn.sparse_softmax_cross_entropy_with_logits(
+            # labels=actions, logits=logits - tf.reduce_max(logits, -1, keepdims=True))
 
     def entropy(self, logits):
         # Have to calculate these manually b/c logp_action provides probabilities
         # for a specific action.
-        probs = tf.nn.softmax(logits)
+        probs = tf.nn.softmax(logits - tf.reduce_max(logits, -1, keepdims=True))
         logprobs = tf.log(probs)
         return - tf.reduce_mean(probs * logprobs, axis=-1)
 
