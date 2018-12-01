@@ -35,7 +35,7 @@ model_dim = 64
 gamma = 0.95
 n_rollouts_per_batch = 10
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3
-embedding_model = Dense(model_dim)
+embedding_model = Dense(model_dim, activation='relu')
 
 # Placeholders
 obs_ph = Input((None,) + env.observation_space.shape)
