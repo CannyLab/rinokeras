@@ -71,12 +71,13 @@ class TestGraph(RinokerasGraph):
 
         reduced_total = self.distribution_strategy.reduce(
             tf.VariableAggregation.MEAN, self._distributed_total_loss, central_device)
-        to_reduce = [(loss, central_device) for loss in self._distributed_losses]
+        to_reduce = [(metric, central_device) for name, metric in self._distributed_losses.items()]
         reduced_losses = self.distribution_strategy.batch_reduce(
             tf.VariableAggregation.MEAN, to_reduce)
 
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
-        self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
+        self.losses = {name: self.distribution_strategy.unwrap(metric)[0] for name, metric in zip(self._distributed_losses, reduced_losses)}
+        # self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
         self._global_step = self.distribution_strategy.unwrap(self._distributed_global_step)[0]
 
     def _initialize_graph(self):
@@ -121,7 +122,9 @@ class TestGraph(RinokerasGraph):
             tf.Tensor, Union[tf.Tensor, Sequence[tf.Tensor]]: Total loss, and sequence of loss tensors
         """
         if isinstance(losses, tuple) or isinstance(losses, list):
-            total_loss = losses[0]
+            total_loss, losses = losses
+            assert isinstance(losses, dict)
+            losses['Loss'] = total_loss
         else:
             total_loss = losses
             losses = (losses,)
