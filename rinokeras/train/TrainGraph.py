@@ -65,7 +65,7 @@ class TrainGraph(TestGraph):
             distribution_strategy=experiment.distribution_strategy)
 
     def _distributed_fn(self):
-        self._distributed_global_step = tf.train.get_or_create_global_step()
+        # self._distributed_global_step = tf.train.get_or_create_global_step()
 
         def loss_fn(inputs):
             outputs = self.build_model(inputs)
@@ -93,8 +93,8 @@ class TrainGraph(TestGraph):
             self.distribution_strategy.call_for_each_tower(grads_fn, self.inputs)
 
         self.update_op = self.optimizer._distributed_apply(
-            self.distribution_strategy, self._distributed_grads,
-            global_step=self._distributed_global_step)
+            self.distribution_strategy, self._distributed_grads)
+            # global_step=self._distributed_global_step)
 
     def _initialize_graph(self):
         K.set_learning_phase(1)

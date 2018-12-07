@@ -55,7 +55,7 @@ class TestGraph(RinokerasGraph):
 
     def _distributed_fn(self):
 
-        self._distributed_global_step = tf.train.get_or_create_global_step()
+        # self._distributed_global_step = tf.train.get_or_create_global_step()
 
         def loss_fn(inputs):
             outputs = self.build_model(inputs)
@@ -78,7 +78,7 @@ class TestGraph(RinokerasGraph):
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
         self.losses = {name: self.distribution_strategy.unwrap(metric)[0] for name, metric in zip(self._distributed_losses, reduced_losses)}
         # self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
-        self._global_step = self.distribution_strategy.unwrap(self._distributed_global_step)[0]
+        # self._global_step = self.distribution_strategy.unwrap(self._distributed_global_step)[0]
 
     def _initialize_graph(self):
         K.set_learning_phase(0)
@@ -96,7 +96,8 @@ class TestGraph(RinokerasGraph):
     def initialize(self):
         if self.iterator is not None:
             sess = self._get_session()
-            sess.run(self.iterator.initializer)
+            with self.distribution_strategy.scope():
+                sess.run(self.iterator.initializer)
         return self
 
     def build(self):
