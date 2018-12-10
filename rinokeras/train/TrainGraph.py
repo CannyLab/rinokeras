@@ -72,31 +72,41 @@ class TrainGraph(TestGraph):
             loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
             loss += sum(self.model.losses)
-            return loss, losses
+            return outputs, loss, losses
 
         def grads_fn(inputs):
             if tf.executing_eagerly():
                 with tf.GradientTape() as tape:
-                    loss, losses = loss_fn(inputs)
+                    outputs, loss, losses = loss_fn(inputs)
                 grads = tape.gradient(loss, self.model.variables)
                 grads = zip(grads, self.model.variables)
             else:
-                loss, losses = loss_fn(inputs)
+                outputs, loss, losses = loss_fn(inputs)
                 grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
             grads = self._clip_gradients(grads)
-            # for g, v in grads:
-                # print(v.name, v)
-            return grads, loss, losses
+            return grads, outputs, loss, losses
 
-        self._distributed_grads, self._distributed_total_loss, self._distributed_losses = \
+        self._distributed_grads, self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
             self.distribution_strategy.call_for_each_tower(grads_fn, self.inputs)
 
         self.update_op = self.optimizer._distributed_apply(
             self.distribution_strategy, self._distributed_grads)
             # global_step=self._distributed_global_step)
 
+    def _reduce_distributed_ops(self):
+        super()._reduce_distributed_ops()
+        central_device = self.distribution_strategy.parameter_devices[0]
+
+        to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
+        reduced_grads = self.distribution_strategy.batch_reduce(
+            tf.VariableAggregation.SUM, to_reduce)
+
+        self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
+
     def _initialize_graph(self):
+        self._global_step = tf.train.get_or_create_global_step()
+        self._update_global_step = self._global_step.assign(self._global_step + 1)
         K.set_learning_phase(1)
         with tf.variable_scope(self._name):
             self._learning_rate = tf.get_variable(
@@ -161,7 +171,7 @@ class TrainGraph(TestGraph):
             'adagrad': tf.train.AdagradOptimizer,
             'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
             'ftrl': tf.train.FtrlOptimizer,
-            'adamax': rinokeras_optimizers.AdaMaxOptimizer,
+            'adamax': tf.contrib.opt.AdaMaxOptimizer
         }
 
         if optimizer in optimizers:
@@ -177,20 +187,20 @@ class TrainGraph(TestGraph):
                     name = var.name.replace(':', '_')
                     tf.summary.histogram(name, grad)
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = True) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
         if ops == 'loss':
-            return self.loss(inputs)
+            return self.loss(inputs, return_outputs=return_outputs)
         elif ops == 'update':
-            return self.update(inputs)
+            return self.update(inputs, return_outputs=return_outputs)
         elif isinstance(ops, str):
             raise ValueError("Unrecognized op on graph: {}".format(ops))
         else:
             return self._run_tensor(ops, inputs)
 
-    def update(self, inputs: Optional[Inputs] = None) -> Losses:
+    def update(self, inputs: Optional[Inputs] = None, return_outputs: bool = True) -> Losses:
         """Updates the model with placeholders in graph mode.
 
         Args:
@@ -203,13 +213,14 @@ class TrainGraph(TestGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
+        ops = [self.update_op, self._update_global_step, self.losses]
+        if return_outputs:
+            ops.append(self.outputs)
         if self.return_loss_summaries or self.return_grad_summaries:
-            _, loss, summaries = self._run_tensor(
-                [self.update_op, self.losses, self.summaries], inputs)
-            return loss, summaries
-        else:
-            _, loss = self._run_tensor([self.update_op, self.losses], inputs)
-            return loss
+            ops.append(self.summaries)
+
+        _, _, *result = self._run_tensor(ops, inputs)
+        return result
 
     @property
     def learning_rate(self) -> tf.Variable:
