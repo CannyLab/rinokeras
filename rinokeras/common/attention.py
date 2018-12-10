@@ -11,7 +11,7 @@ from .layers import WeightNormDense as Dense
 class LuongAttention(Layer):
 
     def __init__(self, local=False, stddev=1.0, regularizer=None):
-        super(LuongAttention, self).__init__()
+        super().__init__()
         self.local = local
         self.regularizer = regularizer
         if self.local:
@@ -65,7 +65,7 @@ class AttentionQKV(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(AttentionQKV, self).__init__()
+        super().__init__()
         if value_depth is None:
             value_depth = key_depth
 
@@ -175,7 +175,7 @@ class ScaledDotProductSimilarity(Layer):
     Based on https://arxiv.org/abs/1706.03762.
     """
     def __init__(self,):
-        super(ScaledDotProductSimilarity, self).__init__()
+        super().__init__()
 
     def call(self, queries, keys):
         """
@@ -199,7 +199,7 @@ class ApplyAttentionMask(Layer):
     Applies a mask to the attention similarities.
     """
     def __init__(self, ):
-        super(ApplyAttentionMask, self).__init__()
+        super().__init__()
 
     def call(self, similarity, mask=None):
         """
@@ -243,11 +243,10 @@ class AttentionMap(Model):
                  similarity_metric: Callable[[Tuple[tf.Tensor, tf.Tensor]], tf.Tensor],
                  attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
                  dropout: Optional[float] = None) -> None:
-        super(AttentionMap, self).__init__()
+        super().__init__()
         self.similarity_metric = similarity_metric
         self.attention_function = attention_function
         self.apply_mask = ApplyAttentionMask()
-        assert dropout is not None
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, queries, keys, values, mask=None):
@@ -285,7 +284,7 @@ class MultiHeadAttentionMap(Model):
             dropout {float} -- Dropout parameter (default: {None})
         """
 
-        super(MultiHeadAttentionMap, self).__init__()
+        super().__init__()
         self.attention_map = AttentionMap(similarity_metric, dropout=dropout)
         self.n_heads = n_heads
 
@@ -346,7 +345,7 @@ class MultiHeadAttention(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(MultiHeadAttention, self).__init__()
+        super().__init__()
         if similarity_metric != "scaled_dot":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")
@@ -408,7 +407,7 @@ class SelfAttention(Model):
                  n_heads: int,
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
-        super(SelfAttention, self).__init__()
+        super().__init__()
         self.multi_attention = MultiHeadAttention(similarity_metric, n_heads, dropout, **kwargs)
 
     def call(self, inputs, mask=None):
@@ -418,7 +417,7 @@ class SelfAttention(Model):
 class ContextQueryAttention(Model):
 
     def __init__(self, attention_type: str = "trilinear", dropout: Optional[float] = None, regularizer=None) -> None:
-        super(ContextQueryAttention, self).__init__()
+        super().__init__()
         if attention_type != "trilinear":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")
