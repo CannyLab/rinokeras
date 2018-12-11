@@ -23,7 +23,7 @@ class TransformerSelfAttention(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(TransformerSelfAttention, self).__init__()
+        super().__init__()
         self.norm = LayerNorm()
         self.self_attention = SelfAttention(
             'scaled_dot', n_heads, dropout,
@@ -44,7 +44,7 @@ class TransformerMultiAttention(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(TransformerMultiAttention, self).__init__()
+        super().__init__()
         self.multi_attention = MultiHeadAttention(
             'scaled_dot', n_heads, dropout,
             kernel_regularizer=kernel_regularizer,
@@ -57,8 +57,8 @@ class TransformerMultiAttention(Model):
     def call(self, target, source=None, mask=None):
         assert source is not None
         norm_target = self.norm_target(target)
-        norm_source = self.norm_target(source)
-        # norm_source = self.norm_source(source)
+        # norm_source = self.norm_target(source)
+        norm_source = self.norm_source(source)
         attention = self.multi_attention((norm_target, norm_source), mask=mask)
         return attention + target
 
@@ -70,7 +70,7 @@ class TransformerFeedForward(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
-        super(TransformerFeedForward, self).__init__()
+        super().__init__()
         self.norm = LayerNorm()
         self.feed_forward = DenseStack([filter_size, hidden_size], output_activation=None,
                                        kernel_regularizer=kernel_regularizer,
@@ -202,7 +202,7 @@ class TransformerEncoder(Model):
                  bias_regularizer=None,
                  activity_regularizer=None,
                  **kwargs) -> None:
-        super(TransformerEncoder, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.embedding_layer = embedding_layer
         # The encoding stack is a stack of transformer encoder blocks
