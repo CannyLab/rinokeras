@@ -1,5 +1,7 @@
 import collections
 from typing import Optional, Sequence, Any, Union, Tuple, Dict
+import numpy as np
+import scipy
 
 import tensorflow as tf
 from tensorflow.python.eager import context
@@ -514,7 +516,7 @@ class Highway(Model):
         return config
 
 
-class PositionEmbedding(Model):
+class PositionEmbedding(Layer):
     """
     Adds positional embedding to an input embedding.
 
@@ -573,6 +575,7 @@ class PositionEmbedding2D(PositionEmbedding):
         super().__init__(*args, **kwargs)
 
     def build(self, input_shape):
+        # self.embedding = self.add_weight('embedding', input_shape.as_list()[1:], dtype=tf.float32, trainable=True)
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
@@ -590,6 +593,7 @@ class PositionEmbedding2D(PositionEmbedding):
             Returns:
                 embedding: a float32 Tensor with shape [batch_size, Width, Height, Channels]
         """
+        # return inputs + self.embedding[None]
         width, height, channels = inputs.shape[1:]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 
@@ -644,6 +648,74 @@ class GatedTanh(Model):
         return config
 
 
+class CouplingLayer(Model):
+
+    def __init__(self, n_units, layer, **kwargs):
+        super().__init__(**kwargs)
+        self.layer = layer
+        self.pred_log_s = Dense(n_units)
+        self.pred_t = Dense(n_units)
+
+    def call(self, inputs, reverse=False, **kwargs):
+        inputs_a, inputs_b = inputs
+        transform = self.layer(inputs_a, **kwargs)
+        log_s = self.pred_s(transform)
+        t = self.pred_t(transform)
+        if reverse:
+            b_transform = (inputs_b - t) / tf.exp(log_s)
+        else:
+            b_transform = tf.exp(log_s) * inputs_b + t
+        if reverse:
+            return b_transform
+        else:
+            return b_transform, log_s
+
+
+class InvertibleDense(Dense):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, use_bias=False, kernel_initializer=None, activation=None, **kwargs)
+
+    def build(self, input_shape):
+        assert input_shape[-1] == self.units, \
+            'Cannot create invertible layer when mapping from {} to {} dimensions'.format(
+                input_shape[-1].value, self.units)
+        H = np.random.randn(input_shape[-1].value, self.units)
+        Q, R = scipy.linalg.qr(H)
+        if np.linalg.det(Q) < 0:
+            Q[:, 0] *= -1
+        initializer = tf.keras.initializers.Constant(Q)
+
+        self.kernel_initializer = initializer
+        super().build(input_shape)
+        self.kernel_inverse = tf.linalg.inv(self.kernel)
+
+    def call(self, inputs, reverse=False):
+        inputs = ops.convert_to_tensor(inputs, dtype=self.dtype)
+        rank = common_shapes.rank(inputs)
+
+        kernel = self.kernel if not reverse else self.kernel_inverse
+
+        if rank > 2:
+            # Broadcasting is required for the inputs.
+            outputs = standard_ops.tensordot(inputs, kernel, [[rank - 1], [0]])
+            if not context.executing_eagerly():
+                shape = inputs.get_shape().as_list()
+                output_shape = shape[:-1] + [self.units]
+                outputs.set_shape(output_shape)
+        else:
+            outputs = gen_math_ops.mat_mul(inputs, kernel)
+
+        if reverse:
+            return outputs
+        else:
+            batch_size = tf.cast(tf.shape(inputs)[0], tf.float32)
+            sequence_length = tf.cast(tf.shape(inputs)[1], tf.float32)
+            # tf.logdet only works on Hermitian positive def matrices, maybe try tf.slogdet?
+            log_det_W = batch_size * sequence_length * tf.log(tf.linalg.det(self.kernel))
+            return outputs, log_det_W
+
+
 __all__ = ['RandomGaussNoise', 'LayerNorm', 'Stack', 'Conv2DStack', 'DenseStack', 'DenseTranspose',
            'Residual', 'Highway', 'PositionEmbedding', 'PositionEmbedding2D', 'MaskInput', 'EmbeddingTranspose',
-           'GatedTanh']
+           'GatedTanh', 'CouplingLayer', 'InvertibleDense']
