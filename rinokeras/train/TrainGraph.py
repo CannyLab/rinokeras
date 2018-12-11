@@ -187,7 +187,7 @@ class TrainGraph(TestGraph):
                     name = var.name.replace(':', '_')
                     tf.summary.histogram(name, grad)
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = True) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
@@ -200,7 +200,7 @@ class TrainGraph(TestGraph):
         else:
             return self._run_tensor(ops, inputs)
 
-    def update(self, inputs: Optional[Inputs] = None, return_outputs: bool = True) -> Losses:
+    def update(self, inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Losses:
         """Updates the model with placeholders in graph mode.
 
         Args:
