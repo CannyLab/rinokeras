@@ -369,12 +369,12 @@ class MultiHeadAttention(Model):
         ma_channels = memory_antecedent_shape[-1]
         assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
             'Feature size must be divisible by n_heads'
-        assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
+        # assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
         self.compute_qkv = AttentionQKV(qa_channels, ma_channels,
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
                                         activity_regularizer=self.activity_regularizer)
-        self.output_layer = Dense(ma_channels, use_bias=False,
+        self.output_layer = Dense(qa_channels, use_bias=False,
                                   kernel_regularizer=self.kernel_regularizer,
                                   bias_regularizer=self.bias_regularizer,
                                   activity_regularizer=self.activity_regularizer)
