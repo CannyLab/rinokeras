@@ -66,7 +66,7 @@ class CategoricalPd(Pd):
 class DiagGaussianPd(Pd):
 
     def __init__(self,
-                 action_shape: Tuple[int],
+                 action_shape: Tuple[int, ...],
                  noise_shape: Optional[Tuple[int]] = None,
                  initial_logstd: float = 0, **kwargs) -> None:
         super().__init__(**kwargs)
