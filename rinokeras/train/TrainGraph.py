@@ -220,6 +220,8 @@ class TrainGraph(TestGraph):
             ops.append(self.summaries)
 
         _, _, *result = self._run_tensor(ops, inputs)
+        if len(result) == 1:
+            result = result[0]
         return result
 
     @property
