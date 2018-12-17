@@ -66,14 +66,12 @@ class LayerNorm(Layer):
 
     def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, **kwargs) -> None:
         super().__init__(**kwargs)
-        if isinstance(axis, collections.Sequence):
-            self.axis: Sequence[int] = axis
-        else:
-            self.axis: Sequence[int] = (axis,)
+        self.axis: Sequence[int] = axis if isinstance(axis, collections.Sequence) else (axis,)
         self.eps = eps
 
     def build(self, input_shape):
-        shape = [input_shape[axis] for axis in self.axis]
+        # shape = [input_shape[axis] for axis in self.axis]
+        shape = input_shape[-1:]
 
         self.gamma = self.add_variable(name='gamma',
                                        shape=shape,
@@ -86,9 +84,12 @@ class LayerNorm(Layer):
         super().build(input_shape)
 
     def call(self, inputs):
-        mean = K.mean(inputs, axis=self.axis, keepdims=True)
-        std = K.std(inputs, axis=self.axis, keepdims=True)
-        return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
+        mean, var = tf.nn.moments(inputs, self.axis, keep_dims=True)
+        # mean = K.mean(inputs, axis=self.axis, keepdims=True)
+        # std = K.std(inputs, axis=self.axis, keepdims=True)
+        # return self.gamma * (inputs - mean) / (std + self.eps) + self.beta
+        normalized = tf.nn.batch_normalization(inputs, mean, var, self.beta, self.gamma, self.eps)
+        return normalized
 
     def get_config(self) -> Dict:
         config = {

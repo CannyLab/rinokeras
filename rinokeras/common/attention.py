@@ -6,6 +6,7 @@ from tensorflow.keras.layers import Layer, Dropout
 import tensorflow.keras.backend as K  # pylint: disable=E0611
 
 from .layers import WeightNormDense as Dense
+from .layers import LayerNorm
 
 
 class LuongAttention(Layer):
@@ -80,10 +81,12 @@ class AttentionQKV(Model):
                                  kernel_regularizer=self.kernel_regularizer,
                                  bias_regularizer=self.bias_regularizer,
                                  activity_regularizer=self.activity_regularizer)
+        self.query_norm = LayerNorm()
         self.projection_layer = Dense(self.key_depth + self.value_depth, use_bias=False,
                                       kernel_regularizer=self.kernel_regularizer,
                                       bias_regularizer=self.bias_regularizer,
                                       activity_regularizer=self.activity_regularizer)
+        self.projection_norm = LayerNorm()
 
     def call(self, inputs):
         """
@@ -92,8 +95,8 @@ class AttentionQKV(Model):
                 memory_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
         """
         query_antecedent, memory_antecedent = inputs
-        queries = self.query_layer(query_antecedent)
-        projection = self.projection_layer(memory_antecedent)
+        queries = self.query_norm(self.query_layer(query_antecedent))
+        projection = self.projection_norm(self.projection_layer(memory_antecedent))
         keys, values = tf.split(projection, tf.stack((self.key_depth, self.value_depth)), axis=-1)
 
         return [queries, keys, values]

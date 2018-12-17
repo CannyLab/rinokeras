@@ -32,9 +32,8 @@ class TransformerSelfAttention(Model):
             activity_regularizer=activity_regularizer)
 
     def call(self, inputs, mask):
-        norm_input = self.norm(inputs)
-        attention = self.self_attention(norm_input, mask=mask)
-        return attention + inputs
+        attention = self.self_attention(inputs, mask=mask)
+        return self.norm(attention + inputs)
 
 
 class TransformerMultiAttention(Model):
@@ -51,16 +50,12 @@ class TransformerMultiAttention(Model):
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer
         )
-        self.norm_target = LayerNorm()
-        self.norm_source = LayerNorm()
+        self.norm = LayerNorm()
 
     def call(self, target, source=None, mask=None):
         assert source is not None
-        norm_target = self.norm_target(target)
-        # norm_source = self.norm_target(source)
-        norm_source = self.norm_source(source)
-        attention = self.multi_attention((norm_target, norm_source), mask=mask)
-        return attention + target
+        attention = self.multi_attention((target, source), mask=mask)
+        return self.norm(attention + target)
 
 
 class TransformerFeedForward(Model):
@@ -79,10 +74,9 @@ class TransformerFeedForward(Model):
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, inputs):
-        norm_input = self.norm(inputs)
-        dense_out = self.feed_forward(norm_input)
+        dense_out = self.feed_forward(inputs)
         dense_out = self.dropout(dense_out)
-        return dense_out + inputs
+        return self.norm(dense_out + inputs)
 
 
 class TransformerEncoderBlock(Model):
