@@ -20,6 +20,7 @@ class RelationalMemoryCoreCell(Model):
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
                  gate_style: str = 'unit',
+                 treat_input_as_sequence: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -33,7 +34,8 @@ class RelationalMemoryCoreCell(Model):
         self.input_bias = input_bias
         self.forget_bias = forget_bias
         self.gate_style = gate_style
-        self.state_size = 128
+        self.state_size = [(mem_slots, mem_size)]
+        self.treat_input_as_sequence = treat_input_as_sequence
 
         self.initial_embed = Dense(mem_size, use_bias=True)
 
@@ -95,9 +97,13 @@ class RelationalMemoryCoreCell(Model):
             forget_gate: A LSTM-like forget gate.
         """
         memory = tf.tanh(memory)
-        inputs = self.flatten(memory)
-        gate_inputs = self.gate_inputs(inputs)
-        gate_inputs = gate_inputs[:, None]
+        if not self.treat_input_as_sequence:
+            inputs = self.flatten(inputs)
+            gate_inputs = self.gate_inputs(inputs)
+            gate_inputs = gate_inputs[:, None]
+        else:
+            gate_inputs = self.gate_inputs(inputs)
+            gate_inputs = tf.reduce_mean(gate_inputs, axis=1, keepdims=True)
         gate_memory = self.gate_memory(memory)
         input_gate, forget_gate = tf.split(gate_memory + gate_inputs, num_or_size_splits=2, axis=-1)
 
@@ -109,21 +115,19 @@ class RelationalMemoryCoreCell(Model):
     def build(self, input_shape):
         self.built = True
 
-    def call(self, inputs, states, treat_input_as_matrix=False):
+    def call(self, inputs, states):
         """Runs the relational memory core.
 
         Args:
             inputs: Tensor input of shape [batch_size, n_dims]
             memory: Memory output from previous timestep
-            treat_input_as_matrix: Optional, whether to treat the `input`
-                as a sequence with the same shape as memory
 
         Returns:
             output: This time step's output
             next_memory: This time step's memory
         """
         memory = states[0]
-        if treat_input_as_matrix:
+        if self.treat_input_as_sequence:
             inputs.shape.assert_has_rank(3)
             inputs = self.initial_embed(inputs)
         else:
@@ -153,7 +157,8 @@ class RelationalMemoryCore(RNN):
                  forget_bias: float = 1.0,
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
-                 gate_style: str = 'gate',
+                 gate_style: str = 'unit',
+                 treat_input_as_sequence: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -165,7 +170,20 @@ class RelationalMemoryCore(RNN):
                  **kwargs) -> None:
         cell = RelationalMemoryCoreCell(
             mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
-            gate_style, kernel_regularizer, bias_regularizer, activity_regularizer)
+            gate_style, treat_input_as_sequence, kernel_regularizer, bias_regularizer,
+            activity_regularizer)
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
+
+    @property
+    def mem_slots(self) -> int:
+        return self.cell.mem_slots
+
+    @property
+    def mem_size(self) -> int:
+        return self.cell.mem_size
+
+    @property
+    def n_heads(self) -> int:
+        return self.cell.n_heads
