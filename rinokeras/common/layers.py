@@ -622,7 +622,7 @@ class PositionEmbedding2D(PositionEmbedding):
 
 class PositionEmbedding3D(PositionEmbedding2D):
     """
-    Adds a 2D positional embedding to an input embedding.
+    Adds a 3D positional embedding to an input embedding.
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
@@ -632,7 +632,7 @@ class PositionEmbedding3D(PositionEmbedding2D):
     def build(self, input_shape):
         # self.embedding = self.add_weight('embedding', input_shape.as_list()[1:], dtype=tf.float32, trainable=True)
         hidden_size = input_shape[-1]
-        assert hidden_size % 6 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
+        assert hidden_size % 6 == 0, 'Model vector size must be multiple of six for 3D sinusoidal encoding'
 
         power = tf.range(0, hidden_size.value, 6,
                          dtype=tf.float32) / hidden_size.value
