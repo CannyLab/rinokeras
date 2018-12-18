@@ -6,9 +6,8 @@ import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from .TestGraph import TestGraph
-from .train_utils import Inputs, Outputs, Losses, Gradients
+from .train_utils import Inputs, Outputs, Losses
 from rinokeras.train import Experiment
-from rinokeras.common import optimizers as rinokeras_optimizers
 
 
 class TrainGraph(TestGraph):
@@ -187,7 +186,10 @@ class TrainGraph(TestGraph):
                     name = var.name.replace(':', '_')
                     tf.summary.histogram(name, grad)
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Any:
+    def run(self,
+            ops: Union[str, Sequence[tf.Tensor]],
+            inputs: Optional[Inputs] = None,
+            return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
