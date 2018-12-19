@@ -71,7 +71,9 @@ class PPO(PolicyGradient):
         # Entropy Penalty
         entropy = tf.reduce_mean(self.model.entropy(logits) * sequence_mask)
 
-        return surr_loss - self.entcoeff * entropy + self.valuecoeff * value_loss, surr_loss, value_loss, entropy
+        metrics = {'Surrogate Loss': surr_loss, 'Value Loss': value_loss, 'Entropy': entropy}
+
+        return surr_loss - self.entcoeff * entropy + self.valuecoeff * value_loss, metrics
 
     def update_old_model(self) -> None:
         self.old_model.set_weights(self.model.get_weights())
