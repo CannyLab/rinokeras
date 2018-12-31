@@ -2,7 +2,7 @@ from typing import Optional
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Concatenate, Flatten, RNN
+from tensorflow.keras.layers import Concatenate, Flatten, RNN, Reshape
 
 from .transformer import TransformerMultiAttention, TransformerFeedForward, TransformerEncoderBlock
 from rinokeras.common.layers import Highway
@@ -34,9 +34,10 @@ class RelationalMemoryCoreCell(Model):
         self.input_bias = input_bias
         self.forget_bias = forget_bias
         self.gate_style = gate_style
-        self.state_size = [(mem_slots, mem_size)]
+        self.state_size = [mem_slots * mem_size]
         self.treat_input_as_sequence = treat_input_as_sequence
 
+        self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(mem_size, use_bias=True)
 
         self.attend_over_memory = TransformerEncoderBlock(
@@ -70,6 +71,7 @@ class RelationalMemoryCoreCell(Model):
             dtype = tf.float32
         init_state = tf.one_hot(tf.range(self.mem_slots), self.mem_size, dtype=dtype)
         init_state = tf.tile(init_state[None], (batch_size, 1, 1))
+        init_state = self.flatten(init_state)
         return init_state
 
     def _calculate_gate_size(self):
@@ -127,6 +129,7 @@ class RelationalMemoryCoreCell(Model):
             next_memory: This time step's memory
         """
         memory = states[0]
+        memory = self.reshape(memory)
         if self.treat_input_as_sequence:
             inputs.shape.assert_has_rank(3)
             inputs = self.initial_embed(inputs)
@@ -144,8 +147,8 @@ class RelationalMemoryCoreCell(Model):
             next_memory = input_gate * tf.tanh(next_memory)
             next_memory += forget_gate * tf.tanh(memory)
 
-        output = next_memory
-        return output, next_memory
+        next_memory = self.flatten(next_memory)
+        return next_memory, next_memory
 
 
 class RelationalMemoryCore(RNN):
