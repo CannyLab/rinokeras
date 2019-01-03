@@ -55,15 +55,13 @@ class TestGraph(RinokerasGraph):
 
     def _distributed_fn(self):
 
-        # self._distributed_global_step = tf.train.get_or_create_global_step()
-
         def loss_fn(inputs):
             outputs = self.build_model(inputs)
             loss_packed = self.loss_function(inputs, outputs)
             loss, losses = self._unpack_losses(loss_packed)
-            return loss, losses
+            return outputs, loss, losses
 
-        self._distributed_total_loss, self._distributed_losses = \
+        self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
             self.distribution_strategy.call_for_each_tower(loss_fn, self.inputs)
 
     def _reduce_distributed_ops(self):
@@ -76,11 +74,28 @@ class TestGraph(RinokerasGraph):
             tf.VariableAggregation.MEAN, to_reduce)
 
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
-        self.losses = {name: self.distribution_strategy.unwrap(metric)[0] for name, metric in zip(self._distributed_losses, reduced_losses)}
-        # self.losses = tuple(self.distribution_strategy.unwrap(loss)[0] for loss in reduced_losses)
-        # self._global_step = self.distribution_strategy.unwrap(self._distributed_global_step)[0]
+        self.losses = {name: self.distribution_strategy.unwrap(metric)[0]
+                       for name, metric in zip(self._distributed_losses, reduced_losses)}
+
+        def reduce_distributed_outputs(output):
+            if isinstance(output, tf.Tensor):
+                unwrapped = self.distribution_strategy.unwrap(output)
+                max_shape = tf.reduce_max([tf.shape(unwrapped_out)[1:] for unwrapped_out in unwrapped], 0)
+                padding = [tf.pad((max_shape - tf.shape(unwrapped_out)[1:])[:, None], [[1, 0], [1, 0]])
+                           for unwrapped_out in unwrapped]
+                unwrapped = [tf.pad(unwrapped_out, pad) for unwrapped_out, pad in zip(unwrapped, padding)]
+                return tf.concat(unwrapped, 0)
+            elif isinstance(output, (list, tuple)):
+                return type(output)(reduce_distributed_outputs(out) for out in output)
+            elif isinstance(output, dict):
+                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
+            else:
+                raise ValueError("Unrecognized output format: {}.".format(type(output)))
+
+        self.outputs = reduce_distributed_outputs(self._distributed_outputs)
 
     def _initialize_graph(self):
+        self._global_step = tf.train.get_or_create_global_step()
         K.set_learning_phase(0)
 
     def _finalize_graph(self):
@@ -96,8 +111,7 @@ class TestGraph(RinokerasGraph):
     def initialize(self):
         if self.iterator is not None:
             sess = self._get_session()
-            with self.distribution_strategy.scope():
-                sess.run(self.iterator.initializer)
+            sess.run(self.iterator.initializer)
         return self
 
     def build(self):
@@ -132,18 +146,18 @@ class TestGraph(RinokerasGraph):
 
         return total_loss, losses
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
 
         if ops == 'loss':
-            return self.loss(inputs)
+            return self.loss(inputs, return_outputs=return_outputs)
         elif isinstance(ops, str):
             raise ValueError("Unrecognized op on graph: {}".format(ops))
         else:
             return self._run_tensor(ops, inputs)
 
-    def loss(self, inputs: Optional[Inputs] = None) -> Losses:
+    def loss(self, inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Losses:
         """Gets loss of model with placeholders in graph mode.
 
         Args:
@@ -156,8 +170,9 @@ class TestGraph(RinokerasGraph):
         Raises:
             RuntimeError: If not run inside a tf.Session context
         """
+        ops = [self.losses]
+        if return_outputs:
+            ops.append(self.outputs)
         if self.return_loss_summaries:
-            return self._run_tensor([self.losses, self.summaries], inputs)
-        else:
-            return self._run_tensor(self.losses, inputs)
-
+            ops.append(self.summaries)
+        return self._run_tensor(ops, inputs)

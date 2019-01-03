@@ -24,6 +24,9 @@ class StandardPolicy(Model):
                  n_layers_value: int = 1,
                  take_greedy_actions: bool = False,
                  initial_logstd: float = 0,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
                  **kwargs) -> None:
 
         super().__init__(**kwargs)
@@ -39,6 +42,9 @@ class StandardPolicy(Model):
         self.n_layers_value = n_layers_value
         self.take_greedy_actions = take_greedy_actions
         self.initial_logstd = initial_logstd
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
 
         self.embedding_model = embedding_model
         self.logits_function = self._setup_logits_function()
@@ -51,12 +57,17 @@ class StandardPolicy(Model):
 
         logits_function = Stack(name='logits')
         logits_function.add(
-            DenseStack(self.n_layers_logits * [self.model_dim] + [ac_dim], output_activation=activation))
+            DenseStack(self.n_layers_logits * [self.model_dim] + [ac_dim], output_activation=activation,
+                       kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
+                       activity_regularizer=self.activity_regularizer))
         logits_function.add(Reshape(self.action_shape))
         return logits_function
 
     def _setup_value_function(self):
-        value_function = DenseStack(self.n_layers_value * [self.model_dim] + [1], output_activation=None)
+        value_function = DenseStack(
+            self.n_layers_value * [self.model_dim] + [1], output_activation=None,
+            kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
+            activity_regularizer=self.activity_regularizer)
         return value_function
 
     def call(self, obs, training=False):

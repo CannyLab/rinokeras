@@ -5,7 +5,6 @@ from typing import Sequence, Tuple, Optional, Union
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
-from rinokeras.common import optimizers as rinokeras_optimizers
 
 Gradients = Sequence[Tuple[Optional[tf.Tensor], tf.Variable]]
 
@@ -191,7 +190,7 @@ def get_optimizer(optimizer, learning_rate=1e-3):
         'adagrad': tf.train.AdagradOptimizer,
         'proximal-adagrad': tf.train.ProximalAdagradOptimizer,
         'ftrl': tf.train.FtrlOptimizer,
-        'adamax': rinokeras_optimizers.AdaMaxOptimizer,
+        'adamax': tf.contrib.opt.AdaMaxOptimizer,
     }
 
     if optimizer in optimizers:
