@@ -1,14 +1,11 @@
 from typing import Tuple
-from functools import reduce
-from operator import mul
 
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import LSTM, Input, Reshape
+from tensorflow.keras.layers import LSTM, Input
 import tensorflow.keras.backend as K
 import numpy as np
 
-from rinokeras.common.layers import Stack, DenseStack
 from .StandardPolicy import StandardPolicy
 
 
