@@ -76,14 +76,23 @@ class TestGraph(RinokerasGraph):
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
         self.losses = {name: self.distribution_strategy.unwrap(metric)[0]
                        for name, metric in zip(self._distributed_losses, reduced_losses)}
-        self.outputs = []
-        for output in self._distributed_outputs:
-            unwrapped_outputs = self.distribution_strategy.unwrap(output)
-            max_shapes = tf.reduce_max([tf.shape(output)[1:] for output in unwrapped_outputs], 0)
-            padding = [tf.pad((max_shapes - tf.shape(output)[1:])[:, None], [[1, 0], [1, 0]])
-                       for output in unwrapped_outputs]
-            unwrapped_outputs = [tf.pad(output, padd) for output, padd in zip(unwrapped_outputs, padding)]
-            self.outputs.append(tf.concat(unwrapped_outputs, 0))
+
+        def reduce_distributed_outputs(output):
+            if isinstance(output, tf.Tensor):
+                unwrapped = self.distribution_strategy.unwrap(output)
+                max_shape = tf.reduce_max([tf.shape(unwrapped_out)[1:] for unwrapped_out in unwrapped], 0)
+                padding = [tf.pad((max_shape - tf.shape(unwrapped_out)[1:])[:, None], [[1, 0], [1, 0]])
+                           for unwrapped_out in unwrapped]
+                unwrapped = [tf.pad(unwrapped_out, pad) for unwrapped_out, pad in zip(unwrapped, padding)]
+                return tf.concat(unwrapped, 0)
+            elif isinstance(output, (list, tuple)):
+                return type(output)(reduce_distributed_outputs(out) for out in output)
+            elif isinstance(output, dict):
+                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
+            else:
+                raise ValueError("Unrecognized output format: {}.".format(type(output)))
+
+        self.outputs = reduce_distributed_outputs(self._distributed_outputs)
 
     def _initialize_graph(self):
         self._global_step = tf.train.get_or_create_global_step()

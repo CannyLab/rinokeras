@@ -86,4 +86,6 @@ class PolicyGradient(Experiment):
         # Entropy Penalty
         entropy = tf.reduce_mean(self.model.entropy(logits) * sequence_mask)
 
-        return loss - self.entcoeff * entropy + self.valuecoeff * value_loss, loss, value_loss, entropy
+        metrics = {'Advanatage Loss': loss, 'Value Loss': value_loss, 'Entropy': entropy}
+
+        return loss - self.entcoeff * entropy + self.valuecoeff * value_loss, metrics
