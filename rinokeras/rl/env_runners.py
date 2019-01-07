@@ -40,9 +40,7 @@ class Rollout:
                 return None
 
             self.keys.append(key)
-            val = np.squeeze(np.array(val))
-            if self.length == 1:
-                val = np.expand_dims(val, 0)
+            val = np.array(val)
             return val
 
         def set_state_values(self, gamma):

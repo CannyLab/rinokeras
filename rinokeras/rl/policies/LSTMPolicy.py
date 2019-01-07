@@ -42,9 +42,11 @@ class LSTMPolicy(StandardPolicy):
         self._obs = obs
 
         bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
-        obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
+        remaining_shape = obs.shape[2:].as_list()
+        obs = tf.reshape(obs, [bs * seqlen] + remaining_shape)
 
         embedding = self.embedding_model(obs)
+        embedding.shape.assert_has_rank(2)
 
         embedding = tf.reshape(embedding, (bs, seqlen, embedding.shape[-1]))
         memory_out, memory_h, memory_c = self.memory_function(
