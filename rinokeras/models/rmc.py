@@ -1,12 +1,13 @@
 from typing import Optional
+
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Concatenate, Flatten, RNN, Reshape
+from tensorflow.keras.layers import RNN, Flatten, Reshape
 
-from .transformer import TransformerMultiAttention, TransformerFeedForward, TransformerEncoderBlock
-from rinokeras.common.layers import Highway
 from rinokeras.common.layers import WeightNormDense as Dense
+
+from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
 
 
 # https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/relational_memory.py
@@ -21,6 +22,7 @@ class RelationalMemoryCoreCell(Model):
                  dropout: Optional[float] = None,
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
+                 use_cross_attention: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -36,13 +38,21 @@ class RelationalMemoryCoreCell(Model):
         self.gate_style = gate_style
         self.state_size = [mem_slots * mem_size]
         self.treat_input_as_sequence = treat_input_as_sequence
+        self.use_cross_attention = use_cross_attention
 
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(mem_size, use_bias=True)
 
-        self.attend_over_memory = TransformerEncoderBlock(
-            n_heads, 4 * mem_size, mem_size, dropout, 0.0,
-            kernel_regularizer, bias_regularizer, activity_regularizer)
+        if use_cross_attention:
+            self.attend_over_memory = TransformerDecoderBlock(
+                n_heads, mem_size * 4, mem_size, dropout,
+                layer_dropout=None, kernel_regularizer=kernel_regularizer,
+                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        else:
+            self.attend_over_memory = TransformerEncoderBlock(
+                n_heads, mem_size * 4, mem_size, dropout,
+                layer_dropout=None, kernel_regularizer=kernel_regularizer,
+                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
@@ -64,14 +74,18 @@ class RelationalMemoryCoreCell(Model):
             init_state: A truncated or padded matrix of size
                 (batch_size, self._mem_slots, self._mem_size).
         """
+
         if batch_size is None:
             assert inputs is not None, 'Must pass either batch_size or inputs'
             batch_size = tf.shape(inputs)[0]
+
         if dtype is None:
             dtype = tf.float32
-        init_state = tf.one_hot(tf.range(self.mem_slots), self.mem_size, dtype=dtype)
+        init_state = tf.one_hot(tf.range(self.mem_slots),
+                                self.mem_size, dtype=dtype)
         init_state = tf.tile(init_state[None], (batch_size, 1, 1))
         init_state = self.flatten(init_state)
+
         return init_state
 
     def _calculate_gate_size(self):
@@ -80,6 +94,7 @@ class RelationalMemoryCoreCell(Model):
         Returns:
             The per sample, per head parameter size of each gate.
         """
+
         if self.gate_style == 'unit':
             return self.mem_size
         elif self.gate_style == 'memory':
@@ -99,6 +114,7 @@ class RelationalMemoryCoreCell(Model):
             forget_gate: A LSTM-like forget gate.
         """
         memory = tf.tanh(memory)
+
         if not self.treat_input_as_sequence:
             inputs = self.flatten(inputs)
             gate_inputs = self.gate_inputs(inputs)
@@ -107,7 +123,8 @@ class RelationalMemoryCoreCell(Model):
             gate_inputs = self.gate_inputs(inputs)
             gate_inputs = tf.reduce_mean(gate_inputs, axis=1, keepdims=True)
         gate_memory = self.gate_memory(memory)
-        input_gate, forget_gate = tf.split(gate_memory + gate_inputs, num_or_size_splits=2, axis=-1)
+        input_gate, forget_gate = tf.split(
+            gate_memory + gate_inputs, num_or_size_splits=2, axis=-1)
 
         input_gate = tf.sigmoid(input_gate + self.input_bias)
         forget_gate = tf.sigmoid(forget_gate + self.forget_bias)
@@ -130,17 +147,22 @@ class RelationalMemoryCoreCell(Model):
         """
         memory = states[0]
         memory = self.reshape(memory)
+
         if self.treat_input_as_sequence:
             inputs.shape.assert_has_rank(3)
             inputs = self.initial_embed(inputs)
         else:
             inputs.shape.assert_has_rank(2)
             inputs = self.initial_embed(inputs)
-            inputs = inputs[:, None]  # expand the first dimension so it will concat across mem slots
+            # expand the first dimension so it will concat across mem slots
+            inputs = inputs[:, None]
 
-        memory_plus_input = K.concatenate((memory, inputs), axis=1)
-        next_memory = self.attend_over_memory(memory_plus_input)
-        next_memory = next_memory[:, :-tf.shape(inputs)[1], :]
+        if self.use_cross_attention:
+            next_memory = self.attend_over_memory(memory, inputs)
+        else:
+            memory_plus_input = K.concatenate((memory, inputs), axis=1)
+            next_memory = self.attend_over_memory(memory_plus_input)
+            next_memory = next_memory[:, :-tf.shape(inputs)[1], :]
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
@@ -148,6 +170,7 @@ class RelationalMemoryCoreCell(Model):
             next_memory += forget_gate * tf.tanh(memory)
 
         next_memory = self.flatten(next_memory)
+
         return next_memory, next_memory
 
 
@@ -162,6 +185,7 @@ class RelationalMemoryCore(RNN):
                  dropout: Optional[float] = None,
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
+                 use_cross_attention: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -173,8 +197,8 @@ class RelationalMemoryCore(RNN):
                  **kwargs) -> None:
         cell = RelationalMemoryCoreCell(
             mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
-            gate_style, treat_input_as_sequence, kernel_regularizer, bias_regularizer,
-            activity_regularizer)
+            gate_style, treat_input_as_sequence, use_cross_attention,
+            kernel_regularizer, bias_regularizer, activity_regularizer)
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
