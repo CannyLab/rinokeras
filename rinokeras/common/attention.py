@@ -270,6 +270,7 @@ class AttentionMap(Model):
         else:
             weights = self.attention_function(masked_similarity)
         weights = self.dropout(weights)
+        tf.add_to_collection('ATTENTION_WEIGHTS', weights)
         output = tf.matmul(weights, values)
         return output, weights
 

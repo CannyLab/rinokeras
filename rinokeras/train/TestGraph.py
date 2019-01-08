@@ -96,8 +96,14 @@ class TestGraph(RinokerasGraph):
     def _create_summaries(self):
         if self.return_loss_summaries:
             with tf.name_scope('losses'):
-                for i, loss in enumerate(self.losses):
-                    tf.summary.scalar(str(i), loss)
+                for name, loss in self.losses.items():
+                    tf.summary.scalar(name, loss)
+            with tf.name_scope('attention_weights'):
+                def keep(el: str) -> bool:
+                    return 'dropout' not in el and 'multi_head' not in el and 'mul' not in el
+                for wt in filter(lambda wt: 'while' not in wt.name, tf.get_collection('ATTENTION_WEIGHTS')):
+                    name = '/'.join(filter(keep, wt.name.split('/')))
+                    tf.summary.histogram(name, wt)
 
     def initialize(self):
         if self.iterator is not None:
