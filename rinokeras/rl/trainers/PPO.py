@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 import tensorflow as tf
 from tensorflow.keras import Model
@@ -22,19 +22,22 @@ class PPO(PolicyGradient):
                  gradient_clipping_bounds: Union[float, Tuple[float, float]] = (-1, 1),
                  return_loss_summaries: bool = False,
                  return_grad_summaries: bool = False,
-                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0')) -> None:
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
+                 old_model: Optional[Model] = None) -> None:
 
         super().__init__(
             model, valuecoeff, entcoeff, optimizer, learning_rate, gradient_clipping,
             gradient_clipping_bounds, return_loss_summaries, return_grad_summaries, distribution_strategy)
 
         self.epsilon = epsilon
+        self.old_model = old_model
 
     def build_model(self, inputs):
         obs, act, val, seqlens = inputs
         logits, value = self.model(obs, training=True)
 
-        self.old_model = self.model.clone()
+        if self.old_model is None:
+            self.old_model = self.model.clone()
         old_logits, old_value = self.old_model(obs, training=True)
         old_logits = tf.stop_gradient(old_logits)
         old_value = tf.stop_gradient(old_value)
@@ -71,7 +74,9 @@ class PPO(PolicyGradient):
         # Entropy Penalty
         entropy = tf.reduce_mean(self.model.entropy(logits) * sequence_mask)
 
-        return surr_loss - self.entcoeff * entropy + self.valuecoeff * value_loss, surr_loss, value_loss, entropy
+        metrics = {'Surrogate Loss': surr_loss, 'Value Loss': value_loss, 'Entropy': entropy}
+
+        return surr_loss - self.entcoeff * entropy + self.valuecoeff * value_loss, metrics
 
     def update_old_model(self) -> None:
         self.old_model.set_weights(self.model.get_weights())
