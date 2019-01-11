@@ -121,7 +121,7 @@ class RelationalMemoryCoreCell(Model):
             gate_inputs = gate_inputs[:, None]
         else:
             gate_inputs = self.gate_inputs(inputs)
-            gate_inputs = tf.reduce_mean(gate_inputs, axis=1, keepdims=True)
+            gate_inputs = tf.reduce_max(gate_inputs, axis=1, keepdims=True)
         gate_memory = self.gate_memory(memory)
         input_gate, forget_gate = tf.split(
             gate_memory + gate_inputs, num_or_size_splits=2, axis=-1)
@@ -167,7 +167,7 @@ class RelationalMemoryCoreCell(Model):
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
             next_memory = input_gate * tf.tanh(next_memory)
-            next_memory += forget_gate * tf.tanh(memory)
+            next_memory += forget_gate * memory
 
         next_memory = self.flatten(next_memory)
 
