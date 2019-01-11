@@ -78,19 +78,17 @@ class TestGraph(RinokerasGraph):
                        for name, metric in zip(self._distributed_losses, reduced_losses)}
 
         def reduce_distributed_outputs(output):
-            if isinstance(output, tf.Tensor):
+            if isinstance(output, (list, tuple)):
+                return type(output)(reduce_distributed_outputs(out) for out in output)
+            elif isinstance(output, dict):
+                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
+            else:
                 unwrapped = self.distribution_strategy.unwrap(output)
                 max_shape = tf.reduce_max([tf.shape(unwrapped_out)[1:] for unwrapped_out in unwrapped], 0)
                 padding = [tf.pad((max_shape - tf.shape(unwrapped_out)[1:])[:, None], [[1, 0], [1, 0]])
                            for unwrapped_out in unwrapped]
                 unwrapped = [tf.pad(unwrapped_out, pad) for unwrapped_out, pad in zip(unwrapped, padding)]
                 return tf.concat(unwrapped, 0)
-            elif isinstance(output, (list, tuple)):
-                return type(output)(reduce_distributed_outputs(out) for out in output)
-            elif isinstance(output, dict):
-                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
-            else:
-                raise ValueError("Unrecognized output format: {}.".format(type(output)))
 
         self.outputs = reduce_distributed_outputs(self._distributed_outputs)
 
