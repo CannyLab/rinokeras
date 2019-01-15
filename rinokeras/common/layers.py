@@ -255,7 +255,7 @@ class DenseStack(Stack):
         for _, layer in enumerate(layers[:-1]):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
-            self.add(Dense(*layer, **kwargs))
+            self.add(WeightNormDense(*layer, **kwargs))
             if batch_norm:
                 self.add(BatchNormalization())
             self.add(Activation(activation))
@@ -263,7 +263,7 @@ class DenseStack(Stack):
         out_layer = layers[-1]
         if not isinstance(out_layer, collections.Iterable):
             out_layer = (out_layer,)
-        self.add(Dense(*out_layer, **kwargs))
+        self.add(WeightNormDense(*out_layer, **kwargs))
         if output_activation is not None:
             self.add(Activation(output_activation))
 
