@@ -5,7 +5,9 @@ import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import RNN, Flatten, Reshape
 
+import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
+from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding
 
 from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
 
@@ -41,7 +43,7 @@ class RelationalMemoryCoreCell(Model):
         self.use_cross_attention = use_cross_attention
 
         self.reshape = Reshape((mem_slots, mem_size))
-        self.initial_embed = Dense(mem_size, use_bias=True)
+        self.initial_embed = Dense(mem_size, activation='relu', use_bias=True)
 
         if use_cross_attention:
             self.attend_over_memory = TransformerDecoderBlock(
@@ -53,7 +55,7 @@ class RelationalMemoryCoreCell(Model):
                 n_heads, mem_size * 4, mem_size, dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
-
+        self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(num_gates, use_bias=True)
@@ -81,12 +83,15 @@ class RelationalMemoryCoreCell(Model):
 
         if dtype is None:
             dtype = tf.float32
-        init_state = tf.one_hot(tf.range(self.mem_slots),
-                                self.mem_size, dtype=dtype)
-        init_state = tf.tile(init_state[None], (batch_size, 1, 1))
-        init_state = self.flatten(init_state)
+        zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
+        position = self.posembed(zeros)
+        return self.flatten(position)
+        # init_state = tf.one_hot(tf.range(self.mem_slots),
+                                # self.mem_size, dtype=dtype)
+        # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
+        # init_state = self.flatten(init_state)
 
-        return init_state
+        # return init_state
 
     def _calculate_gate_size(self):
         """Calculate the gate size from the gate_style.
@@ -158,10 +163,14 @@ class RelationalMemoryCoreCell(Model):
             inputs = inputs[:, None]
 
         if self.use_cross_attention:
-            next_memory = self.attend_over_memory(memory, inputs)
+            inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
+            inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
+            next_memory = self.attend_over_memory(memory, inputs, cross_attention_mask=inputs_mask)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
-            next_memory = self.attend_over_memory(memory_plus_input)
+            inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
+            inputs_mask = rk.utils.convert_to_attention_mask(memory_plus_input, inputs_mask)
+            next_memory = self.attend_over_memory(memory_plus_input, self_attention_mask=inputs_mask)
             next_memory = next_memory[:, :-tf.shape(inputs)[1], :]
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':

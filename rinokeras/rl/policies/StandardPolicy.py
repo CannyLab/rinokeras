@@ -75,7 +75,8 @@ class StandardPolicy(Model):
 
         if self._obs.shape[1].value is None:
             bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
-            obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
+            remaining_shape = obs.shape[2:].as_list()
+            obs = tf.reshape(obs, [bs * seqlen] + remaining_shape)
 
         embedding = self.embedding_model(obs)
         logits = self.logits_function(embedding)
