@@ -35,6 +35,7 @@ class TrainGraph(TestGraph):
                  inputs: Union[Inputs, tf.data.Dataset],
                  learning_rate: float = 1e-3,
                  return_loss_summaries: bool = False,
+                 return_variable_summaries: bool = False,
                  return_grad_summaries: bool = False,
                  gradient_clip_type: str = 'none',
                  gradient_clip_bounds: Union[float, Tuple[float, float]] = 1.0,
@@ -49,8 +50,11 @@ class TrainGraph(TestGraph):
             gradient_clip_type, gradient_clip_bounds)
 
         super().__init__(
-            model, build_model, loss_function, inputs, return_loss_summaries=return_loss_summaries,
-            distribution_strategy=distribution_strategy, **kwargs)
+            model, build_model, loss_function, inputs,
+            return_loss_summaries=return_loss_summaries,
+            return_variable_summaries=return_variable_summaries,
+            distribution_strategy=distribution_strategy,
+            **kwargs)
 
     @classmethod
     def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset]):
@@ -58,6 +62,7 @@ class TrainGraph(TestGraph):
             experiment.model, experiment.build_model, experiment.optimizer,
             experiment.loss_function, inputs, experiment.learning_rate,
             return_loss_summaries=experiment.return_loss_summaries,
+            return_variable_summaries=experiment.return_variable_summaries,
             return_grad_summaries=experiment.return_grad_summaries,
             gradient_clip_type=experiment.gradient_clipping,
             gradient_clip_bounds=experiment.gradient_clipping_bounds,
