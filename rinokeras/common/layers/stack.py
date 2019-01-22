@@ -8,9 +8,11 @@ import collections
 from typing import Optional, Dict, Sequence, Any, Union
 
 from tensorflow.keras import Model  # pylint: disable=F0401
-from tensorflow.keras.layers import Conv2D, Conv2DTranspose, BatchNormalization, Flatten, Activation  # pylint: disable=F0401
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
+    BatchNormalization, Flatten, Activation  # pylint: disable=F0401
 
 from .normalization import WeightNormDense
+
 
 class Stack(Model):
     """
