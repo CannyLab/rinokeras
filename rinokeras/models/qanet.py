@@ -262,6 +262,7 @@ class QANetEncoderBlock(Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float] = None,
+                 layer_dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -274,17 +275,17 @@ class QANetEncoderBlock(Model):
                                                 activity_regularizer=activity_regularizer)
                                  for _ in range(n_conv)],
                                 name='conv_blocks')
-        self.layer_drop_1 = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_1 = LayerDropout(0 if layer_dropout is None else layer_dropout)
         self.self_attention = QANetSelfAttention(n_heads, dropout,
                                                  kernel_regularizer=kernel_regularizer,
                                                  bias_regularizer=bias_regularizer,
                                                  activity_regularizer=activity_regularizer)
-        self.layer_drop_2 = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_2 = LayerDropout(0 if layer_dropout is None else layer_dropout)
         self.feed_forward = QANetFeedForward(filter_size, hidden_size, dropout,
                                              kernel_regularizer=kernel_regularizer,
                                              bias_regularizer=bias_regularizer,
                                              activity_regularizer=activity_regularizer)
-        self.layer_drop_3 = LayerDropout(0 if dropout is None else dropout)
+        self.layer_drop_3 = LayerDropout(0 if layer_dropout is None else layer_dropout)
 
     def call(self, inputs, self_attention_mask, padding_mask):
         """Computes the encoding on the context
