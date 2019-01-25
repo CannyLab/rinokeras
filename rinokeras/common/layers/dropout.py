@@ -1,10 +1,11 @@
 """
-Dropout-style layers. 
+Dropout-style layers.
 """
 
 from typing import Dict
 from tensorflow.keras import Model # pylint: disable=F0401
 import tensorflow.keras.backend as K  # pylint: disable=F0401
+
 
 class LayerDropout(Model):
     """
@@ -23,9 +24,12 @@ class LayerDropout(Model):
         super().__init__(*args, **kwargs)
         self.rate = rate
 
-    def call(self, layer, inputs, *args, **kwargs):
+    def call(self, layer, inputs, alternate_inputs=None, *args, **kwargs):
+        if alternate_inputs is None:
+            alternate_inputs = inputs
         output = K.in_train_phase(
-            K.switch(K.random_uniform([]) > self.rate, layer(inputs, *args, **kwargs), inputs),
+            K.switch(K.random_uniform([]) > self.rate, layer(inputs, *args, **kwargs),
+                     alternate_inputs),
             layer(inputs, *args, **kwargs))
         return output
 

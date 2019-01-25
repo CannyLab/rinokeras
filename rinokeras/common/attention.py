@@ -296,7 +296,7 @@ class MultiHeadAttentionMap(Model):
         for shape in input_shape:
             assert shape[-1] % self.n_heads == 0, 'Shape of feature input must be divisible by n_heads'
 
-    def call(self, inputs, mask=None):
+    def call(self, inputs, mask=None, return_attention_weights=False):
         """Fast multi-head attention.
 
         :param queries: Tensor with shape [batch_size, n_queries, depth_k]
@@ -310,10 +310,13 @@ class MultiHeadAttentionMap(Model):
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
-        attention_output_split, _ = self.attention_map(
+        attention_output_split, attention_weights = self.attention_map(
             queries_split, keys_split, values_split, mask=mask)
         output = self._combine_heads(attention_output_split)
-        return output
+        if return_attention_weights:
+            return output, attention_weights
+        else:
+            return output
 
     def _split_heads(self, tensor):
         tensor.shape.assert_has_rank(3)
@@ -383,7 +386,7 @@ class MultiHeadAttention(Model):
                                   bias_regularizer=self.bias_regularizer,
                                   activity_regularizer=self.activity_regularizer)
 
-    def call(self, inputs, mask=None):
+    def call(self, inputs, mask=None, return_attention_weights=False):
         """Fast multi-head self attention.
 
             :param inputs: tuple of (query_antecedent, memory_antecedent)
@@ -393,10 +396,14 @@ class MultiHeadAttention(Model):
         assert isinstance(inputs, tuple) or isinstance(inputs, list) and len(inputs) == 2, \
             'Must pass query and memory'
         q, k, v = self.compute_qkv(inputs)
-        attention_output = self.attention_layer((q, k, v), mask=mask)
+        attention_output, attention_weights = self.attention_layer(
+            (q, k, v), mask=mask, return_attention_weights=True)
         output = self.output_layer(attention_output)
         output = self.dropout(output)
-        return output
+        if return_attention_weights:
+            return output, attention_weights
+        else:
+            return output
 
 
 class SelfAttention(Model):
@@ -414,8 +421,8 @@ class SelfAttention(Model):
         super().__init__()
         self.multi_attention = MultiHeadAttention(similarity_metric, n_heads, dropout, **kwargs)
 
-    def call(self, inputs, mask=None):
-        return self.multi_attention((inputs, inputs), mask=mask)
+    def call(self, inputs, mask=None, return_attention_weights=False):
+        return self.multi_attention((inputs, inputs), mask=mask, return_attention_weights=return_attention_weights)
 
 
 class ContextQueryAttention(Model):

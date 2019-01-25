@@ -35,10 +35,15 @@ class TransformerSelfAttention(Model):
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer)
 
-    def call(self, inputs, mask):
-        attention = self.self_attention(inputs, mask=mask)
+    def call(self, inputs, mask, return_attention_weights=False):
+        attention, attention_weights = self.self_attention(
+            inputs, mask=mask, return_attention_weights=True)
+        output = self.norm(attention + inputs)
 
-        return self.norm(attention + inputs)
+        if return_attention_weights:
+            return output, attention_weights
+        else:
+            return output
 
 
 class TransformerMultiAttention(Model):
@@ -57,11 +62,16 @@ class TransformerMultiAttention(Model):
         )
         self.norm = LayerNorm()
 
-    def call(self, target, source=None, mask=None):
+    def call(self, target, source=None, mask=None, return_attention_weights=False):
         assert source is not None
-        attention = self.multi_attention((target, source), mask=mask)
+        attention, attention_weights = self.multi_attention(
+            (target, source), mask=mask, return_attention_weights=True)
+        output = self.norm(attention + target)
 
-        return self.norm(attention + target)
+        if return_attention_weights:
+            return output, attention_weights
+        else:
+            return output
 
 
 class TransformerFeedForward(Model):
@@ -104,6 +114,15 @@ class TransformerEncoderBlock(Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
+        self.n_heads = n_heads
+        self.filter_size = filter_size
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.layer_dropout = layer_dropout
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
+
         self.self_attention = TransformerSelfAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
@@ -116,14 +135,24 @@ class TransformerEncoderBlock(Model):
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
-    def call(self, inputs, self_attention_mask=None):
+    def call(self, inputs, self_attention_mask=None, return_attention_weights=False):
 
         # Perform a multi-headed self-attention across the inputs.
-        res_attn = self.layer_drop_1(
-            self.self_attention, inputs, mask=self_attention_mask)
+        batch_size = tf.shape(inputs)[0]
+        seqlen = tf.shape(inputs)[1]
+
+        res_attn, attention_weights = self.layer_drop_1(
+            self.self_attention,
+            inputs,
+            alternate_inputs=(inputs, tf.zeros((batch_size, self.n_heads, seqlen, seqlen))),
+            mask=self_attention_mask,
+            return_attention_weights=True)
         output = self.layer_drop_2(self.feed_forward, res_attn)
 
-        return output
+        if return_attention_weights:
+            return output, attention_weights
+        else:
+            return output
 
 
 class TransformerDecoderBlock(Model):
@@ -146,6 +175,15 @@ class TransformerDecoderBlock(Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
+        self.n_heads = n_heads
+        self.filter_size = filter_size
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.layer_dropout = layer_dropout
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
+
         self.self_attention = TransformerMultiAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
@@ -163,8 +201,13 @@ class TransformerDecoderBlock(Model):
         self.layer_drop_3 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
-    def call(self, decoder_inputs, encoder_outputs, self_attention_mask=None,
-             cross_attention_mask=None):
+    def call(self,
+             decoder_inputs,
+             encoder_outputs,
+             self_attention_mask=None,
+             cross_attention_mask=None,
+             return_self_attention_weights=False,
+             return_cross_attention_weights=False):
 
         if isinstance(decoder_inputs, tuple):
             decoder_inputs, cache = decoder_inputs
@@ -177,23 +220,46 @@ class TransformerDecoderBlock(Model):
             all_inputs = decoder_inputs
             cache = None
         # The cross-attention mask should have shape [batch_size x target_len x input_len]
+        batch_size = tf.shape(decoder_inputs)[0]
+        target_seqlen = tf.shape(decoder_inputs)[1]
+        target_all_seqlen = tf.shape(all_inputs)[1]
+        source_seqlen = tf.shape(encoder_outputs)[1]
 
         # Compute the selt-attention over the decoder inputs. This uses the self-attention
         # mask to control for the future outputs.
         # This generates a tensor of size [batch_size x target_len x d_model]
-        target_selfattn = self.layer_drop_1(
-            self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
+        target_selfattn, self_attention_weights = self.layer_drop_1(
+            self.self_attention,
+            decoder_inputs,
+            alternate_inputs=(decoder_inputs, tf.zeros((batch_size, self.n_heads, target_seqlen, target_all_seqlen))),
+            source=all_inputs,
+            mask=self_attention_mask,
+            return_attention_weights=True)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention = self.layer_drop_2(
-            self.multi_attention, target_selfattn, source=encoder_outputs, mask=cross_attention_mask)
+        encdec_attention, cross_attention_weights = self.layer_drop_2(
+            self.multi_attention,
+            target_selfattn,
+            alternate_inputs=(target_selfattn, tf.zeros((batch_size, self.n_heads, target_seqlen, source_seqlen))),
+            source=encoder_outputs,
+            mask=cross_attention_mask,
+            return_attention_weights=True)
         output = self.layer_drop_3(self.feed_forward, encdec_attention)
 
-        return output if cache is None else (output, cache)
+        output = output if cache is None else (output, cache)
+
+        if not (return_self_attention_weights or return_cross_attention_weights):
+            return output
+        elif return_self_attention_weights and not return_cross_attention_weights:
+            return output, self_attention_weights
+        elif not return_self_attention_weights and return_cross_attention_weights:
+            return output, cross_attention_weights
+        elif return_self_attention_weights and return_cross_attention_weights:
+            return output, self_attention_weights, cross_attention_weights
 
 
 class TransformerEncoder(Model):

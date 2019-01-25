@@ -165,13 +165,16 @@ class RelationalMemoryCoreCell(Model):
         if self.use_cross_attention:
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
-            next_memory = self.attend_over_memory(memory, inputs, cross_attention_mask=inputs_mask)
+            next_memory, attention_weights = self.attend_over_memory(
+                memory, inputs, cross_attention_mask=inputs_mask, return_cross_attention_weights=True)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory_plus_input, inputs_mask)
-            next_memory = self.attend_over_memory(memory_plus_input, self_attention_mask=inputs_mask)
-            next_memory = next_memory[:, :-tf.shape(inputs)[1], :]
+            next_memory, attention_weights = self.attend_over_memory(
+                memory_plus_input, self_attention_mask=inputs_mask, return_attention_weights=True)
+            next_memory = next_memory[:, :self.mem_slots, :]
+            attention_weights = attention_weights[:, :self.mem_slots]
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
@@ -179,8 +182,9 @@ class RelationalMemoryCoreCell(Model):
             next_memory += forget_gate * memory
 
         next_memory = self.flatten(next_memory)
+        attention_weights = self.flatten(attention_weights)
 
-        return next_memory, next_memory
+        return tf.concat((next_memory, attention_weights), 1), next_memory
 
 
 class RelationalMemoryCore(RNN):
