@@ -9,7 +9,7 @@ from .train_utils import Inputs
 
 class RinokerasGraph(ABC):
 
-    _num_graphs: int = 0
+    _num_graphs = 0
 
     def __init__(self,
                  *args,
@@ -43,7 +43,7 @@ class RinokerasGraph(ABC):
         if inputs is None:
             return {}
 
-        feed_dict: Dict[tf.placeholder, Any] = {}
+        feed_dict = {} # type: Dict[tf.placeholder, Any]
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 

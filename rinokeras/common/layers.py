@@ -67,9 +67,9 @@ class LayerNorm(Layer):
     def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, **kwargs) -> None:
         super().__init__(**kwargs)
         if isinstance(axis, collections.Sequence):
-            self.axis: Sequence[int] = axis
+            self.axis = axis # type Sequence[int]
         else:
-            self.axis: Sequence[int] = (axis,)
+            self.axis = (axis,) # type Sequence[int]
         self.eps = eps
 
     def build(self, input_shape):
@@ -561,8 +561,7 @@ class PositionEmbedding(Layer):
         return inputs + position_embedding
 
     def get_config(self) -> Dict:
-        config: Dict = {}
-        return config
+        return dict()
 
 
 class PositionEmbedding2D(PositionEmbedding):
@@ -702,8 +701,7 @@ class LearnedEmbedding(Layer):
         return inputs + self.embedding
 
     def get_config(self) -> Dict:
-        config: Dict = {}
-        return config
+        return dict() 
 
 
 class GatedTanh(Model):
