@@ -195,6 +195,61 @@ class TransformerDecoderBlock(Model):
 
         return output if cache is None else (output, cache)
 
+class TSAODBlock(Model):
+    """
+    
+    Transformer Self-Attention Only Decoder Block
+    
+    A decoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf),
+    however without the cross-attention. Useful for decoding when doing Language Modeling, or non-contextual
+    decoding.
+
+    :param inputs: two Tensors encoder_outputs, decoder_inputs
+                    encoder_outputs -> a Tensor with shape [batch_size, sequence_length, channels]
+                    decoder_inputs -> a Tensor with shape [batch_size, decoding_sequence_length, channels]
+
+    :return: output: Tensor with same shape as decoder_inputs
+    """
+
+    def __init__(self,
+                 n_heads: int,
+                 filter_size: int,
+                 hidden_size: int,
+                 dropout: Optional[float] = None,
+                 layer_dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
+        super().__init__()
+        self.self_attention = TransformerMultiAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_1 = LayerDropout(
+            0 if layer_dropout is None else layer_dropout)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_regularizer=kernel_regularizer,
+                                                   bias_regularizer=bias_regularizer,
+                                                   activity_regularizer=activity_regularizer)
+        self.layer_drop_2 = LayerDropout(
+            0 if layer_dropout is None else layer_dropout)
+
+    def call(self, decoder_inputs, self_attention_mask=None, ):
+
+        if isinstance(decoder_inputs, tuple):
+            decoder_inputs, cache = decoder_inputs
+            seqpos = cache['seqpos']
+            cache[self.name] = cache[self.name].write(
+                seqpos, K.squeeze(decoder_inputs, 1))
+            all_inputs = cache[self.name].stack()
+            all_inputs = tf.transpose(all_inputs, (1, 0, 2))
+        else:
+            all_inputs = decoder_inputs
+            cache = None
+        target_selfattn = self.layer_drop_1(
+            self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
+        output = self.layer_drop_2(self.feed_forward, target_selfattn)
+        return output if cache is None else (output, cache)
+
 
 class TransformerEncoder(Model):
     """
@@ -452,7 +507,7 @@ class TransformerDecoder(Model):
             decoder_mask.shape.assert_has_rank(3)
             # Last two dimensions should match
             last_two_decoder_dims_equal = tf.assert_equal(tf.shape(decoder_mask)[-1], tf.shape(decoder_mask)[-2],
-                                                          message='Last two encoder mask dimensions must match')
+                                                          message='Last two decoder mask dimensions must match')
             assertions.append(last_two_decoder_dims_equal)
 
         return assertions
@@ -518,6 +573,226 @@ class TransformerDecoder(Model):
 
         return cache
 
+class TSAODecoder(Model):
+    """
+    
+    Transformer Self-Attention Only Decoder
+    
+    Stack of TSAODBlocks. Does decoding based only on the internal self-attention of the model
+    and not on combining any contextual information. 
+    """
+
+    # TODO: Not sure about beam search, other methods of decoding for NLP.
+    def __init__(self,
+                 embedding_layer: Optional[Model],
+                 output_layer: Optional[Model],
+                 n_layers: int,
+                 n_heads: int,
+                 d_model: int,
+                 d_filter: int,
+                 dropout: Optional[float] = None,
+                 layer_dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
+        super().__init__()
+        self.embedding_layer = embedding_layer
+        self.decoding_stack = Stack([TSAODBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
+                                                             kernel_regularizer=kernel_regularizer,
+                                                             bias_regularizer=bias_regularizer,
+                                                             activity_regularizer=activity_regularizer)
+
+                                     for _ in range(n_layers)],
+                                    name='decoder_blocks')
+        self.output_layer = output_layer
+
+    # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
+    # attention mask is just the padding mask
+    def call(self, target_input, decoder_mask=None, mask_future=False,
+             shift_target_sequence_right=False, seqpos=1, cache=None):
+        """
+            404: Documentation not found
+        """
+
+        if shift_target_sequence_right:
+            target_input = self.shift_target_sequence_right(target_input)
+
+        if self.embedding_layer is not None:
+            target_embedding = self.embedding_layer(target_input, start=seqpos)
+        else:
+            target_embedding = target_input
+
+        if cache is not None and mask_future:
+            warnings.warn("Future masking should be unnecessary when using caching and will probably cause an error. \
+                           If you think it's necessary, feel free to suppress this warning.")
+
+        # Check the input and target dimensions
+        target_embedding.shape.assert_has_rank(3)
+        with tf.control_dependencies(self.check_mask_shapes(decoder_mask)):
+            # Build the future-mask if necessary. This is an upper-triangular mask
+            # which is used to prevent the network from attending to later timesteps
+            # in the target embedding
+            batch_size = tf.shape(target_embedding)[0]
+            sequence_length = tf.shape(target_embedding)[1]
+            self_attention_mask = self.get_self_attention_mask(
+                batch_size, sequence_length, decoder_mask, mask_future)
+
+            # Now actually do the decoding which should take us to the right dimension
+            decoder_output = self.decoding_stack(
+                target_embedding if cache is None else (
+                    target_embedding, cache),
+                self_attention_mask=self_attention_mask)
+
+            if cache is not None:
+                decoder_output, _ = decoder_output
+
+            if self.output_layer is not None:
+                output = self.output_layer(decoder_output)
+            else:
+                output = decoder_output
+
+            return output
+
+    def fast_decode(self, max_seq_len, output_size=None,
+                    output_dtype=tf.float32, initial_input=None,
+                    preembed_hook=None, stopping_criterion=None, 
+                    batch_size=None):
+        output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
+        discrete = output_dtype in [tf.int32, tf.int64]
+        
+
+        if initial_input is None:
+            shape = (batch_size, 1) if discrete else (
+                batch_size, 1, output_size)
+            initial_input = tf.zeros((shape), dtype=output_dtype)
+            if batch_size is None:
+                raise ValueError('Batch size cannot be none if no initial input in TSAODecoder using fast-decode')
+        else:
+            batch_size = tf.shape(initial_input)[0]
+
+        if stopping_criterion is not None:
+            assert callable(stopping_criterion), \
+                'stopping_criterion must be a function that takes in the output at a timestep and returns \
+                 whether the timestep has finished'
+
+        def decoding_step(seqpos, inputs, cache, output_sequence, is_finished):
+            if preembed_hook is not None:
+                inputs = preembed_hook(inputs)
+
+            output = self(inputs, decoder_mask=None, shift_target_sequence_right=False,
+                          mask_future=False, cache=cache,
+                          seqpos=seqpos + 1)
+            cache['seqpos'] = seqpos + 1
+
+            if discrete:
+                output = tf.argmax(output, axis=-1, output_type=output_dtype)
+            target_input = output
+            output = tf.squeeze(output, 1)
+
+            if stopping_criterion is not None:
+                is_finished_new = stopping_criterion(output)
+                assert is_finished_new.dtype == tf.bool, 'stopping_criterion must return a boolean tensor'
+                is_finished = is_finished | is_finished_new
+
+            result = DecoderResult(
+                seqpos=seqpos + 1,
+                inputs=target_input,
+                cache=cache,
+                output_sequence=output_sequence.write(seqpos, output),
+                is_finished=is_finished)
+
+            return result
+
+        output_shape = (None, None) if discrete else (None, None, output_size)
+
+        inputs = DecoderResult(
+            seqpos=tf.constant(0),
+            inputs=initial_input,
+            cache=self.get_initial_cache(max_seq_len),
+            output_sequence=output_sequence,
+            is_finished=tf.zeros((batch_size,), dtype=tf.bool))
+
+        shapes = DecoderResult(
+            seqpos=inputs.seqpos.shape,
+            inputs=tf.TensorShape(output_shape),
+            cache={name: getattr(el, 'shape', tf.TensorShape(None))
+                   for name, el in inputs.cache.items()},
+            output_sequence=tf.TensorShape(None),
+            is_finished=inputs.is_finished.shape)
+
+        result = tf.while_loop(
+            lambda seqpos, inputs, cache, output_sequence, is_finished: ~tf.reduce_all(
+                is_finished, 0),
+            decoding_step,
+            inputs,
+            shapes,
+            maximum_iterations=max_seq_len
+        )
+
+        stack_shape = (1, 0) if discrete else (1, 0, 2)
+        output = tf.transpose(result.output_sequence.stack(), stack_shape)
+
+        return output
+
+    def shift_target_sequence_right(self, target_sequence: tf.Tensor) -> tf.Tensor:
+        constant_values = 0 if target_sequence.dtype in [
+            tf.int32, tf.int64] else 1e-10
+        pad_array = [[0, 0] for _ in target_sequence.shape]
+        pad_array[1][0] = 1
+        target_sequence = tf.pad(
+            target_sequence, pad_array, constant_values=constant_values)[:, :-1]
+
+        return target_sequence
+
+    def check_mask_shapes(self, decoder_mask) -> List:
+        # Make sure the decoder mask matches the correct embedding setup
+        assertions = []
+
+        if decoder_mask is not None:
+            decoder_mask.shape.assert_has_rank(3)
+            # Last two dimensions should match
+            last_two_decoder_dims_equal = tf.assert_equal(tf.shape(decoder_mask)[-1], tf.shape(decoder_mask)[-2],
+                                                          message='Last two decoder mask dimensions must match')
+            assertions.append(last_two_decoder_dims_equal)
+
+        return assertions
+
+    def get_future_mask(self, batch_size, sequence_length):
+        """Mask future targets and padding
+
+            :param batch_size: a TF Dimension
+            :param sequence_length: a TF Dimension
+            :param padding_mask: None or bool Tensor with shape [batch_size, sequence_length]
+
+            :return mask: bool Tensor with shape [batch_size, sequence_length, sequence_length]
+        """
+
+        xind = tf.tile(tf.range(sequence_length)[
+                       None, :], (sequence_length, 1))
+        yind = tf.tile(tf.range(sequence_length)[
+                       :, None], (1, sequence_length))
+        mask = yind >= xind
+        mask = tf.tile(mask[None], (batch_size, 1, 1))
+
+        return mask
+
+    def get_self_attention_mask(self, batch_size, sequence_length, decoder_mask, mask_future):
+        if not isinstance(mask_future, tf.Tensor) and not mask_future:
+            return decoder_mask
+        mask_future = mask_future if isinstance(mask_future, tf.Tensor) else \
+            self.get_future_mask(batch_size, sequence_length)
+
+        if decoder_mask is None:
+            return mask_future
+
+        return decoder_mask & mask_future
+
+    def get_initial_cache(self, size):
+        cache = {layer.name: tf.TensorArray(tf.float32, 1, dynamic_size=True, clear_after_read=False) for layer in
+                 self.decoding_stack.layers}  # [0]
+        cache['seqpos'] = tf.constant(0, dtype=tf.int32)
+
+        return cache
 
 # TODO: Split this into a discrete/continuous embedding rather than handle the logic here
 class TransformerInputEmbedding(Model):
