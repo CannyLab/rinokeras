@@ -9,16 +9,16 @@ from .train_utils import Inputs
 
 class RinokerasGraph(ABC):
 
-    _num_graphs: int = 0
+    _num_graphs = 0
 
     def __init__(self,
                  *args,
                  **kwargs) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
-        if RinokerasGraph._num_graphs > 0:
+        if self.__class__._num_graphs > 0:
             self._name += '_{}'.format(RinokerasGraph._num_graphs)
-        RinokerasGraph._num_graphs += 1
+        self.__class__._num_graphs += 1
 
         self.progress_bar = None
         self.inputs = ()
@@ -43,7 +43,7 @@ class RinokerasGraph(ABC):
         if inputs is None:
             return {}
 
-        feed_dict: Dict[tf.placeholder, Any] = {}
+        feed_dict = {}  # type: Dict[tf.placeholder, Any]
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
@@ -103,6 +103,9 @@ class RinokerasGraph(ABC):
         return NotImplemented
 
     @property
-    def global_step(self) -> int:
-        sess = self._get_session()
-        return tf.train.global_step(sess, self._global_step)
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def summary_collection(self) -> str:
+        return self.name + '_summaries'

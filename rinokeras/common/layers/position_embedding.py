@@ -53,8 +53,7 @@ class PositionEmbedding(Layer):
         return inputs + position_embedding
 
     def get_config(self) -> Dict:
-        config: Dict = {}
-        return config
+        return dict()
 
 
 class PositionEmbedding2D(PositionEmbedding):
@@ -194,5 +193,4 @@ class LearnedEmbedding(Layer):
         return inputs + self.embedding
 
     def get_config(self) -> Dict:
-        config: Dict = {}
-        return config
+        return dict()

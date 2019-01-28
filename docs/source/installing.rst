@@ -5,7 +5,7 @@ Installing
 Requirements
 ################
 
-- Python >= 3.5
+- Python >= 3.6
 - Numpy >= 1.14
 - Tensorflow >= 1.10
 - Pytest >= 3.7

@@ -8,8 +8,10 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding
+from rinokeras.common.attention import ContextQueryAttention
 
 from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
+
 
 
 # https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/relational_memory.py
@@ -55,6 +57,10 @@ class RelationalMemoryCoreCell(Model):
                 n_heads, mem_size * 4, mem_size, dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+
+        if self.gate_style == 'attention':
+            self.attention_gate = ContextQueryAttention()
+
         self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
@@ -177,7 +183,15 @@ class RelationalMemoryCoreCell(Model):
             input_gate, forget_gate = self.create_gates(inputs, memory)
             next_memory = input_gate * tf.tanh(next_memory)
             next_memory += forget_gate * memory
+        elif self.gate_style == 'attention':
+            # The next memory is the context-gated input at this point.
+            # We need to take our  current memory
+            memory_update = memory + tf.tanh(next_memory)
+            inputs_mask = tf.reduce_any(tf.cast(memory_update, tf.bool), -1)
+            inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
+            next_memory = self.attention_gate(memory_update, inputs)
 
+        
         next_memory = self.flatten(next_memory)
 
         return next_memory, next_memory
