@@ -158,7 +158,7 @@ class TestGraph(RinokerasGraph):
             losses['Loss'] = total_loss
         else:
             total_loss = losses
-            losses = (losses,)
+            losses = {'Loss': total_loss}
 
         return total_loss, losses
 
