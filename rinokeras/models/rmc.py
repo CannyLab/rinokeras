@@ -13,7 +13,6 @@ from rinokeras.common.attention import ContextQueryAttention
 from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
 
 
-
 # https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/relational_memory.py
 class RelationalMemoryCoreCell(Model):
 
@@ -194,7 +193,6 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
             next_memory = self.attention_gate(memory_update, inputs)
 
-        
         next_memory = self.flatten(next_memory)
         attention_weights = self.flatten(attention_weights)
 
