@@ -102,27 +102,16 @@ class TestGraph(RinokerasGraph):
 
     def _finalize_graph(self):
         self._default_operation = 'loss'
-        self.summaries = tf.summary.merge_all()
+        self.summaries = tf.summary.merge_all(self.summary_collection)
 
     def _create_summaries(self):
-        # with tf.device('/cpu:0'):
-            # if self.return_loss_summaries:
-                # with tf.name_scope('losses'):
-                    # for name, loss in self.losses.items():
-                        # tf.summary.scalar(name, loss)
-        with self.distribution_strategy.scope():
-            # if self.return_loss_summaries:
-                # for name, loss in self._distributed_losses.items():
-                    # tf.summary.scalar(name, loss)
-            if self.return_variable_summaries:
+        if self.return_loss_summaries:
+            for name, loss in self.losses.items():
+                tf.summary.scalar(name, loss, collections=[self.summary_collection])
+        if self.return_variable_summaries:
+            with self.distribution_strategy.scope():
                 for v in self.model.variables:
-                    tf.summary.histogram(v.name, v)
-            # with tf.name_scope('attention_weights'):
-                # def keep(el: str) -> bool:
-                    # return 'dropout' not in el and 'multi_head' not in el and 'mul' not in el
-                # for wt in filter(lambda wt: 'while' not in wt.name, tf.get_collection('ATTENTION_WEIGHTS')):
-                    # name = '/'.join(filter(keep, wt.name.split('/')))
-                    # tf.summary.histogram(name, wt)
+                    tf.summary.histogram(v.name, v, collections=[self.summary_collection])
 
     def initialize(self):
         if self.iterator is not None:
@@ -198,3 +187,8 @@ class TestGraph(RinokerasGraph):
         if len(result) == 1:
             result = result[0]
         return result
+
+    @property
+    def global_step(self) -> int:
+        sess = self._get_session()
+        return tf.train.global_step(sess, self._global_step)

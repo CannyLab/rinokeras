@@ -125,8 +125,15 @@ class TrainGraph(TestGraph):
             self.optimizer = self._get_optimizer(self.optimizer)
 
     def _finalize_graph(self):
+        super()._finalize_graph()
         self._default_operation = 'update'
-        self.summaries = tf.summary.merge_all()
+
+    def _create_summaries(self):
+        super()._create_summaries()
+        if self.return_grad_summaries:
+            for grad, var in self.grads:
+                name = var.name.replace(':', '_')
+                tf.summary.histogram(name, grad, collections=[self.summary_collection])
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
@@ -183,14 +190,6 @@ class TrainGraph(TestGraph):
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
-    def _create_summaries(self):
-        super()._create_summaries()
-        if self.return_grad_summaries:
-            with tf.name_scope('gradients'):
-                for grad, var in self.grads:
-                    name = var.name.replace(':', '_')
-                    tf.summary.histogram(name, grad)
-
     def run(self,
             ops: Union[str, Sequence[tf.Tensor]],
             inputs: Optional[Inputs] = None,
@@ -225,7 +224,6 @@ class TrainGraph(TestGraph):
             ops.append(self.outputs)
         if self.return_loss_summaries or self.return_grad_summaries:
             ops.append(self.summaries)
-
         _, _, *result = self._run_tensor(ops, inputs)
         if len(result) == 1:
             result = result[0]
