@@ -153,7 +153,7 @@ class RelationalMemoryCoreCell(Model):
         if self.gate_style == 'attention':
             self.attention_gate = ContextQueryAttention()
 
-        self.posembed = LearnedEmbedding()
+        self.posembed = PositionEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(num_gates, use_bias=True)
