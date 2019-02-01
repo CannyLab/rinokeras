@@ -8,7 +8,7 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding
-from rinokeras.common.attention import ContextQueryAttention
+from rinokeras.common.attention import ScaledDotProductSimilarity
 
 from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
 
@@ -59,7 +59,7 @@ class RelationalMemoryCoreCell(Model):
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
         if self.gate_style == 'attention':
-            self.attention_gate = ContextQueryAttention()
+            self.similarity = ScaledDotProductSimilarity()
 
         self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
@@ -171,6 +171,12 @@ class RelationalMemoryCoreCell(Model):
         if self.use_cross_attention:
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
+
+            # TODO: See if this breaks everything
+            # memory = tf.keras.layers.Input(tensor=memory)
+            # inputs = tf.keras.layers.Input(tensor=inputs)
+            # inputs_mask = tf.keras.layers.Input(tensor=inputs_mask)
+
             next_memory = self.attend_over_memory(memory, inputs, cross_attention_mask=inputs_mask)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
@@ -186,11 +192,25 @@ class RelationalMemoryCoreCell(Model):
         elif self.gate_style == 'attention':
             # The next memory is the context-gated input at this point.
             # We need to take our  current memory
-            memory_update = memory + tf.tanh(next_memory)
-            inputs_mask = tf.reduce_any(tf.cast(memory_update, tf.bool), -1)
-            inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
-            next_memory = self.attention_gate(memory_update, inputs)
+            # pass
+            memory_update = tf.tanh(next_memory)
+            # print('Memory update', memory_update)
+            # print('Memory:', memory)
+            # inputs_mask = tf.reduce_any(tf.cast(memory_update, tf.bool), -1)
+            # inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
 
+            # print('Inputs Mask', inputs_mask)
+
+            next_memory_weights = tf.nn.softmax(self.similarity(memory_update, inputs))
+
+            # print('NMW:', next_memory_weights)
+
+            next_memory = next_memory_weights * memory_update + (tf.ones_like(next_memory_weights) - next_memory_weights) * memory
+
+            # print('Next Memory:', next_memory)
+            # print('Name:', next_memory.name)
+
+            next_memory = memory_update
         
         next_memory = self.flatten(next_memory)
 
@@ -225,6 +245,9 @@ class RelationalMemoryCore(RNN):
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
+
+    def call(self, *args, **kwargs):
+        return super().call(*args, **kwargs)
 
     @property
     def mem_slots(self) -> int:
