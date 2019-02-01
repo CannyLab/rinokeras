@@ -261,11 +261,12 @@ class TransformerDecoderBlock(Model):
         elif return_self_attention_weights and return_cross_attention_weights:
             return output, self_attention_weights, cross_attention_weights
 
+
 class TSAODBlock(Model):
     """
-    
+
     Transformer Self-Attention Only Decoder Block
-    
+
     A decoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf),
     however without the cross-attention. Useful for decoding when doing Language Modeling, or non-contextual
     decoding.
@@ -639,13 +640,14 @@ class TransformerDecoder(Model):
 
         return cache
 
+
 class TSAODecoder(Model):
     """
-    
+
     Transformer Self-Attention Only Decoder
-    
+
     Stack of TSAODBlocks. Does decoding based only on the internal self-attention of the model
-    and not on combining any contextual information. 
+    and not on combining any contextual information.
     """
 
     # TODO: Not sure about beam search, other methods of decoding for NLP.
@@ -721,11 +723,11 @@ class TSAODecoder(Model):
 
     def fast_decode(self, max_seq_len, output_size=None,
                     output_dtype=tf.float32, initial_input=None,
-                    preembed_hook=None, stopping_criterion=None, 
+                    preembed_hook=None, stopping_criterion=None,
                     batch_size=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
-        
+
 
         if initial_input is None:
             shape = (batch_size, 1) if discrete else (
