@@ -7,10 +7,35 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout
-from rinokeras.common.attention import ContextQueryAttention
+from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
+    LayerNorm, DenseStack, Dropout
+from rinokeras.common.attention import ScaledDotProductSimilarity
 
 from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward
+
+
+class RMCFeedForward(Model):
+
+    def __init__(self,
+                 mem_slots: int,
+                 filter_size: int,
+                 hidden_size: int,
+                 dropout: Optional[float],
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
+        super().__init__()
+        self.mem_slots = mem_slots
+        self.ff_layers = [
+            TransformerFeedForward(filter_size, hidden_size, dropout,
+                                   kernel_regularizer, bias_regularizer,
+                                   activity_regularizer)
+            for _ in range(mem_slots)]
+
+    def call(self, inputs):
+        inputs = tf.split(inputs, axis=1, num_or_size_splits=self.mem_slots)
+        outputs = [ff(inp) for ff, inp in zip(self.ff_layers, inputs)]
+        return tf.concat(outputs, 1)
 
 
 class RMCBlock(Model):
@@ -24,6 +49,7 @@ class RMCBlock(Model):
     """
 
     def __init__(self,
+                 mem_slots: int,
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
@@ -33,6 +59,7 @@ class RMCBlock(Model):
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
+        self.mem_slots = mem_slots
         self.n_heads = n_heads
         self.filter_size = filter_size
         self.hidden_size = hidden_size
@@ -52,10 +79,10 @@ class RMCBlock(Model):
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
-                                                   kernel_regularizer=kernel_regularizer,
-                                                   bias_regularizer=bias_regularizer,
-                                                   activity_regularizer=activity_regularizer)
+        self.feed_forward = RMCFeedForward(mem_slots, filter_size, hidden_size, dropout,
+                                           kernel_regularizer=kernel_regularizer,
+                                           bias_regularizer=bias_regularizer,
+                                           activity_regularizer=activity_regularizer)
         self.layer_drop_3 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
@@ -141,6 +168,7 @@ class RelationalMemoryCoreCell(Model):
 
         if use_cross_attention:
             self.attend_over_memory = RMCBlock(
+                mem_slots,
                 n_heads, mem_size * 4, mem_size, dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
@@ -150,14 +178,17 @@ class RelationalMemoryCoreCell(Model):
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
-        if self.gate_style == 'attention':
-            self.attention_gate = ContextQueryAttention()
+        # if self.gate_style == 'attention':
+        if treat_input_as_sequence:
+            self.similarity = ScaledDotProductSimilarity()
 
         self.posembed = PositionEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(num_gates, use_bias=True)
         self.gate_memory = Dense(num_gates, use_bias=True)
+        self.memory_projection = Dense(16, use_bias=False)
+        self.input_projection = Dense(16, use_bias=False)
 
     def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
         """Creates the initial memory.
@@ -223,8 +254,15 @@ class RelationalMemoryCoreCell(Model):
             gate_inputs = self.gate_inputs(inputs)
             gate_inputs = gate_inputs[:, None]
         else:
+            # [batch_size, input_size, d_model]
             gate_inputs = self.gate_inputs(inputs)
-            gate_inputs = tf.reduce_max(gate_inputs, axis=1, keepdims=True)
+            memory_proj = self.memory_projection(memory)
+            input_proj = self.input_projection(inputs)
+
+            # [batch_size, mem_cells, input_size]
+            input_weights = tf.nn.softmax(self.similarity(memory_proj, input_proj), -1)
+            gate_inputs = input_weights @ gate_inputs
+
         gate_memory = self.gate_memory(memory)
         input_gate, forget_gate = tf.split(
             gate_memory + gate_inputs, num_or_size_splits=2, axis=-1)
@@ -264,13 +302,13 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
-                memory, inputs, cross_attention_mask=inputs_mask, return_cross_attention_weights=True)
+                memory, inputs, cross_attention_mask=None, return_cross_attention_weights=True)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory_plus_input, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
-                memory_plus_input, self_attention_mask=inputs_mask, return_attention_weights=True)
+                memory_plus_input, self_attention_mask=None, return_attention_weights=True)
             next_memory = next_memory[:, :self.mem_slots, :]
             attention_weights = attention_weights[:, :self.mem_slots]
 
@@ -278,13 +316,6 @@ class RelationalMemoryCoreCell(Model):
             input_gate, forget_gate = self.create_gates(inputs, memory)
             next_memory = input_gate * tf.tanh(next_memory)
             next_memory += forget_gate * memory
-        elif self.gate_style == 'attention':
-            # The next memory is the context-gated input at this point.
-            # We need to take our  current memory
-            memory_update = memory + tf.tanh(next_memory)
-            inputs_mask = tf.reduce_any(tf.cast(memory_update, tf.bool), -1)
-            inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
-            next_memory = self.attention_gate(memory_update, inputs)
 
         next_memory = self.flatten(next_memory)
         attention_weights = self.flatten(attention_weights)
@@ -320,6 +351,9 @@ class RelationalMemoryCore(RNN):
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
+
+    def call(self, *args, **kwargs):
+        return super().call(*args, **kwargs)
 
     @property
     def mem_slots(self) -> int:
