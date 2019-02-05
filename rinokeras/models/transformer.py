@@ -80,13 +80,15 @@ class TransformerFeedForward(Model):
                  dropout: Optional[float],
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,
+                 use_weight_norm: bool = True) -> None:
         super().__init__()
         self.norm = LayerNorm()
         self.feed_forward = DenseStack([filter_size, hidden_size], output_activation=None,
                                        kernel_regularizer=kernel_regularizer,
                                        bias_regularizer=bias_regularizer,
-                                       activity_regularizer=activity_regularizer)
+                                       activity_regularizer=activity_regularizer,
+                                       use_weight_norm=use_weight_norm)
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def call(self, inputs):
@@ -112,7 +114,8 @@ class TransformerEncoderBlock(Model):
                  layer_dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,
+                 use_weight_norm=True) -> None:
         super().__init__()
         self.n_heads = n_heads
         self.filter_size = filter_size
@@ -131,7 +134,8 @@ class TransformerEncoderBlock(Model):
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
-                                                   activity_regularizer=activity_regularizer)
+                                                   activity_regularizer=activity_regularizer,
+                                                   use_weight_norm=use_weight_norm)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
@@ -173,7 +177,8 @@ class TransformerDecoderBlock(Model):
                  layer_dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,
+                 use_weight_norm=True) -> None:
         super().__init__()
         self.n_heads = n_heads
         self.filter_size = filter_size
@@ -197,7 +202,8 @@ class TransformerDecoderBlock(Model):
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
-                                                   activity_regularizer=activity_regularizer)
+                                                   activity_regularizer=activity_regularizer,
+                                                   use_weight_norm=use_weight_norm)
         self.layer_drop_3 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
@@ -286,7 +292,8 @@ class TSAODBlock(Model):
                  layer_dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,
+                 use_weight_norm=True) -> None:
         super().__init__()
         self.self_attention = TransformerMultiAttention(
             n_heads, dropout, kernel_regularizer=kernel_regularizer,
@@ -296,7 +303,8 @@ class TSAODBlock(Model):
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
-                                                   activity_regularizer=activity_regularizer)
+                                                   activity_regularizer=activity_regularizer,
+                                                   use_weight_norm=use_weight_norm)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
@@ -334,6 +342,7 @@ class TransformerEncoder(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
+                 use_weight_norm=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -342,7 +351,8 @@ class TransformerEncoder(Model):
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
                                                              kernel_regularizer=kernel_regularizer,
                                                              bias_regularizer=bias_regularizer,
-                                                             activity_regularizer=activity_regularizer)
+                                                             activity_regularizer=activity_regularizer,
+                                                             use_weight_norm=use_weight_norm)
 
                                      for _ in range(n_layers)],
                                     name='encoder_stack')
@@ -397,13 +407,15 @@ class TransformerDecoder(Model):
                  layer_dropout: Optional[float] = None,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,
+                 use_weight_norm=True) -> None:
         super().__init__()
         self.embedding_layer = embedding_layer
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
                                                              kernel_regularizer=kernel_regularizer,
                                                              bias_regularizer=bias_regularizer,
-                                                             activity_regularizer=activity_regularizer)
+                                                             activity_regularizer=activity_regularizer,
+                                                             use_weight_norm=use_weight_norm)
 
                                      for _ in range(n_layers)],
                                     name='decoder_blocks')
@@ -957,6 +969,7 @@ class Transformer(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
+                 use_weight_norm=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -1043,7 +1056,8 @@ class Transformer(Model):
             n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
-            activity_regularizer=self.activity_regularizer)
+            activity_regularizer=self.activity_regularizer,
+            use_weight_norm=use_weight_norm)
 
         # Build the decoder stack.
         self.decoder = TransformerDecoder(
@@ -1051,7 +1065,8 @@ class Transformer(Model):
             n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
-            activity_regularizer=self.activity_regularizer)
+            activity_regularizer=self.activity_regularizer,
+            use_weight_norm=use_weight_norm)
 
     # Test decoding. Does not use the fast-decode method (which would make this much more effective)
     def test_decode(self, source_sequence, max_seq_len, encoder_mask=None, initial_input=None, preembed_hook=None):

@@ -154,6 +154,7 @@ class DenseStack(Stack):
                  batch_norm: bool = False,
                  activation: str = 'relu',
                  output_activation: Optional[str] = None,
+                 use_weight_norm: bool = True,
                  **kwargs) -> None:
         super().__init__()
 
@@ -167,7 +168,8 @@ class DenseStack(Stack):
         for _, layer in enumerate(layers[:-1]):
             if not isinstance(layer, collections.Iterable):
                 layer = (layer,)
-            self.add(WeightNormDense(*layer, **kwargs))
+            if use_weight_norm:
+                self.add(WeightNormDense(*layer, **kwargs))
             if batch_norm:
                 self.add(BatchNormalization())
             self.add(Activation(activation))
@@ -175,7 +177,8 @@ class DenseStack(Stack):
         out_layer = layers[-1]
         if not isinstance(out_layer, collections.Iterable):
             out_layer = (out_layer,)
-        self.add(WeightNormDense(*out_layer, **kwargs))
+        if use_weight_norm:
+            self.add(WeightNormDense(*out_layer, **kwargs))
         if output_activation is not None:
             self.add(Activation(output_activation))
 
