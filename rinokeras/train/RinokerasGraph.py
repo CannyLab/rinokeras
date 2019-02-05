@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
 
 import tensorflow as tf
+from tensorflow.python.client import timeline
 from tqdm import tqdm
 
 from .train_utils import Inputs
@@ -21,6 +22,7 @@ class RinokerasGraph(ABC):
         self.__class__._num_graphs += 1
 
         self.progress_bar = None
+        self.instrument_idx = 0
         self.inputs = ()
 
     def _map_to_placeholders(self, placeholders, inputs, feed_dict):
@@ -47,7 +49,7 @@ class RinokerasGraph(ABC):
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, instrumented: bool = False) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -64,7 +66,17 @@ class RinokerasGraph(ABC):
         sess = self._get_session()
         feed_dict = self._get_feed_dict(inputs)
 
-        results = sess.run(ops, feed_dict=feed_dict)
+        if instrumented:
+            self.instrument_idx += 1
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+            results = sess.run(ops, feed_dict=feed_dict, options=run_options, run_metadata=run_metadata)
+            tl = timeline.Timeline(run_metadata.step_stats)
+            trace_file = tf.gfile.Open(name='timeline_{}'.format(self.instrument_idx), mode='a+')
+            trace_file.write(tl.generate_chrome_trace_format(show_memory=True))
+
+        else:
+            results = sess.run(ops, feed_dict=feed_dict)
         return results
 
     def add_progress_bar(self, data_len: Optional[int] = None, epoch_num: Optional[int] = None):
