@@ -74,7 +74,6 @@ class RinokerasGraph(ABC):
             tl = timeline.Timeline(run_metadata.step_stats)
             trace_file = tf.gfile.Open(name='timeline_{}'.format(self.instrument_idx), mode='a+')
             trace_file.write(tl.generate_chrome_trace_format(show_memory=True))
-
         else:
             results = sess.run(ops, feed_dict=feed_dict)
         return results
