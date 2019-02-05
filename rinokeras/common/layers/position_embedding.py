@@ -34,6 +34,7 @@ class PositionEmbedding(Layer):
             Returns:
                 embedding: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
         """
+        inputs.shape.assert_has_rank(3)
         assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
 
         sequence_length = tf.shape(inputs)[1] if inputs.shape[1].value is None else inputs.shape[1].value
@@ -85,6 +86,7 @@ class PositionEmbedding2D(PositionEmbedding):
                 embedding: a float32 Tensor with shape [batch_size, Width, Height, Channels]
         """
         # return inputs + self.embedding[None]
+        inputs.shape.assert_has_rank(4)
         width, height, channels = inputs.shape[1:]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 
@@ -139,6 +141,7 @@ class PositionEmbedding3D(PositionEmbedding2D):
                 embedding: a float32 Tensor with shape [batch_size, Width, Height, Channels]
         """
         # return inputs + self.embedding[None]
+        inputs.shape.assert_has_rank(5)
         time, width, height, channels = inputs.shape[1:]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 

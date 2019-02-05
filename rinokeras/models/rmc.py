@@ -7,11 +7,103 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding
 from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
+from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout
 
-from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
+from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward
 
+
+class RMCBlock(Model):
+    """A decoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
+
+    :param inputs: two Tensors encoder_outputs, decoder_inputs
+                    encoder_outputs -> a Tensor with shape [batch_size, sequence_length, channels]
+                    decoder_inputs -> a Tensor with shape [batch_size, decoding_sequence_length, channels]
+
+    :return: output: Tensor with same shape as decoder_inputs
+    """
+
+    def __init__(self,
+                 n_heads: int,
+                 filter_size: int,
+                 hidden_size: int,
+                 dropout: Optional[float] = None,
+                 layer_dropout: Optional[float] = None,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None) -> None:
+        super().__init__()
+        self.n_heads = n_heads
+        self.filter_size = filter_size
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.layer_dropout = layer_dropout
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
+
+        self.multi_attention = TransformerMultiAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_1 = LayerDropout(
+            0 if layer_dropout is None else layer_dropout)
+        self.self_attention = TransformerMultiAttention(
+            n_heads, dropout, kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+        self.layer_drop_2 = LayerDropout(
+            0 if layer_dropout is None else layer_dropout)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_regularizer=kernel_regularizer,
+                                                   bias_regularizer=bias_regularizer,
+                                                   activity_regularizer=activity_regularizer)
+        self.layer_drop_3 = LayerDropout(
+            0 if layer_dropout is None else layer_dropout)
+
+    def call(self,
+             memory_cells,
+             inputs,
+             cross_attention_mask=None,
+             return_self_attention_weights=False,
+             return_cross_attention_weights=False):
+        # The cross-attention mask should have shape [batch_size x target_len x input_len]
+        batch_size = tf.shape(memory_cells)[0]
+        target_seqlen = tf.shape(memory_cells)[1]
+        source_seqlen = tf.shape(inputs)[1]
+
+        # Compute the attention using the keys/values from the encoder, and the query from the
+        # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
+        # target self-attention layer of size [batch_size x target_len x d_model] and then computes
+        # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
+        # using the encoder as the keys and values and the target as the queries
+        memory_cells, cross_attention_weights = self.layer_drop_1(
+            self.multi_attention,
+            memory_cells,
+            alternate_inputs=(memory_cells, tf.zeros((batch_size, self.n_heads, target_seqlen, source_seqlen))),
+            source=inputs,
+            mask=cross_attention_mask,
+            return_attention_weights=True)
+
+        # Compute the selt-attention over the decoder inputs. This uses the self-attention
+        # mask to control for the future outputs.
+        # This generates a tensor of size [batch_size x target_len x d_model]
+        memory_cells, self_attention_weights = self.layer_drop_2(
+            self.self_attention,
+            memory_cells,
+            alternate_inputs=(memory_cells, tf.zeros((batch_size, self.n_heads, target_seqlen, target_seqlen))),
+            source=memory_cells,
+            mask=None,
+            return_attention_weights=True)
+
+        output = self.layer_drop_3(self.feed_forward, memory_cells)
+
+        if not (return_self_attention_weights or return_cross_attention_weights):
+            return output
+        elif return_self_attention_weights and not return_cross_attention_weights:
+            return output, self_attention_weights
+        elif not return_self_attention_weights and return_cross_attention_weights:
+            return output, cross_attention_weights
+        elif return_self_attention_weights and return_cross_attention_weights:
+            return output, self_attention_weights, cross_attention_weights
 
 
 # https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/relational_memory.py
@@ -48,7 +140,7 @@ class RelationalMemoryCoreCell(Model):
         self.initial_embed = Dense(mem_size, activation='relu', use_bias=True)
 
         if use_cross_attention:
-            self.attend_over_memory = TransformerDecoderBlock(
+            self.attend_over_memory = RMCBlock(
                 n_heads, mem_size * 4, mem_size, dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
@@ -172,19 +264,16 @@ class RelationalMemoryCoreCell(Model):
         if self.use_cross_attention:
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
-
-            # TODO: See if this breaks everything
-            # memory = tf.keras.layers.Input(tensor=memory)
-            # inputs = tf.keras.layers.Input(tensor=inputs)
-            # inputs_mask = tf.keras.layers.Input(tensor=inputs_mask)
-
-            next_memory = self.attend_over_memory(memory, inputs, cross_attention_mask=inputs_mask)
+            next_memory, attention_weights = self.attend_over_memory(
+                memory, inputs, cross_attention_mask=inputs_mask, return_cross_attention_weights=True)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory_plus_input, inputs_mask)
-            next_memory = self.attend_over_memory(memory_plus_input, self_attention_mask=inputs_mask)
-            next_memory = next_memory[:, :-tf.shape(inputs)[1], :]
+            next_memory, attention_weights = self.attend_over_memory(
+                memory_plus_input, self_attention_mask=inputs_mask, return_attention_weights=True)
+            next_memory = next_memory[:, :self.mem_slots, :]
+            attention_weights = attention_weights[:, :self.mem_slots]
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
@@ -192,8 +281,7 @@ class RelationalMemoryCoreCell(Model):
             next_memory += forget_gate * memory
         elif self.gate_style == 'attention':
 
-
-            memory_update = tf.tanh(next_memory) # This is the input of the memory 
+            memory_update = tf.tanh(next_memory) # This is the input of the memory
 
             # Do a QKV projection
             queries, keys, values = self.qkv_projection((inputs,memory_update))
@@ -204,10 +292,11 @@ class RelationalMemoryCoreCell(Model):
 
             # Convex combination
             next_memory = values * max_attention + memory * (1.0 - max_attention)
-        
-        next_memory = self.flatten(next_memory)
 
-        return next_memory, next_memory
+        next_memory = self.flatten(next_memory)
+        attention_weights = self.flatten(attention_weights)
+
+        return tf.concat((next_memory, attention_weights), 1), next_memory
 
 
 class RelationalMemoryCore(RNN):
