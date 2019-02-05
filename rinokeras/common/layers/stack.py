@@ -9,7 +9,7 @@ from typing import Optional, Dict, Sequence, Any, Union
 
 from tensorflow.keras import Model  # pylint: disable=F0401
 from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
-    BatchNormalization, Flatten, Activation  # pylint: disable=F0401
+    BatchNormalization, Flatten, Activation, Dense  # pylint: disable=F0401
 
 from .normalization import WeightNormDense
 
