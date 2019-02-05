@@ -170,6 +170,8 @@ class DenseStack(Stack):
                 layer = (layer,)
             if use_weight_norm:
                 self.add(WeightNormDense(*layer, **kwargs))
+            else:
+                self.add(Dense(*layer, **kwargs))
             if batch_norm:
                 self.add(BatchNormalization())
             self.add(Activation(activation))
@@ -179,6 +181,8 @@ class DenseStack(Stack):
             out_layer = (out_layer,)
         if use_weight_norm:
             self.add(WeightNormDense(*out_layer, **kwargs))
+        else:
+            self.add(Dense(*out_layer, **kwargs))
         if output_activation is not None:
             self.add(Activation(output_activation))
 
