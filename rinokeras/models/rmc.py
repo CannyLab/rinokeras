@@ -8,7 +8,7 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding
-from rinokeras.common.attention import ScaledDotProductSimilarity
+from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
 
 from .transformer import TransformerDecoderBlock, TransformerEncoderBlock
 
@@ -59,7 +59,8 @@ class RelationalMemoryCoreCell(Model):
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
         if self.gate_style == 'attention':
-            self.similarity = ScaledDotProductSimilarity()
+            self.attention_map = AttentionMap(ScaledDotProductSimilarity()) # ,tf.identity
+            self.qkv_projection = AttentionQKV(self.mem_size,self.mem_size)
 
         self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
@@ -190,27 +191,19 @@ class RelationalMemoryCoreCell(Model):
             next_memory = input_gate * tf.tanh(next_memory)
             next_memory += forget_gate * memory
         elif self.gate_style == 'attention':
-            # The next memory is the context-gated input at this point.
-            # We need to take our  current memory
-            # pass
-            memory_update = tf.tanh(next_memory)
-            # print('Memory update', memory_update)
-            # print('Memory:', memory)
-            # inputs_mask = tf.reduce_any(tf.cast(memory_update, tf.bool), -1)
-            # inputs_mask = rk.utils.convert_to_attention_mask(inputs, inputs_mask)
 
-            # print('Inputs Mask', inputs_mask)
 
-            next_memory_weights = tf.nn.softmax(self.similarity(memory_update, inputs))
+            memory_update = tf.tanh(next_memory) # This is the input of the memory 
 
-            # print('NMW:', next_memory_weights)
+            # Do a QKV projection
+            queries, keys, values = self.qkv_projection((inputs,memory_update))
+            _, attention_weights = self.attention_map(queries, keys, values)
 
-            next_memory = next_memory_weights * memory_update + (tf.ones_like(next_memory_weights) - next_memory_weights) * memory
+            # Reduce max
+            max_attention = tf.reduce_max(attention_weights, axis=-1) # [bs, num_slots]
 
-            # print('Next Memory:', next_memory)
-            # print('Name:', next_memory.name)
-
-            next_memory = memory_update
+            # Convex combination
+            next_memory = values * max_attention + memory * (1.0 - max_attention)
         
         next_memory = self.flatten(next_memory)
 
