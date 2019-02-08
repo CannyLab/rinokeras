@@ -27,8 +27,11 @@ class LayerDropout(Model):
     def call(self, layer, inputs, alternate_inputs=None, *args, **kwargs):
         if alternate_inputs is None:
             alternate_inputs = inputs
+        outputs = layer(inputs, *args, **kwargs)
+        if isinstance(outputs, list):
+            outputs = tuple(outputs)
         output = K.in_train_phase(
-            K.switch(K.random_uniform([]) > self.rate, layer(inputs, *args, **kwargs),
+            K.switch(K.random_uniform([]) > self.rate, outputs,
                      alternate_inputs),
             layer(inputs, *args, **kwargs))
         return output

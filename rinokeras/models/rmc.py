@@ -79,23 +79,27 @@ class RMCBlock(Model):
             bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
-        self.feed_forward = RMCFeedForward(mem_slots, filter_size, hidden_size, dropout,
-                                           kernel_regularizer=kernel_regularizer,
-                                           bias_regularizer=bias_regularizer,
-                                           activity_regularizer=activity_regularizer)
+        # self.feed_forward = RMCFeedForward(mem_slots, filter_size, hidden_size, dropout,
+                                           # kernel_regularizer=kernel_regularizer,
+                                           # bias_regularizer=bias_regularizer,
+                                           # activity_regularizer=activity_regularizer)
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_regularizer=kernel_regularizer,
+                                                   bias_regularizer=bias_regularizer,
+                                                   activity_regularizer=activity_regularizer)
         self.layer_drop_3 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
     def call(self,
              memory_cells,
-             inputs,
+             rmc_inputs,
              cross_attention_mask=None,
              return_self_attention_weights=False,
              return_cross_attention_weights=False):
         # The cross-attention mask should have shape [batch_size x target_len x input_len]
         batch_size = tf.shape(memory_cells)[0]
         target_seqlen = tf.shape(memory_cells)[1]
-        source_seqlen = tf.shape(inputs)[1]
+        source_seqlen = tf.shape(rmc_inputs)[1]
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
@@ -106,7 +110,7 @@ class RMCBlock(Model):
             self.multi_attention,
             memory_cells,
             alternate_inputs=(memory_cells, tf.zeros((batch_size, self.n_heads, target_seqlen, source_seqlen))),
-            source=inputs,
+            source=rmc_inputs,
             mask=cross_attention_mask,
             return_attention_weights=True)
 
@@ -302,7 +306,7 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
-                memory, inputs, cross_attention_mask=None, return_cross_attention_weights=True)
+                memory, rmc_inputs=inputs, cross_attention_mask=None, return_cross_attention_weights=True)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
@@ -323,7 +327,7 @@ class RelationalMemoryCoreCell(Model):
         return tf.concat((next_memory, attention_weights), 1), next_memory
 
 
-class RelationalMemoryCore(RNN):
+class RelationalMemoryCore(tf.keras.layers.RNN):
 
     def __init__(self,
                  mem_slots: int,
@@ -351,9 +355,6 @@ class RelationalMemoryCore(RNN):
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
-
-    def call(self, *args, **kwargs):
-        return super().call(*args, **kwargs)
 
     @property
     def mem_slots(self) -> int:
