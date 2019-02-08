@@ -91,10 +91,6 @@ class StandardPolicy(Model):
         self._action = action
         self._value = value
 
-        if training:
-            return logits, value
-        else:
-            return action
 
     def predict(self, obs):
 
