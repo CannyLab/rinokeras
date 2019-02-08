@@ -19,7 +19,7 @@ DecoderResult = namedtuple('DecoderResult', [
                            'seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])
 
 
-class TransformerSelfAttention(Model):
+class TransformerSelfAttention(tf.keras.Model):
 
     def __init__(self,
                  n_heads: int,
