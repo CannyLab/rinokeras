@@ -58,7 +58,7 @@ class Conv2DStack(Stack):
                  padding: str = 'same',
                  flatten_output: bool = True,
                  **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
         self.filters = filters
         self.kernel_size = kernel_size
