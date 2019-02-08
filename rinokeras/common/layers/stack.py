@@ -5,11 +5,11 @@ Stack-type layers
 """
 
 import collections
-from typing import Optional, Dict, Sequence, Any, Union
+from typing import Optional, Dict, Sequence, Any, Union, List
 
 from tensorflow.keras import Model  # pylint: disable=F0401
 from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
-    BatchNormalization, Flatten, Activation, Dense  # pylint: disable=F0401
+    BatchNormalization, Flatten, Activation, Dense, Layer  # pylint: disable=F0401
 
 from .normalization import WeightNormDense
 
@@ -20,19 +20,17 @@ class Stack(Model):
     """
     def __init__(self, layers: Optional[Sequence[Any]] = None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        # self._call = None
-        # self._layer_list = tf.contrib.checkpoint.List()
+        self._layer_list = []  # type: List[Layer]
         if layers is not None:
             for layer in layers:
                 self.add(layer)
 
     def add(self, layer):
-        # self._layer_list.append(layer)
-        self._layers.append(layer)
+        self._layer_list.append(layer)
 
     def call(self, inputs, **kwargs):
         output = inputs
-        for layer in self._layers:
+        for layer in self._layer_list:
             output = layer(output, **kwargs)
         return output
 
@@ -60,7 +58,7 @@ class Conv2DStack(Stack):
                  padding: str = 'same',
                  flatten_output: bool = True,
                  **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         assert len(filters) == len(kernel_size) == len(strides), 'Filters, kernels, and strides must have same length'
         self.filters = filters
         self.kernel_size = kernel_size
