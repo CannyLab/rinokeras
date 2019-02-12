@@ -97,35 +97,31 @@ class RMCBlock(Model):
              return_self_attention_weights=False,
              return_cross_attention_weights=False):
         # The cross-attention mask should have shape [batch_size x target_len x input_len]
-        batch_size = tf.shape(memory_cells)[0]
-        target_seqlen = tf.shape(memory_cells)[1]
-        source_seqlen = tf.shape(rmc_inputs)[1]
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        memory_cells, cross_attention_weights = self.layer_drop_1(
-            self.multi_attention,
+        memory_cells_cross, cross_attention_weights = self.multi_attention(
             memory_cells,
-            alternate_inputs=(memory_cells, tf.zeros((batch_size, self.n_heads, target_seqlen, source_seqlen))),
             source=rmc_inputs,
             mask=cross_attention_mask,
             return_attention_weights=True)
+        memory_cells_cross = self.layer_drop_1(memory_cells_cross, memory_cells)
 
         # Compute the selt-attention over the decoder inputs. This uses the self-attention
         # mask to control for the future outputs.
         # This generates a tensor of size [batch_size x target_len x d_model]
-        memory_cells, self_attention_weights = self.layer_drop_2(
-            self.self_attention,
-            memory_cells,
-            alternate_inputs=(memory_cells, tf.zeros((batch_size, self.n_heads, target_seqlen, target_seqlen))),
+        memory_cells_self, self_attention_weights = self.self_attention(
+            memory_cells_cross,
             source=memory_cells,
             mask=None,
             return_attention_weights=True)
+        memory_cells_self = self.layer_drop_2(memory_cells_self, memory_cells_cross)
 
-        output = self.layer_drop_3(self.feed_forward, memory_cells)
+        output = self.feed_forward(memory_cells_self)
+        output = self.layer_drop_3(output, memory_cells_self)
 
         if not (return_self_attention_weights or return_cross_attention_weights):
             return output
@@ -150,6 +146,7 @@ class RelationalMemoryCoreCell(Model):
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
+                 return_attention_weights: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -166,6 +163,7 @@ class RelationalMemoryCoreCell(Model):
         self.state_size = [mem_slots * mem_size]
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
+        self.return_attention_weights = return_attention_weights
 
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(mem_size, activation='relu', use_bias=True)
@@ -183,8 +181,8 @@ class RelationalMemoryCoreCell(Model):
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
         if self.gate_style == 'attention':
-            self.attention_map = AttentionMap(ScaledDotProductSimilarity()) # ,tf.identity
-            self.qkv_projection = AttentionQKV(self.mem_size,self.mem_size)
+            self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
+            self.qkv_projection = AttentionQKV(self.mem_size, self.mem_size)
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
@@ -195,6 +193,8 @@ class RelationalMemoryCoreCell(Model):
         self.gate_memory = Dense(num_gates, use_bias=True)
         self.memory_projection = Dense(16, use_bias=False)
         self.input_projection = Dense(16, use_bias=False)
+        self._initial_state = None
+        self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
 
     def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
         """Creates the initial memory.
@@ -227,6 +227,13 @@ class RelationalMemoryCoreCell(Model):
         # init_state = self.flatten(init_state)
 
         # return init_state
+
+    def get_initial_state_numpy(self, batch_size: int):
+        if self._initial_state is None:
+            self._initial_state = self.get_initial_state(batch_size=self._batch_size_ph)
+
+        sess = K.get_session()
+        return sess.run(self._initial_state, feed_dict={self._batch_size_ph: batch_size})
 
     def _calculate_gate_size(self):
         """Calculate the gate size from the gate_style.
@@ -339,7 +346,9 @@ class RelationalMemoryCoreCell(Model):
         next_memory = self.flatten(next_memory)
         attention_weights = self.flatten(attention_weights)
 
-        return tf.concat((next_memory, attention_weights), 1), next_memory
+        output = next_memory if not self.return_attention_weights else tf.concat((next_memory, attention_weights), 1)
+
+        return output, next_memory
 
 
 class RelationalMemoryCore(tf.keras.layers.RNN):
@@ -354,6 +363,7 @@ class RelationalMemoryCore(tf.keras.layers.RNN):
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
+                 return_attention_weights: bool = False,
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -366,10 +376,14 @@ class RelationalMemoryCore(tf.keras.layers.RNN):
         cell = RelationalMemoryCoreCell(
             mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
             gate_style, treat_input_as_sequence, use_cross_attention,
-            kernel_regularizer, bias_regularizer, activity_regularizer)
+            return_attention_weights, kernel_regularizer, bias_regularizer,
+            activity_regularizer)
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
+
+    def get_initial_state_numpy(self, batch_size: int):
+        return self.cell.get_initial_state_numpy(batch_size)
 
     @property
     def mem_slots(self) -> int:

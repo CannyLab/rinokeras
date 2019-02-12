@@ -90,7 +90,7 @@ class ResidualBlock(tf.keras.Model):
             residual = self.layer_norm_3(residual)
 
         # Project shortcut if necessary
-        if self.project_shortcut or self.stride != (1,1):
+        if self.project_shortcut or self.stride != (1, 1):
             shortcut = self.projection_conv(shortcut)
             if self.use_layernorm:
                 shortcut = self.layer_norm_projection(shortcut)

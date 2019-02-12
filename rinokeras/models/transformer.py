@@ -142,16 +142,12 @@ class TransformerEncoderBlock(Model):
     def call(self, inputs, self_attention_mask=None, return_attention_weights=False):
 
         # Perform a multi-headed self-attention across the inputs.
-        batch_size = tf.shape(inputs)[0]
-        seqlen = tf.shape(inputs)[1]
+        res_attn, attention_weights = self.self_attention(
+            inputs, mask=self_attention_mask, return_attention_weights=True)
+        res_attn = self.layer_drop_1(res_attn, inputs)
 
-        res_attn, attention_weights = self.layer_drop_1(
-            self.self_attention,
-            inputs,
-            alternate_inputs=(inputs, tf.zeros((batch_size, self.n_heads, seqlen, seqlen))),
-            mask=self_attention_mask,
-            return_attention_weights=True)
-        output = self.layer_drop_2(self.feed_forward, res_attn)
+        output = self.feed_forward(res_attn)
+        output = self.layer_drop_2(output, res_attn)
 
         if return_attention_weights:
             return output, attention_weights
@@ -226,35 +222,31 @@ class TransformerDecoderBlock(Model):
             all_inputs = decoder_inputs
             cache = None
         # The cross-attention mask should have shape [batch_size x target_len x input_len]
-        batch_size = tf.shape(decoder_inputs)[0]
-        target_seqlen = tf.shape(decoder_inputs)[1]
-        target_all_seqlen = tf.shape(all_inputs)[1]
-        source_seqlen = tf.shape(encoder_outputs)[1]
 
         # Compute the selt-attention over the decoder inputs. This uses the self-attention
         # mask to control for the future outputs.
         # This generates a tensor of size [batch_size x target_len x d_model]
-        target_selfattn, self_attention_weights = self.layer_drop_1(
-            self.self_attention,
+        target_selfattn, self_attention_weights = self.self_attention(
             decoder_inputs,
-            alternate_inputs=(decoder_inputs, tf.zeros((batch_size, self.n_heads, target_seqlen, target_all_seqlen))),
             source=all_inputs,
             mask=self_attention_mask,
             return_attention_weights=True)
+        target_selfattn = self.layer_drop_1(target_selfattn, decoder_inputs)
 
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention, cross_attention_weights = self.layer_drop_2(
-            self.multi_attention,
+        encdec_attention, cross_attention_weights = self.multi_attention(
             target_selfattn,
-            alternate_inputs=(target_selfattn, tf.zeros((batch_size, self.n_heads, target_seqlen, source_seqlen))),
             source=encoder_outputs,
             mask=cross_attention_mask,
             return_attention_weights=True)
-        output = self.layer_drop_3(self.feed_forward, encdec_attention)
+        encdec_attention = self.layer_drop_2(encdec_attention, target_selfattn)
+
+        output = self.feed_forward(encdec_attention)
+        output = self.layer_drop_3(output, encdec_attention)
 
         output = output if cache is None else (output, cache)
 
