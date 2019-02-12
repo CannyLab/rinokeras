@@ -119,24 +119,6 @@ class StandardPolicy(Model):
 
         return logits, value, action
 
-    def predict(self, obs):
-
-        if tf.executing_eagerly():
-            raise RuntimeError(
-                "Modifications for compatibility with openai baselines code destroyed eager execution ability."
-                " So unfortunately you can't run this in eager.")
-            # obs = tf.cast(tf.constant(obs), tf.float32)
-            # action = self(obs, training=False).numpy()
-        else:
-            if not self.built:
-                raise RuntimeError("Policy is not built, please call the policy before running predict.")
-            if self._obs.shape[1].value is None:
-                obs = obs[:, None]  # Expand the time dimension
-            sess = self._get_session()
-            action = sess.run(self._action, feed_dict={self._obs: obs})[0]
-
-        return action
-
     def step(self, observation, **extra_feed):
         """
         Compute next action(s) given the observation(s)

@@ -3,7 +3,7 @@ from typing import Optional
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.layers import RNN, Flatten, Reshape
+from tensorflow.keras.layers import RNN, Flatten, Reshape, Input
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
@@ -163,7 +163,7 @@ class RelationalMemoryCoreCell(Model):
         self.input_bias = input_bias
         self.forget_bias = forget_bias
         self.gate_style = gate_style
-        self.state_size = [mem_slots * mem_size]
+        self.state_size = (mem_slots * mem_size,)
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
 
@@ -183,8 +183,8 @@ class RelationalMemoryCoreCell(Model):
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 
         if self.gate_style == 'attention':
-            self.attention_map = AttentionMap(ScaledDotProductSimilarity()) # ,tf.identity
-            self.qkv_projection = AttentionQKV(self.mem_size,self.mem_size)
+            self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
+            self.qkv_projection = AttentionQKV(self.mem_size, self.mem_size)
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
@@ -281,7 +281,7 @@ class RelationalMemoryCoreCell(Model):
     def build(self, input_shape):
         self.built = True
 
-    def call(self, inputs, states):
+    def call(self, inputs, states, constants=None):
         """Runs the relational memory core.
 
         Args:
@@ -292,6 +292,19 @@ class RelationalMemoryCoreCell(Model):
             output: This time step's output
             next_memory: This time step's memory
         """
+
+        if constants is not None:
+            num_inputs = constants[0]
+            mask = inputs[..., -1]
+            inputs = inputs[..., :-1]
+            batch_size = K.shape(inputs)[0]
+            if self.treat_input_as_sequence:
+                inputs = K.reshape(inputs, (batch_size, num_inputs, self.input_dim))
+            else:
+                inputs = K.reshape(inputs, (batch_size, self.input_dim))
+
+            states[0] = states[0] * mask
+
         memory = states[0]
         memory = self.reshape(memory)
 
@@ -382,3 +395,50 @@ class RelationalMemoryCore(tf.keras.layers.RNN):
     @property
     def n_heads(self) -> int:
         return self.cell.n_heads
+
+
+class MaskedRelationalMemoryCore(Model):
+
+    def __init__(self,
+                 mem_slots: int,
+                 mem_size: int,
+                 n_heads: int,
+                 forget_bias: float = 1.0,
+                 input_bias: float = 0.0,
+                 dropout: Optional[float] = None,
+                 gate_style: str = 'unit',
+                 treat_input_as_sequence: bool = False,
+                 use_cross_attention: bool = False,
+                 kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 return_sequences: bool = False,
+                 return_state: bool = False,
+                 go_backwards: bool = False,
+                 stateful: bool = False,
+                 unroll: bool = False,
+                 **kwargs) -> None:
+        super().__init__()
+        rmc = RelationalMemoryCore(
+            mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
+            gate_style, treat_input_as_sequence, use_cross_attention,
+            kernel_regularizer, bias_regularizer, activity_regularizer,
+            return_sequences, return_state, go_backwards, stateful, unroll, **kwargs)
+        self.rmc = rmc
+
+    def call(self, inputs, initial_state=None, state_mask=None):
+        assert state_mask is not None
+        batch_size = K.shape(inputs)[0]
+        seqlen = K.shape(inputs)[1]
+        num_inputs = K.shape(inputs)[2] if self.rmc.cell.treat_input_as_sequence else K.constant(1, dtype=tf.int32)
+        input_dim = inputs.shape[-1]
+        self.rmc.cell.input_dim = input_dim
+
+        inputs_reshaped = K.reshape(inputs, (batch_size, seqlen, num_inputs * input_dim))
+        reshaped_inputs_and_mask = K.concatenate((inputs_reshaped, state_mask), -1)
+
+        num_inputs = Input(tensor=num_inputs)
+
+        outputs = self.rmc(reshaped_inputs_and_mask, initial_state=initial_state, constants=num_inputs)
+
+        return outputs
