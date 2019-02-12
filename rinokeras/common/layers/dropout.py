@@ -24,16 +24,9 @@ class LayerDropout(Model):
         super().__init__(*args, **kwargs)
         self.rate = rate
 
-    def call(self, layer, inputs, alternate_inputs=None, *args, **kwargs):
-        if alternate_inputs is None:
-            alternate_inputs = inputs
-        outputs = layer(inputs, *args, **kwargs)
-        if isinstance(outputs, list):
-            outputs = tuple(outputs)
+    def call(self, layer_outputs, layer_inputs):
         output = K.in_train_phase(
-            K.switch(K.random_uniform([]) > self.rate, outputs,
-                     alternate_inputs),
-            layer(inputs, *args, **kwargs))
+            K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs), layer_outputs)
         return output
 
     def get_config(self) -> Dict:
