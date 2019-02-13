@@ -82,6 +82,8 @@ class RinokerasGraph(ABC):
 
     def add_progress_bar(self, data_len: Optional[int] = None, epoch_num: Optional[int] = None):
         desc = None if epoch_num is None else 'Epoch {:>3}'.format(epoch_num)
+        if data_len is None and self.epoch_metrics is not None:
+            data_len = self.epoch_metrics.nupdates
         progress_bar = tqdm(total=data_len, desc=desc, leave=False,
                             dynamic_ncols=True, smoothing=0.1)
         progress_bar.__enter__()
@@ -108,7 +110,6 @@ class RinokerasGraph(ABC):
         if self.progress_bar is not None:
             self.progress_bar.__exit__()
         self.progress_bar = None
-        self.epoch_metrics = None
         return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     def _get_session(self) -> tf.Session:
