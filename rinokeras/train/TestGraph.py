@@ -6,6 +6,7 @@ import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from rinokeras.train import Experiment
+
 from .RinokerasGraph import RinokerasGraph
 from .train_utils import Inputs, Outputs, Losses
 
@@ -46,6 +47,7 @@ class TestGraph(RinokerasGraph):
         self.loss_function = loss_function
         self.return_loss_summaries = return_loss_summaries
         self.return_variable_summaries = return_variable_summaries
+        self._epoch_metrics = None
         self.build()
 
     @classmethod
@@ -157,7 +159,6 @@ class TestGraph(RinokerasGraph):
             return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
-
         if ops == 'loss':
             return self.loss(inputs, return_outputs=return_outputs)
         elif isinstance(ops, str):
@@ -184,6 +185,7 @@ class TestGraph(RinokerasGraph):
         if self.return_loss_summaries:
             ops.append(self.summaries)
         result = self._run_tensor(ops, inputs)
+        self.update_progress_bar(result[0])
         if len(result) == 1:
             result = result[0]
         return result

@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow.python.client import timeline
 from tqdm import tqdm
 
+from rinokeras.utils import MetricsAccumulator
 from .train_utils import Inputs
 
 
@@ -22,6 +23,7 @@ class RinokerasGraph(ABC):
         self.__class__._num_graphs += 1
 
         self.progress_bar = None
+        self.epoch_metrics = None
         self.instrument_idx = 0
         self.inputs = ()
 
@@ -86,21 +88,27 @@ class RinokerasGraph(ABC):
         self.progress_bar = progress_bar
         return self
 
-    def update_progress_bar(self, postfix=None):
+    def update_progress_bar(self, metrics=None):
+        assert self.epoch_metrics is not None
+        if metrics is not None:
+            self.epoch_metrics.add(metrics)
         if self.progress_bar is not None:
             self.progress_bar.update()
-            self.progress_bar.set_postfix(postfix)
+            if self.epoch_metrics.nupdates > 0:
+                self.progress_bar.set_postfix(self.epoch_metrics.get_average())
 
     def initialize(self):
         return self
 
     def __enter__(self):
+        self.epoch_metrics = MetricsAccumulator()
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if self.progress_bar is not None:
             self.progress_bar.__exit__()
         self.progress_bar = None
+        self.epoch_metrics = None
         return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     def _get_session(self) -> tf.Session:

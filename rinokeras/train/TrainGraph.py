@@ -196,7 +196,6 @@ class TrainGraph(TestGraph):
             return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
-
         if ops == 'loss':
             return self.loss(inputs, return_outputs=return_outputs)
         elif ops == 'update':
@@ -225,6 +224,7 @@ class TrainGraph(TestGraph):
         if self.return_loss_summaries or self.return_grad_summaries:
             ops.append(self.summaries)
         _, _, *result = self._run_tensor(ops, inputs)
+        self.update_progress_bar(result[0])
         if len(result) == 1:
             result = result[0]
         return result

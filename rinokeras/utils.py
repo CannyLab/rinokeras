@@ -1,7 +1,8 @@
 """
 Various utility functions that are commonly used in our models and during training.
 """
-from typing import Optional, Sequence, Tuple, Union
+from collections import defaultdict
+from typing import Optional, Sequence, Tuple, Union, Dict
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -229,3 +230,31 @@ def load_distributed(distribution_strategy, model, filename, by_name=False):
                 assign_ops.append(distribution_strategy.unwrap(sw.assign(w)))
             weights = weights[num_param:]
         K.get_session().run(assign_ops)
+
+
+class MetricsAccumulator:
+
+    def __init__(self):
+        self._totalmetrics = defaultdict(lambda: 0.0)
+        self._nupdates = 0
+
+    def add(self, metrics: Dict[str, float]):
+        for metric, value in metrics.items():
+            self._totalmetrics[metric] += value
+        self._nupdates += 1
+
+    def get_average(self):
+        assert self.nupdates > 0
+        return {metric: value / self.nupdates for metric, value in self._totalmetrics.items()}
+
+    def __getitem__(self, value: str) -> float:
+        if value not in self._totalmetrics:
+            raise KeyError(value)
+        return self._totalmetrics[value] / self.nupdates
+
+    def __str__(self) -> str:
+        return str(self.get_average())
+
+    @property
+    def nupdates(self) -> int:
+        return self._nupdates
