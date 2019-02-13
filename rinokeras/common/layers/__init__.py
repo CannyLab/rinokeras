@@ -8,4 +8,4 @@ from .stack import *
 from .dropout import *
 from .masking import *
 from .autoregressive import *
-from .rnn import *
+from .masked_lstm import *
