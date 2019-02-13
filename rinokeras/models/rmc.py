@@ -21,15 +21,19 @@ class RMCFeedForward(Model):
                  filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float],
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
         self.mem_slots = mem_slots
         self.ff_layers = [
-            TransformerFeedForward(filter_size, hidden_size, dropout,
-                                   kernel_regularizer, bias_regularizer,
-                                   activity_regularizer)
+            TransformerFeedForward(
+                filter_size, hidden_size, dropout,
+                kernel_initializer=kernel_initializer,
+                kernel_regularizer=kernel_regularizer,
+                bias_regularizer=bias_regularizer,
+                activity_regularizer=activity_regularizer)
             for _ in range(mem_slots)]
 
     def call(self, inputs):
@@ -53,8 +57,10 @@ class RMCBlock(Model):
                  n_heads: int,
                  filter_size: int,
                  hidden_size: int,
+                 key_size: Optional[int] = None,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -70,20 +76,30 @@ class RMCBlock(Model):
         self.activity_regularizer = activity_regularizer
 
         self.multi_attention = TransformerMultiAttention(
-            n_heads, dropout, kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+            n_heads, dropout,
+            key_size=key_size,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         self.layer_drop_1 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
         self.self_attention = TransformerMultiAttention(
-            n_heads, dropout, kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+            n_heads, dropout,
+            key_size=key_size,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
         # self.feed_forward = RMCFeedForward(mem_slots, filter_size, hidden_size, dropout,
+                                           # kernel_initializer=kernel_initializer,
                                            # kernel_regularizer=kernel_regularizer,
                                            # bias_regularizer=bias_regularizer,
                                            # activity_regularizer=activity_regularizer)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer)
@@ -147,12 +163,17 @@ class RelationalMemoryCoreCell(Model):
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
                  return_attention_weights: bool = False,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  **kwargs) -> None:
 
         super().__init__(**kwargs)
+        if n_heads == 1:
+            key_size = 16
+        else:
+            key_size = None
 
         self.mem_slots = mem_slots
         self.mem_size = mem_size
@@ -166,33 +187,43 @@ class RelationalMemoryCoreCell(Model):
         self.return_attention_weights = return_attention_weights
 
         self.reshape = Reshape((mem_slots, mem_size))
-        self.initial_embed = Dense(mem_size, activation='relu', use_bias=True)
+        self.initial_embed = Dense(
+            mem_size, activation='relu', use_bias=True,
+            kernel_initializer=kernel_initializer)
 
         if use_cross_attention:
             self.attend_over_memory = RMCBlock(
                 mem_slots,
-                n_heads, mem_size * 4, mem_size, dropout,
+                n_heads, mem_size * 4, mem_size,
+                key_size=key_size, dropout=dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
-                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer,
+                kernel_initializer=kernel_initializer)
         else:
             self.attend_over_memory = TransformerEncoderBlock(
                 n_heads, mem_size * 4, mem_size, dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
-                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+                bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer,
+                kernel_initializer=kernel_initializer)
 
         if self.gate_style == 'attention':
             self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
-            self.qkv_projection = AttentionQKV(self.mem_size, self.mem_size)
+            self.qkv_projection = AttentionQKV(
+                self.mem_size, self.mem_size, kernel_initializer=kernel_initializer)
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
         self.posembed = PositionEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
-        self.gate_inputs = Dense(num_gates, use_bias=True)
-        self.gate_memory = Dense(num_gates, use_bias=True)
-        self.memory_projection = Dense(16, use_bias=False)
-        self.input_projection = Dense(16, use_bias=False)
+        self.gate_inputs = Dense(
+            num_gates, use_bias=True, kernel_initializer=kernel_initializer)
+        self.gate_memory = Dense(
+            num_gates, use_bias=True, kernel_initializer=kernel_initializer)
+        self.memory_projection = Dense(
+            16, use_bias=False, kernel_initializer=kernel_initializer)
+        self.input_projection = Dense(
+            16, use_bias=False, kernel_initializer=kernel_initializer)
         self._initial_state = None
         self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
 
@@ -300,9 +331,11 @@ class RelationalMemoryCoreCell(Model):
             next_memory: This time step's memory
         """
 
+        memory = states[0]
+
         if constants is not None:
             num_inputs = constants[0]
-            mask = inputs[..., -1]
+            mask = tf.expand_dims(inputs[..., -1], -1)
             inputs = inputs[..., :-1]
             batch_size = K.shape(inputs)[0]
             if self.treat_input_as_sequence:
@@ -310,9 +343,8 @@ class RelationalMemoryCoreCell(Model):
             else:
                 inputs = K.reshape(inputs, (batch_size, self.input_dim))
 
-            states[0] = states[0] * mask
+            memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
 
-        memory = states[0]
         memory = self.reshape(memory)
 
         if self.treat_input_as_sequence:
@@ -364,7 +396,7 @@ class RelationalMemoryCoreCell(Model):
         return output, next_memory
 
 
-class RelationalMemoryCore(tf.keras.layers.RNN):
+class RelationalMemoryCore(RNN):
 
     def __init__(self,
                  mem_slots: int,
@@ -377,6 +409,7 @@ class RelationalMemoryCore(tf.keras.layers.RNN):
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
                  return_attention_weights: bool = False,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -387,10 +420,20 @@ class RelationalMemoryCore(tf.keras.layers.RNN):
                  unroll: bool = False,
                  **kwargs) -> None:
         cell = RelationalMemoryCoreCell(
-            mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
-            gate_style, treat_input_as_sequence, use_cross_attention,
-            return_attention_weights, kernel_regularizer, bias_regularizer,
-            activity_regularizer)
+            mem_slots=mem_slots,
+            mem_size=mem_size,
+            n_heads=n_heads,
+            forget_bias=forget_bias,
+            input_bias=input_bias,
+            dropout=dropout,
+            gate_style=gate_style,
+            treat_input_as_sequence=treat_input_as_sequence,
+            use_cross_attention=use_cross_attention,
+            return_attention_weights=return_attention_weights,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         super().__init__(
             cell, return_sequences=return_sequences, return_state=return_state,
             go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
@@ -423,6 +466,8 @@ class MaskedRelationalMemoryCore(Model):
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
+                 return_attention_weights: bool = False,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
                  activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
@@ -434,10 +479,26 @@ class MaskedRelationalMemoryCore(Model):
                  **kwargs) -> None:
         super().__init__()
         rmc = RelationalMemoryCore(
-            mem_slots, mem_size, n_heads, forget_bias, input_bias, dropout,
-            gate_style, treat_input_as_sequence, use_cross_attention,
-            kernel_regularizer, bias_regularizer, activity_regularizer,
-            return_sequences, return_state, go_backwards, stateful, unroll, **kwargs)
+            mem_slots=mem_slots,
+            mem_size=mem_size,
+            n_heads=n_heads,
+            forget_bias=forget_bias,
+            input_bias=input_bias,
+            dropout=dropout,
+            gate_style=gate_style,
+            treat_input_as_sequence=treat_input_as_sequence,
+            use_cross_attention=use_cross_attention,
+            return_attention_weights=return_attention_weights,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer,
+            return_sequences=return_sequences,
+            return_state=return_state,
+            go_backwards=go_backwards,
+            stateful=stateful,
+            unroll=unroll,
+            **kwargs)
         self.rmc = rmc
 
     def call(self, inputs, initial_state=None, state_mask=None):
@@ -447,12 +508,17 @@ class MaskedRelationalMemoryCore(Model):
         num_inputs = K.shape(inputs)[2] if self.rmc.cell.treat_input_as_sequence else K.constant(1, dtype=tf.int32)
         input_dim = inputs.shape[-1]
         self.rmc.cell.input_dim = input_dim
-
         inputs_reshaped = K.reshape(inputs, (batch_size, seqlen, num_inputs * input_dim))
         reshaped_inputs_and_mask = K.concatenate((inputs_reshaped, state_mask), -1)
 
+        reshaped_inputs_and_mask = Input(tensor=reshaped_inputs_and_mask)
+        if initial_state is not None:
+            initial_state = Input(tensor=initial_state)
         num_inputs = Input(tensor=num_inputs)
 
         outputs = self.rmc(reshaped_inputs_and_mask, initial_state=initial_state, constants=num_inputs)
 
         return outputs
+
+    def get_initial_state_numpy(self, batch_size: int):
+        return self.rmc.get_initial_state_numpy(batch_size)

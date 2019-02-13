@@ -63,6 +63,7 @@ class AttentionQKV(Model):
     def __init__(self,
                  key_depth: int,
                  value_depth: int = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -76,13 +77,14 @@ class AttentionQKV(Model):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
-
         self.query_layer = Dense(self.key_depth, use_bias=False,
+                                 kernel_initializer=kernel_initializer,
                                  kernel_regularizer=self.kernel_regularizer,
                                  bias_regularizer=self.bias_regularizer,
                                  activity_regularizer=self.activity_regularizer)
         self.query_norm = LayerNorm()
         self.projection_layer = Dense(self.key_depth + self.value_depth, use_bias=False,
+                                      kernel_initializer=kernel_initializer,
                                       kernel_regularizer=self.kernel_regularizer,
                                       bias_regularizer=self.bias_regularizer,
                                       activity_regularizer=self.activity_regularizer)
@@ -109,9 +111,13 @@ class TrilinearSimilarity(Layer):
     Based on https://arxiv.org/pdf/1611.01603.pdf.
     """
 
-    def __init__(self, dropout: Optional[float] = None, regularizer=None) -> None:
+    def __init__(self,
+                 dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 regularizer=None) -> None:
         super().__init__()
         self.dropout = Dropout(0 if dropout is None else dropout)
+        self.kernel_initializer = kernel_initializer
         self.regularizer = regularizer
 
     def build(self, input_shapes):
@@ -129,16 +135,16 @@ class TrilinearSimilarity(Layer):
 
         self.query_weights = self.add_weight('query_weights',
                                              shape=(query_channels, 1),
-                                             initializer=tf.keras.initializers.glorot_uniform(),
+                                             initializer=self.kernel_initializer,
                                              regularizer=self.regularizer)
         self.context_weights = self.add_weight('context_weights',
                                                shape=(context_channels, 1),
-                                               initializer=tf.keras.initializers.glorot_uniform(),
+                                               initializer=self.kernel_initializer,
                                                regularizer=self.regularizer)
         self.dot_weights = self.add_weight('dot_weights',
                                            shape=(context_channels,
                                                   context_channels),
-                                           initializer=tf.keras.initializers.glorot_uniform(),
+                                           initializer=self.kernel_initializer,
                                            regularizer=self.regularizer)
         super().build(input_shapes)
 
@@ -349,6 +355,8 @@ class MultiHeadAttention(Model):
                  similarity_metric: str,
                  n_heads: int,
                  dropout: Optional[float] = None,
+                 key_size: Optional[int] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -358,12 +366,16 @@ class MultiHeadAttention(Model):
                 "Haven't got around to implementing other attention types yet!")
 
         self.similarity_metric = similarity_metric
+        self.key_size = key_size
         self.n_heads = n_heads
+        assert key_size is None or key_size % n_heads == 0, \
+            'Key size must be divisible by n_heads if provided'
 
         self.similarity_metric = ScaledDotProductSimilarity()
         self.attention_layer = MultiHeadAttentionMap(
             self.similarity_metric, n_heads, dropout)
 
+        self.kernel_initializer = kernel_initializer
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
@@ -372,16 +384,18 @@ class MultiHeadAttention(Model):
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
-        qa_channels = query_antecedent_shape[-1]
+        qa_channels = query_antecedent_shape[-1] if self.key_size is not None else self.key_size
         ma_channels = memory_antecedent_shape[-1]
         assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
             'Feature size must be divisible by n_heads'
         # assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
         self.compute_qkv = AttentionQKV(qa_channels, ma_channels,
+                                        kernel_initializer=self.kernel_initializer,
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
                                         activity_regularizer=self.activity_regularizer)
         self.output_layer = Dense(qa_channels, use_bias=False,
+                                  kernel_initializer=self.kernel_initializer,
                                   kernel_regularizer=self.kernel_regularizer,
                                   bias_regularizer=self.bias_regularizer,
                                   activity_regularizer=self.activity_regularizer)
@@ -427,7 +441,11 @@ class SelfAttention(Model):
 
 class ContextQueryAttention(Model):
 
-    def __init__(self, attention_type: str = "trilinear", dropout: Optional[float] = None, regularizer=None) -> None:
+    def __init__(self,
+                 attention_type: str = "trilinear",
+                 dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 regularizer=None) -> None:
         super().__init__()
         if attention_type != "trilinear":
             raise NotImplementedError(
@@ -436,7 +454,10 @@ class ContextQueryAttention(Model):
         self.attention_type = attention_type
         self.dropout = Dropout(0 if dropout is None else dropout)
         self.apply_mask = ApplyAttentionMask()
-        self.trilinear_similarity = TrilinearSimilarity(dropout, regularizer=regularizer)
+        self.trilinear_similarity = TrilinearSimilarity(
+            dropout,
+            kernel_initializer=kernel_initializer,
+            regularizer=regularizer)
 
     def call(self, query, context=None, mask=None):
         """

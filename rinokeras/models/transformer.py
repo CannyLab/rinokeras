@@ -19,11 +19,13 @@ DecoderResult = namedtuple('DecoderResult', [
                            'seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])
 
 
-class TransformerSelfAttention(tf.keras.Model):
+class TransformerSelfAttention(Model):
 
     def __init__(self,
                  n_heads: int,
                  dropout: Optional[float],
+                 key_size: Optional[int] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -31,6 +33,8 @@ class TransformerSelfAttention(tf.keras.Model):
         self.norm = LayerNorm()
         self.self_attention = SelfAttention(
             'scaled_dot', n_heads, dropout,
+            key_size=key_size,
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer)
@@ -47,15 +51,20 @@ class TransformerSelfAttention(tf.keras.Model):
 
 
 class TransformerMultiAttention(Model):
+
     def __init__(self,
                  n_heads: int,
                  dropout: Optional[float],
+                 key_size: Optional[int] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
         self.multi_attention = MultiHeadAttention(
             'scaled_dot', n_heads, dropout,
+            key_size=key_size,
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer
@@ -75,9 +84,11 @@ class TransformerMultiAttention(Model):
 
 
 class TransformerFeedForward(Model):
+
     def __init__(self, filter_size: int,
                  hidden_size: int,
                  dropout: Optional[float],
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -85,6 +96,7 @@ class TransformerFeedForward(Model):
         super().__init__()
         self.norm = LayerNorm()
         self.feed_forward = DenseStack([filter_size, hidden_size], output_activation=None,
+                                       kernel_initializer=kernel_initializer,
                                        kernel_regularizer=kernel_regularizer,
                                        bias_regularizer=bias_regularizer,
                                        activity_regularizer=activity_regularizer,
@@ -112,6 +124,7 @@ class TransformerEncoderBlock(Model):
                  hidden_size: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -127,11 +140,15 @@ class TransformerEncoderBlock(Model):
         self.activity_regularizer = activity_regularizer
 
         self.self_attention = TransformerSelfAttention(
-            n_heads, dropout, kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+            n_heads, dropout,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         self.layer_drop_1 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer,
@@ -171,6 +188,7 @@ class TransformerDecoderBlock(Model):
                  hidden_size: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -186,16 +204,23 @@ class TransformerDecoderBlock(Model):
         self.activity_regularizer = activity_regularizer
 
         self.self_attention = TransformerMultiAttention(
-            n_heads, dropout, kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+            n_heads, dropout,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         self.layer_drop_1 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
         self.multi_attention = TransformerMultiAttention(
-            n_heads, dropout, kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
+            n_heads, dropout,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
         self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+                                                   kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer,
@@ -331,6 +356,7 @@ class TransformerEncoder(Model):
                  d_filter: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -341,6 +367,7 @@ class TransformerEncoder(Model):
         self.embedding_layer = embedding_layer
         # The encoding stack is a stack of transformer encoder blocks
         self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
+                                                             kernel_initializer=kernel_initializer,
                                                              kernel_regularizer=kernel_regularizer,
                                                              bias_regularizer=bias_regularizer,
                                                              activity_regularizer=activity_regularizer,
@@ -397,6 +424,7 @@ class TransformerDecoder(Model):
                  d_filter: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -404,6 +432,7 @@ class TransformerDecoder(Model):
         super().__init__()
         self.embedding_layer = embedding_layer
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
+                                                             kernel_initializer=kernel_initializer,
                                                              kernel_regularizer=kernel_regularizer,
                                                              bias_regularizer=bias_regularizer,
                                                              activity_regularizer=activity_regularizer,
