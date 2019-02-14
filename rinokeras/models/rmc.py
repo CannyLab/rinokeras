@@ -186,6 +186,9 @@ class RelationalMemoryCoreCell(Model):
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
 
+        self.debug_project = Dense(512, activation='relu')
+        self.debug_cell = rk.common.layers.MaskedLSTMCell(mem_size)
+
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(
             mem_size, activation='relu', use_bias=True,
@@ -250,8 +253,8 @@ class RelationalMemoryCoreCell(Model):
         if dtype is None:
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
-        position = self.posembed(zeros)
-        return self.flatten(position)
+        # position = self.posembed(zeros)
+        return self.flatten(zeros)
         # init_state = tf.one_hot(tf.range(self.mem_slots),
                                 # self.mem_size, dtype=dtype)
         # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
@@ -337,13 +340,21 @@ class RelationalMemoryCoreCell(Model):
             num_inputs = constants[0]
             mask = tf.expand_dims(inputs[..., -1], -1)
             inputs = inputs[..., :-1]
-            batch_size = K.shape(inputs)[0]
-            if self.treat_input_as_sequence:
-                inputs = K.reshape(inputs, (batch_size, num_inputs, self.input_dim))
-            else:
-                inputs = K.reshape(inputs, (batch_size, self.input_dim))
-
-            memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
+            # batch_size = K.shape(inputs)[0]
+            # if self.treat_input_as_sequence:
+                # inputs = K.reshape(inputs, (batch_size, num_inputs, self.input_dim))
+            # else:
+                # inputs = K.reshape(inputs, (batch_size, self.input_dim))
+#
+            # memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
+            memory = memory * (1 - mask)
+            memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2*self.mem_size])
+            inputs.set_shape((None, 121 * self.input_dim))
+            proj = self.debug_project(inputs)
+            output, memory_out = self.debug_cell(proj, memory_in)
+            memory_out = tf.concat(memory_out, -1)
+            memory_out = tf.concat((memory_out, memory[:, 2*self.mem_size:]), -1)
+            return output, memory_out
 
         memory = self.reshape(memory)
 
