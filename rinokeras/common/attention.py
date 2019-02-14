@@ -384,7 +384,7 @@ class MultiHeadAttention(Model):
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
-        qa_channels = query_antecedent_shape[-1] if self.key_size is not None else self.key_size
+        qa_channels = query_antecedent_shape[-1] if self.key_size is None else self.key_size
         ma_channels = memory_antecedent_shape[-1]
         assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
             'Feature size must be divisible by n_heads'
