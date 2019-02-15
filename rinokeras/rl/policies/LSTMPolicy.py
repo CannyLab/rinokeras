@@ -28,6 +28,8 @@ class MemoryEmbedding(Model):
             self.S = tf.placeholder(tf.float32, [None, mem_slots * lstm_cell_size])
             self.initial_state = self.cell.get_initial_state_numpy(12)
             self.dense = Dense(512, activation='relu', kernel_initializer=tf.keras.initializers.Orthogonal(np.sqrt(2)))
+            self.debug_cell = self.cell
+            self.cell = MaskedLSTM(lstm_cell_size, return_sequences=True, return_state=True)
         else:
             self.cell = MaskedLSTM(lstm_cell_size, return_sequences=True, return_state=True)
             self.S = tf.placeholder(tf.float32, [None, 2 * lstm_cell_size])
@@ -48,13 +50,17 @@ class MemoryEmbedding(Model):
         mask = self.batch_to_seq(batch_size, -1, self.M)
 
         if self.use_rmc:
-            memory_state = self.S
-            mask = tf.expand_dims(mask, -1)
-            memory, memory_state = self.cell(embedding, state_mask=mask, initial_state=memory_state)
-            memory = self.dense(memory)
-            self.state = memory_state
+            memory_state = self.S[:, :2 * self.debug_cell.rmc.mem_size]
+            embedding = tf.reshape(embedding, (tf.shape(embedding)[0], tf.shape(embedding)[1], embedding.shape[2] * embedding.shape[3]))
+            embedding = self.dense(embedding)
+            memory_state = tf.split(memory_state, axis=-1, num_or_size_splits=len(self.cell.cell.state_size))
+            embed_and_mask = tf.concat((embedding, mask[..., None]), -1)
+            memory, *memory_state = self.cell(
+                embed_and_mask, initial_state=memory_state)
+
+            self.state = tf.concat((memory_state[0], memory_state[1], self.S[:, 2 * self.debug_cell.rmc.mem_size:]), -1)
         else:
-            memory_state = tf.split(self.S, axis=-1, num_or_size_splits=len(self.cell.state_size))
+            memory_state = tf.split(self.S, axis=-1, num_or_size_splits=len(self.cell.cell.state_size))
             embed_and_mask = tf.concat((embedding, mask[..., None]), -1)
             memory, *memory_state = self.cell(
                 embed_and_mask, initial_state=memory_state)

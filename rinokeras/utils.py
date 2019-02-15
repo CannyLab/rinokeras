@@ -247,6 +247,12 @@ class MetricsAccumulator:
         assert self.nupdates > 0
         return {metric: value / self.nupdates for metric, value in self._totalmetrics.items()}
 
+    def __iter__(self):
+        return iter(self.get_average())
+
+    def items(self):
+        return self.get_average().items()
+
     def __getitem__(self, value: str) -> float:
         if value not in self._totalmetrics:
             raise KeyError(value)

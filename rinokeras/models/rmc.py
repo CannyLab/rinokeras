@@ -3,7 +3,8 @@ from typing import Optional
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.layers import RNN, Flatten, Reshape, Input
+from tensorflow.keras.layers import RNN, Flatten, Reshape, Input, LSTMCell
+import numpy as np
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
@@ -186,8 +187,9 @@ class RelationalMemoryCoreCell(Model):
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
 
-        self.debug_project = Dense(512, activation='relu')
-        self.debug_cell = rk.common.layers.MaskedLSTMCell(mem_size)
+        self.debug_project = Dense(512, activation='relu', kernel_initializer=tf.keras.initializers.Orthogonal(np.sqrt(2)))
+        # self.debug_cell = rk.common.layers.MaskedLSTMCell(mem_size)
+        self.debug_cell = LSTMCell(mem_size)
 
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(
@@ -337,6 +339,7 @@ class RelationalMemoryCoreCell(Model):
         memory = states[0]
 
         if constants is not None:
+
             num_inputs = constants[0]
             mask = tf.expand_dims(inputs[..., -1], -1)
             inputs = inputs[..., :-1]
@@ -347,13 +350,15 @@ class RelationalMemoryCoreCell(Model):
                 # inputs = K.reshape(inputs, (batch_size, self.input_dim))
 #
             # memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
+            # mask_assert = tf.Assert(tf.reduce_all(tf.equal(mask, 0.0) | tf.equal(mask, 1.0)), [mask])
+            # with tf.control_dependencies([mask_assert]):
             memory = memory * (1 - mask)
-            memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2*self.mem_size])
+            memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2 * self.mem_size])
             inputs.set_shape((None, 121 * self.input_dim))
             proj = self.debug_project(inputs)
             output, memory_out = self.debug_cell(proj, memory_in)
             memory_out = tf.concat(memory_out, -1)
-            memory_out = tf.concat((memory_out, memory[:, 2*self.mem_size:]), -1)
+            memory_out = tf.concat((memory_out, memory[:, 2 * self.mem_size:]), -1)
             return output, memory_out
 
         memory = self.reshape(memory)
