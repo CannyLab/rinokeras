@@ -255,8 +255,8 @@ class RelationalMemoryCoreCell(Model):
         if dtype is None:
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
-        # position = self.posembed(zeros)
-        return self.flatten(zeros)
+        position = self.posembed(zeros)
+        return self.flatten(position)
         # init_state = tf.one_hot(tf.range(self.mem_slots),
                                 # self.mem_size, dtype=dtype)
         # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
@@ -339,7 +339,6 @@ class RelationalMemoryCoreCell(Model):
         memory = states[0]
 
         if constants is not None:
-
             num_inputs = constants[0]
             mask = tf.expand_dims(inputs[..., -1], -1)
             inputs = inputs[..., :-1]
@@ -352,14 +351,14 @@ class RelationalMemoryCoreCell(Model):
             # memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
             # mask_assert = tf.Assert(tf.reduce_all(tf.equal(mask, 0.0) | tf.equal(mask, 1.0)), [mask])
             # with tf.control_dependencies([mask_assert]):
-            memory = memory * (1 - mask)
-            memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2 * self.mem_size])
-            inputs.set_shape((None, 121 * self.input_dim))
-            proj = self.debug_project(inputs)
-            output, memory_out = self.debug_cell(proj, memory_in)
-            memory_out = tf.concat(memory_out, -1)
-            memory_out = tf.concat((memory_out, memory[:, 2 * self.mem_size:]), -1)
-            return output, memory_out
+            memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
+            # memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2 * self.mem_size])
+            # inputs.set_shape((None, 121 * self.input_dim))
+            # proj = self.debug_project(inputs)
+            # output, memory_out = self.debug_cell(inputs, memory_in)
+            # memory_out = tf.concat(memory_out, -1)
+            # memory_out = tf.concat((memory_out, memory[:, 2 * self.mem_size:]), -1)
+            # return output, memory_out
 
         memory = self.reshape(memory)
 
@@ -518,16 +517,16 @@ class MaskedRelationalMemoryCore(Model):
         self.rmc = rmc
 
     def call(self, inputs, initial_state=None, state_mask=None):
-        assert state_mask is not None
-        batch_size = K.shape(inputs)[0]
-        seqlen = K.shape(inputs)[1]
+        # assert state_mask is not None
+        # batch_size = K.shape(inputs)[0]
+        # seqlen = K.shape(inputs)[1]
         num_inputs = K.shape(inputs)[2] if self.rmc.cell.treat_input_as_sequence else K.constant(1, dtype=tf.int32)
         input_dim = inputs.shape[-1]
         self.rmc.cell.input_dim = input_dim
-        inputs_reshaped = K.reshape(inputs, (batch_size, seqlen, num_inputs * input_dim))
-        reshaped_inputs_and_mask = K.concatenate((inputs_reshaped, state_mask), -1)
+        # inputs_reshaped = K.reshape(inputs, (batch_size, seqlen, num_inputs * input_dim))
+        # reshaped_inputs_and_mask = K.concatenate((inputs_reshaped, state_mask), -1)
 
-        reshaped_inputs_and_mask = Input(tensor=reshaped_inputs_and_mask)
+        reshaped_inputs_and_mask = Input(tensor=inputs)
         if initial_state is not None:
             initial_state = Input(tensor=initial_state)
         num_inputs = Input(tensor=num_inputs)

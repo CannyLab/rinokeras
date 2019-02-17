@@ -87,6 +87,7 @@ class PositionEmbedding2D(PositionEmbedding):
         """
         # return inputs + self.embedding[None]
         inputs.shape.assert_has_rank(4)
+        batch_size = tf.shape(inputs)[0]
         width, height, channels = inputs.shape[1:]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 
@@ -108,8 +109,10 @@ class PositionEmbedding2D(PositionEmbedding):
                                        height_sin_embed, height_cos_embed), -1)
         position_embedding = tf.reshape(
             position_embedding, (1, width, height, self.hidden_size))
+        position_embedding = tf.tile(
+            position_embedding, (batch_size, 1, 1, 1))
 
-        return inputs + position_embedding
+        return tf.concat((inputs, position_embedding), -1)
 
 
 class PositionEmbedding3D(PositionEmbedding2D):
