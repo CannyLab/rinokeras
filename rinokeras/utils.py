@@ -1,6 +1,8 @@
 """
 Various utility functions that are commonly used in our models and during training.
 """
+import collections
+import copy
 from collections import defaultdict
 from typing import Optional, Sequence, Tuple, Union, Dict
 
@@ -233,10 +235,40 @@ def load_distributed(distribution_strategy, model, filename, by_name=False):
 
 
 def get_shape(array, dim):
-    return tf.shape(array)[dim] if array.shape[dim].value is None else array.shape[dim].value
+    if isinstance(dim, collections.Iterable):
+        return [tf.shape(array)[d] if array.shape[d].value is None else array.shape[d].value for d in dim]
+    else:
+        return tf.shape(array)[dim] if array.shape[dim].value is None else array.shape[dim].value
 
 
-class MetricsAccumulator:
+def gather_indices(array, indices, axis=-1):
+    ndims = array.shape.ndims
+    if not abs(axis) <= ndims:
+        raise IndexError("list index out of range")
+    axis %= ndims
+    shapes = get_shape(array, range(ndims))
+    other_indices = []
+
+    for dim, shape in enumerate(shapes):
+        if dim == axis:
+            other_indices.append(indices)
+            continue
+
+        ind_range = tf.range(shape)
+
+        expand_dims = list(range(ndims))
+        expand_dims.pop(dim)
+
+        tile_indices = copy.copy(shapes)
+        tile_indices[dim] = 1
+
+        tile_indices = tf.expand_dims(ind_range, expand_dims)
+        tile_indices = tf.tile(tile_indices, tile_indices)
+
+        other_indices.apend(tile_indices)
+
+
+class MetricsAccumulator(object):
 
     def __init__(self):
         self._totalmetrics = defaultdict(lambda: 0.0)

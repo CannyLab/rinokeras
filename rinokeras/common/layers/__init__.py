@@ -8,3 +8,4 @@ from .stack import *
 from .dropout import *
 from .masking import *
 from .autoregressive import *
+from .conv import *

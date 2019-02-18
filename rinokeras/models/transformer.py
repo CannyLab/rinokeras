@@ -13,7 +13,9 @@ from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import (DenseStack, EmbeddingTranspose,
                                      LayerDropout, LayerNorm,
-                                     PositionEmbedding, Stack)
+                                     PositionEmbedding, Stack,
+                                     ResidualBlock)
+from rinokeras.utils import get_shape
 
 DecoderResult = namedtuple('DecoderResult', [
                            'seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])
@@ -110,6 +112,28 @@ class TransformerFeedForward(Model):
         return self.norm(dense_out + inputs)
 
 
+class TransformerConv(Model):
+
+    def __init__(self,
+                 filters: int,
+                 kernel_size: int,
+                 dropout: Optional[float]) -> None:
+        super().__init__()
+        self.norm = LayerNorm()
+        self.residual_conv = ResidualBlock(
+            dimension=1,
+            filters=filters,
+            kernel_size=kernel_size,
+            layer_norm=False,
+            activation='relu')
+
+    def call(self, inputs, padding_mask=None):
+        if padding_mask is not None:
+            inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
+
+        return self.norm(self.residual_conv(inputs))
+
+
 class TransformerEncoderBlock(Model):
     """An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf).
 
@@ -124,6 +148,8 @@ class TransformerEncoderBlock(Model):
                  hidden_size: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 use_conv: bool = False,
+                 conv_kernel_size: int = 7,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -135,9 +161,15 @@ class TransformerEncoderBlock(Model):
         self.hidden_size = hidden_size
         self.dropout = dropout
         self.layer_dropout = layer_dropout
+        self.use_conv = use_conv
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
+
+        if use_conv:
+            self.conv = TransformerConv(hidden_size, conv_kernel_size, dropout=dropout)
+            self.layer_drop_conv = LayerDropout(
+                0 if layer_dropout is None else layer_dropout)
 
         self.self_attention = TransformerSelfAttention(
             n_heads, dropout,
@@ -156,7 +188,12 @@ class TransformerEncoderBlock(Model):
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
-    def call(self, inputs, self_attention_mask=None, return_attention_weights=False):
+    def call(self, inputs, self_attention_mask=None, conv_mask=None, return_attention_weights=False):
+
+        if self.use_conv:
+            conv_result = self.conv(inputs, padding_mask=conv_mask)
+            conv_result = self.layer_drop_conv(conv_result, inputs)
+            inputs = conv_result
 
         # Perform a multi-headed self-attention across the inputs.
         res_attn, attention_weights = self.self_attention(
@@ -356,6 +393,8 @@ class TransformerEncoder(Model):
                  d_filter: int,
                  dropout: Optional[float] = None,
                  layer_dropout: Optional[float] = None,
+                 use_conv: bool = False,
+                 conv_kernel_size: int = 7,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -366,17 +405,21 @@ class TransformerEncoder(Model):
 
         self.embedding_layer = embedding_layer
         # The encoding stack is a stack of transformer encoder blocks
-        self.encoding_stack = Stack([TransformerEncoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
-                                                             kernel_initializer=kernel_initializer,
-                                                             kernel_regularizer=kernel_regularizer,
-                                                             bias_regularizer=bias_regularizer,
-                                                             activity_regularizer=activity_regularizer,
-                                                             use_weight_norm=use_weight_norm)
+        self.encoding_stack = Stack([TransformerEncoderBlock(
+            n_heads=n_heads,
+            filter_size=d_filter,
+            hidden_size=d_model,
+            dropout=dropout,
+            layer_dropout=layer_dropout,
+            use_conv=use_conv,
+            conv_kernel_size=conv_kernel_size,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer,
+            use_weight_norm=use_weight_norm) for _ in range(n_layers)], name='encoder_stack')
 
-                                     for _ in range(n_layers)],
-                                    name='encoder_stack')
-
-    def call(self, inputs, encoder_mask=None):
+    def call(self, inputs, encoder_mask=None, conv_mask=None):
         """
             Args:
                 inputs: Either a float32 or in32 Tensor with shape [batch_size, sequence_length, ndim]
@@ -388,23 +431,39 @@ class TransformerEncoder(Model):
         if self.embedding_layer is not None:
             inputs = self.embedding_layer(inputs)
         inputs.shape.assert_has_rank(3)
-
+        batch_size, seqlen, dims = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
         assertions = []
 
         if encoder_mask is not None:
             # Check the dimension of the mask
             encoder_mask.shape.assert_has_rank(3)
+            enc_batch, enc_seq1, enc_seq2 = get_shape(encoder_mask, range(3))
+            enc_batch_assert = tf.assert_equal(
+                batch_size, enc_batch,
+                message='Batch size mismatch between inputs and encoder mask')
+            enc_seq1_assert = tf.assert_equal(
+                seqlen, enc_seq1,
+                message='Seqlen mismatch between inputs and encoder mask')
+            enc_seq2_assert = tf.assert_equal(
+                seqlen, enc_seq2,
+                message='Seqlen mismatch between inputs and encoder mask')
+            assertions += [enc_batch_assert, enc_seq1_assert, enc_seq2_assert]
 
-            last_two_dims_equal = tf.assert_equal(tf.shape(encoder_mask)[-1], tf.shape(encoder_mask)[-2],
-                                                  message='Last two mask dimensions must match')
-            sequence_len_match = tf.assert_equal(tf.shape(encoder_mask)[-2], tf.shape(inputs)[1],
-                                                 message='Sequence dimension beotween mask and inputs do not match')
-            assertions = [last_two_dims_equal, sequence_len_match]
+        if conv_mask is not None:
+            conv_mask.shape.assert_has_rank(2)
+            conv_batch, conv_seq = get_shape(conv_mask, range(2))
+            conv_batch_assert = tf.assert_equal(
+                batch_size, conv_batch,
+                message='Batch size mismatch between inputs and conv mask')
+            conv_seq_assert = tf.assert_equal(
+                seqlen, conv_seq,
+                message='Seqlen mismatch between inputs and conv mask')
+            assertions += [conv_batch_assert, conv_seq_assert]
 
         with tf.control_dependencies(assertions):
             output = self.encoding_stack(
-                inputs, self_attention_mask=encoder_mask)
+                inputs, self_attention_mask=encoder_mask, conv_mask=conv_mask)
 
         return output
 
