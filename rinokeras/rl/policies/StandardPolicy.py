@@ -14,6 +14,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Reshape, BatchNormalization
 from rinokeras.common.layers import Stack, DenseStack
 from rinokeras.common.distributions import CategoricalPd, DiagGaussianPd
+from rinokeras.utils import get_shape
 
 from baselines.common.tf_util import adjust_shape
 
@@ -34,7 +35,6 @@ class StandardPolicy(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
-                 extra_tensors: Optional[Dict[str, tf.Tensor]] = None,
                  normalize_observations: bool = False,
                  **kwargs) -> None:
 
@@ -52,14 +52,10 @@ class StandardPolicy(Model):
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
         self.initial_state = None
-        self.state = tf.constant([])
         self.normalize_observations = normalize_observations
 
         if normalize_observations:
             self.batch_norm = BatchNormalization(center=False, scale=False)
-
-        if extra_tensors is not None:
-            self.__dict__.update(extra_tensors)
 
         self.embedding_model = embedding_model
         self.logits_function = self._setup_logits_function()
@@ -88,79 +84,27 @@ class StandardPolicy(Model):
 
     def call(self, obs, training=False):
         self._obs = obs
-        self.X = obs
 
         if self.normalize_observations and obs.dtype == tf.float32:
             obs = self.batch_norm(obs)
             obs = tf.clip_by_value(obs, -5.0, 5.0)
 
-        obs = self.encode_observation(self.obs_space, obs)
-
-        if self._obs.shape[1].value is None:
-            bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
-            remaining_shape = obs.shape[2:].as_list()
-            obs = tf.reshape(obs, [bs * seqlen] + remaining_shape)
-
         embedding = self.embedding_model(obs)
-        self.embedding = embedding
+        state = tf.constant([])
+
         logits = self.logits_function(embedding)
 
         value = tf.squeeze(self.value_function(embedding), -1)
+
         action = self.pd(logits, greedy=self.take_greedy_actions)
+        neglogpac = self.neglogp(action)
 
-        if self._obs.shape[1].value is None:
-            value = tf.reshape(value, (bs, seqlen))
-            logits = tf.reshape(logits, (bs, seqlen) + self.act_shape)
-
-        self._logits = logits
-        self.action = action
-        self.vf = value
-        self.neglogpac = self.neglogp(action)
-
-        return logits, value, action
-
-    def step(self, observation, **extra_feed):
-        """
-        Compute next action(s) given the observation(s)
-
-        Parameters:
-        ----------
-
-        observation     observation data (either single or a batch)
-
-        **extra_feed    additional data such as state or mask
-            (names of the arguments should match the ones in constructor, see __init__)
-
-        Returns:
-        -------
-            (action, value estimate, next state,
-                negative log likelihood of the action under current policy parameters) tuple
-        """
-        action, value, state, neglogp = self._run_tensors(
-            [self.action, self.vf, self.state, self.neglogpac], observation, **extra_feed)
-
-        if state.size == 0:
-            state = None
-
-        return action, value, state, neglogp
-
-    def value(self, ob, *args, **kwargs):
-        """
-        Compute value estimate(s) given the observation(s)
-
-        Parameters:
-        ----------
-
-        observation     observation data (either single or a batch)
-
-        **extra_feed    additional data such as state or mask
-            (names of the arguments should match the ones in constructor, see __init__)
-
-        Returns:
-        -------
-        value estimate
-        """
-        return self._run_tensors(self.vf, ob, *args, **kwargs)
+        return {'latent': embedding,
+                'q': logits,
+                'vf': value,
+                'state': state,
+                'action': action,
+                'neglogp': neglogpac}
 
     def logp_actions(self, actions):
         return self.pd.logp_actions(actions)
@@ -170,17 +114,6 @@ class StandardPolicy(Model):
 
     def entropy(self):
         return self.pd.entropy()
-
-    def _run_tensors(self, variables, observation, **extra_feed):
-        sess = K.get_session()
-        feed_dict = {self._obs: adjust_shape(self._obs, observation)}
-        for inpt_name, data in extra_feed.items():
-            if inpt_name in self.__dict__.keys():
-                inpt = self.__dict__[inpt_name]
-                if isinstance(inpt, tf.Tensor) and inpt._op.type == 'Placeholder':
-                    feed_dict[inpt] = adjust_shape(inpt, data)
-
-        return sess.run(variables, feed_dict)
 
     def get_config(self):
         config = {
@@ -208,26 +141,3 @@ class StandardPolicy(Model):
 
     def clear_memory(self) -> None:
         pass
-
-    def encode_observation(self, ob_space, placeholder):
-        '''
-        Encode input in the way that is appropriate to the observation space
-
-        Parameters:
-        ----------
-
-        ob_space: gym.Space             observation space
-
-        placeholder: tf.placeholder     observation input placeholder
-        '''
-        if isinstance(ob_space, gym.spaces.Discrete):
-            return tf.to_float(tf.one_hot(placeholder, ob_space.n))
-        elif isinstance(ob_space, gym.spaces.Box):
-            return tf.to_float(placeholder)
-        elif isinstance(ob_space, gym.spaces.MultiDiscrete):
-            placeholder = tf.cast(placeholder, tf.int32)
-            one_hots = [tf.to_float(tf.one_hot(placeholder[..., i], ob_space.nvec[i]))
-                        for i in range(placeholder.shape[-1])]
-            return tf.concat(one_hots, axis=-1)
-        else:
-            raise NotImplementedError

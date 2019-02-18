@@ -157,6 +157,7 @@ class RelationalMemoryCoreCell(Model):
                  mem_slots: int,
                  mem_size: int,
                  n_heads: int,
+                 key_size: Optional[int] = None,
                  forget_bias: float = 1.0,
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
@@ -171,11 +172,6 @@ class RelationalMemoryCoreCell(Model):
                  **kwargs) -> None:
 
         super().__init__(**kwargs)
-        if n_heads == 1:
-            key_size = 16
-        else:
-            key_size = None
-
         self.mem_slots = mem_slots
         self.mem_size = mem_size
         self.n_heads = n_heads
@@ -186,10 +182,6 @@ class RelationalMemoryCoreCell(Model):
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
-
-        self.debug_project = Dense(512, activation='relu', kernel_initializer=tf.keras.initializers.Orthogonal(np.sqrt(2)))
-        # self.debug_cell = rk.common.layers.MaskedLSTMCell(mem_size)
-        self.debug_cell = LSTMCell(mem_size)
 
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(
@@ -230,7 +222,8 @@ class RelationalMemoryCoreCell(Model):
         self.input_projection = Dense(
             16, use_bias=False, kernel_initializer=kernel_initializer)
         self._initial_state = None
-        self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
+        if not tf.executing_eagerly():
+            self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
 
     def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
         """Creates the initial memory.
@@ -256,7 +249,7 @@ class RelationalMemoryCoreCell(Model):
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
         position = self.posembed(zeros)
-        return self.flatten(position)
+        return [self.flatten(position)]
         # init_state = tf.one_hot(tf.range(self.mem_slots),
                                 # self.mem_size, dtype=dtype)
         # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
@@ -265,11 +258,14 @@ class RelationalMemoryCoreCell(Model):
         # return init_state
 
     def get_initial_state_numpy(self, batch_size: int):
-        if self._initial_state is None:
-            self._initial_state = self.get_initial_state(batch_size=self._batch_size_ph)
+        if not tf.executing_eagerly():
+            if self._initial_state is None:
+                self._initial_state = self.get_initial_state(batch_size=self._batch_size_ph)
 
-        sess = K.get_session()
-        return sess.run(self._initial_state, feed_dict={self._batch_size_ph: batch_size})
+            sess = K.get_session()
+            return sess.run(self._initial_state, feed_dict={self._batch_size_ph: batch_size})
+        else:
+            return [self.get_initial_state(batch_size=batch_size)[0].numpy()]
 
     def _calculate_gate_size(self):
         """Calculate the gate size from the gate_style.
@@ -324,7 +320,7 @@ class RelationalMemoryCoreCell(Model):
     def build(self, input_shape):
         self.built = True
 
-    def call(self, inputs, states, constants=None):
+    def call(self, inputs, states):
         """Runs the relational memory core.
 
         Args:
@@ -337,29 +333,6 @@ class RelationalMemoryCoreCell(Model):
         """
 
         memory = states[0]
-
-        if constants is not None:
-            num_inputs = constants[0]
-            mask = tf.expand_dims(inputs[..., -1], -1)
-            inputs = inputs[..., :-1]
-            # batch_size = K.shape(inputs)[0]
-            # if self.treat_input_as_sequence:
-                # inputs = K.reshape(inputs, (batch_size, num_inputs, self.input_dim))
-            # else:
-                # inputs = K.reshape(inputs, (batch_size, self.input_dim))
-#
-            # memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
-            # mask_assert = tf.Assert(tf.reduce_all(tf.equal(mask, 0.0) | tf.equal(mask, 1.0)), [mask])
-            # with tf.control_dependencies([mask_assert]):
-            memory = memory * (1 - mask) + self.get_initial_state(inputs) * mask
-            # memory_in = (memory[:, :self.mem_size], memory[:, self.mem_size:2 * self.mem_size])
-            # inputs.set_shape((None, 121 * self.input_dim))
-            # proj = self.debug_project(inputs)
-            # output, memory_out = self.debug_cell(inputs, memory_in)
-            # memory_out = tf.concat(memory_out, -1)
-            # memory_out = tf.concat((memory_out, memory[:, 2 * self.mem_size:]), -1)
-            # return output, memory_out
-
         memory = self.reshape(memory)
 
         if self.treat_input_as_sequence:
@@ -408,7 +381,7 @@ class RelationalMemoryCoreCell(Model):
 
         output = next_memory if not self.return_attention_weights else tf.concat((next_memory, attention_weights), 1)
 
-        return output, next_memory
+        return output, [next_memory]
 
 
 class RelationalMemoryCore(RNN):
@@ -417,6 +390,7 @@ class RelationalMemoryCore(RNN):
                  mem_slots: int,
                  mem_size: int,
                  n_heads: int,
+                 key_size: Optional[int] = None,
                  forget_bias: float = 1.0,
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
@@ -438,6 +412,7 @@ class RelationalMemoryCore(RNN):
             mem_slots=mem_slots,
             mem_size=mem_size,
             n_heads=n_heads,
+            key_size=key_size,
             forget_bias=forget_bias,
             input_bias=input_bias,
             dropout=dropout,
@@ -467,73 +442,3 @@ class RelationalMemoryCore(RNN):
     @property
     def n_heads(self) -> int:
         return self.cell.n_heads
-
-
-class MaskedRelationalMemoryCore(Model):
-
-    def __init__(self,
-                 mem_slots: int,
-                 mem_size: int,
-                 n_heads: int,
-                 forget_bias: float = 1.0,
-                 input_bias: float = 0.0,
-                 dropout: Optional[float] = None,
-                 gate_style: str = 'unit',
-                 treat_input_as_sequence: bool = False,
-                 use_cross_attention: bool = False,
-                 return_attention_weights: bool = False,
-                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
-                 kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
-                 bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
-                 activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
-                 return_sequences: bool = False,
-                 return_state: bool = False,
-                 go_backwards: bool = False,
-                 stateful: bool = False,
-                 unroll: bool = False,
-                 **kwargs) -> None:
-        super().__init__()
-        rmc = RelationalMemoryCore(
-            mem_slots=mem_slots,
-            mem_size=mem_size,
-            n_heads=n_heads,
-            forget_bias=forget_bias,
-            input_bias=input_bias,
-            dropout=dropout,
-            gate_style=gate_style,
-            treat_input_as_sequence=treat_input_as_sequence,
-            use_cross_attention=use_cross_attention,
-            return_attention_weights=return_attention_weights,
-            kernel_initializer=kernel_initializer,
-            kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer,
-            activity_regularizer=activity_regularizer,
-            return_sequences=return_sequences,
-            return_state=return_state,
-            go_backwards=go_backwards,
-            stateful=stateful,
-            unroll=unroll,
-            **kwargs)
-        self.rmc = rmc
-
-    def call(self, inputs, initial_state=None, state_mask=None):
-        # assert state_mask is not None
-        # batch_size = K.shape(inputs)[0]
-        # seqlen = K.shape(inputs)[1]
-        num_inputs = K.shape(inputs)[2] if self.rmc.cell.treat_input_as_sequence else K.constant(1, dtype=tf.int32)
-        input_dim = inputs.shape[-1]
-        self.rmc.cell.input_dim = input_dim
-        # inputs_reshaped = K.reshape(inputs, (batch_size, seqlen, num_inputs * input_dim))
-        # reshaped_inputs_and_mask = K.concatenate((inputs_reshaped, state_mask), -1)
-
-        reshaped_inputs_and_mask = Input(tensor=inputs)
-        if initial_state is not None:
-            initial_state = Input(tensor=initial_state)
-        num_inputs = Input(tensor=num_inputs)
-
-        outputs = self.rmc(reshaped_inputs_and_mask, initial_state=initial_state, constants=num_inputs)
-
-        return outputs
-
-    def get_initial_state_numpy(self, batch_size: int):
-        return self.rmc.get_initial_state_numpy(batch_size)

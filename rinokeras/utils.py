@@ -232,6 +232,10 @@ def load_distributed(distribution_strategy, model, filename, by_name=False):
         K.get_session().run(assign_ops)
 
 
+def get_shape(array, dim):
+    return tf.shape(array)[dim] if array.shape[dim].value is None else array.shape[dim].value
+
+
 class MetricsAccumulator:
 
     def __init__(self):
