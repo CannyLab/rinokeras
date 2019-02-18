@@ -7,6 +7,8 @@ from typing import Dict
 import tensorflow as tf
 from tensorflow.keras.layers import Layer  # pylint: disable=F0401
 
+from rinokeras.utils import get_shape
+
 
 class PositionEmbedding(Layer):
     """
@@ -14,8 +16,9 @@ class PositionEmbedding(Layer):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, concat: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.concat = concat
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
@@ -36,8 +39,8 @@ class PositionEmbedding(Layer):
         """
         inputs.shape.assert_has_rank(3)
         assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
-
-        sequence_length = tf.shape(inputs)[1] if inputs.shape[1].value is None else inputs.shape[1].value
+        batch_size = get_shape(inputs, 0)
+        sequence_length = get_shape(inputs, 1)
         seq_pos = tf.cast(tf.range(start, sequence_length + start)
                           [None, :], tf.float32)  # 1-index positions
 
@@ -51,7 +54,12 @@ class PositionEmbedding(Layer):
 
         position_embedding = tf.reshape(position_embedding, position_shape)
 
-        return inputs + position_embedding
+        if self.concat:
+            position_embedding = tf.tile(position_embedding, (batch_size, 1, 1))
+            return tf.concat((inputs, position_embedding), -1)
+        else:
+            return inputs + position_embedding
+
 
     def get_config(self) -> Dict:
         return dict()
@@ -63,8 +71,8 @@ class PositionEmbedding2D(PositionEmbedding):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, concat: bool = False, **kwargs):
+        super().__init__(concat, **kwargs)
 
     def build(self, input_shape):
         # self.embedding = self.add_weight('embedding', input_shape.as_list()[1:], dtype=tf.float32, trainable=True)
@@ -87,8 +95,10 @@ class PositionEmbedding2D(PositionEmbedding):
         """
         # return inputs + self.embedding[None]
         inputs.shape.assert_has_rank(4)
-        batch_size = tf.shape(inputs)[0]
-        width, height, channels = inputs.shape[1:]
+        batch_size = get_shape(inputs, 0)
+        width = get_shape(inputs, 1)
+        height = get_shape(inputs, 2)
+        channels = inputs.shape[-1]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 
         width_pos = tf.cast(tf.range(1, width + 1)[None, :], tf.float32)
@@ -109,10 +119,13 @@ class PositionEmbedding2D(PositionEmbedding):
                                        height_sin_embed, height_cos_embed), -1)
         position_embedding = tf.reshape(
             position_embedding, (1, width, height, self.hidden_size))
-        position_embedding = tf.tile(
-            position_embedding, (batch_size, 1, 1, 1))
 
-        return tf.concat((inputs, position_embedding), -1)
+        if self.concat:
+            position_embedding = tf.tile(
+                position_embedding, (batch_size, 1, 1, 1))
+            return tf.concat((inputs, position_embedding), -1)
+        else:
+            return inputs + position_embedding
 
 
 class PositionEmbedding3D(PositionEmbedding2D):
@@ -121,8 +134,8 @@ class PositionEmbedding3D(PositionEmbedding2D):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, concat: bool = False, **kwargs):
+        super().__init__(concat, **kwargs)
 
     def build(self, input_shape):
         # self.embedding = self.add_weight('embedding', input_shape.as_list()[1:], dtype=tf.float32, trainable=True)
@@ -143,9 +156,12 @@ class PositionEmbedding3D(PositionEmbedding2D):
             Returns:
                 embedding: a float32 Tensor with shape [batch_size, Width, Height, Channels]
         """
-        # return inputs + self.embedding[None]
         inputs.shape.assert_has_rank(5)
-        time, width, height, channels = inputs.shape[1:]
+        batch_size = get_shape(inputs, 0)
+        time = get_shape(inputs, 1)
+        width = get_shape(inputs, 2)
+        height = get_shape(inputs, 3)
+        channels = inputs.shape[-1]
         assert channels == self.hidden_size, 'Input final dim must match model hidden size'
 
         time_pos = tf.cast(tf.range(1, time + 1)[None, :], tf.float32)
@@ -172,14 +188,21 @@ class PositionEmbedding3D(PositionEmbedding2D):
                                        height_sin_embed, height_cos_embed), -1)
         position_embedding = tf.reshape(
             position_embedding, (1, time, width, height, self.hidden_size))
-
-        return inputs + position_embedding
+        if self.concat:
+            position_embedding = tf.tile(position_embedding, (batch_size, 1, 1, 1, 1))
+            return tf.concat((inputs, position_embedding), -1)
+        else:
+            return inputs + position_embedding
 
 
 class LearnedEmbedding(Layer):
     """
     Adds learned positional embedding to an input embedding.
     """
+
+    def __init__(self, concat: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.concat = concat
 
     def build(self, input_shape):
         shape = input_shape[1:]
@@ -196,7 +219,12 @@ class LearnedEmbedding(Layer):
                 embedding: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
         """
         inputs.shape[1:].assert_is_compatible_with(self.embedding.shape[1:])
-        return inputs + self.embedding
+        if self.concat:
+            batch_size = get_shape(inputs, 0)
+            embedding = tf.tile(self.embedding, [batch_size] + [1] * (inputs.shape.ndims - 1))
+            return tf.concat((inputs, embedding), -1)
+        else:
+            return inputs + self.embedding
 
     def get_config(self) -> Dict:
         return dict()
