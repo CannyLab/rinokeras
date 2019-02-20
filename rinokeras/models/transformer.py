@@ -1179,7 +1179,7 @@ class Transformer(Model):
 
         # TODO: Replace this with something more robust
         target_dtype = tf.int32 if self.discrete else tf.float32
-        output_size = self.n_symbols_out if self.discrete else self.output_size
+        output_size = self.n_symbols_out if self.discrete else self.out_size
 
         # Generate the masks for the encoder and decoder. There are a lot of different ways that
         # the attention masks could be passed in, so this method handles a lot of these different
