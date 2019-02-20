@@ -1054,6 +1054,7 @@ class Transformer(Model):
                  activity_regularizer=None,
                  use_weight_norm=True,
                  concat_position_encoding=False,
+                 output_layer=None,
                  position_encoding_expands_dims=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
@@ -1141,14 +1142,15 @@ class Transformer(Model):
                 # or two, we could change the dimension of the model
                 self.d_model *= 2 # This should handle the internal dimension shift
 
-        if self.mtranspose:
-            output_layer = EmbeddingTranspose(target_embedding.embedding)
-        else:
-            output_layer = Dense(
-                n_symbols_out if discrete else out_size, activation=output_activation,
-                kernel_regularizer=self.kernel_regularizer,
-                bias_regularizer=self.bias_regularizer,
-                activity_regularizer=self.activity_regularizer)
+        if output_layer is None:
+            if self.mtranspose:
+                output_layer = EmbeddingTranspose(target_embedding.embedding)
+            else:
+                output_layer = Dense(
+                    n_symbols_out if discrete else out_size, activation=output_activation,
+                    kernel_regularizer=self.kernel_regularizer,
+                    bias_regularizer=self.bias_regularizer,
+                    activity_regularizer=self.activity_regularizer)
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
