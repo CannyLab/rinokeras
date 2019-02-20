@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import (BatchNormalization, Dropout, Embedding,
-                                     Lambda)
+                                     Lambda, Conv1D)
 
 import rinokeras as rk
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
@@ -94,44 +94,37 @@ class TransformerFeedForward(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
+                 use_conv: bool = False,
+                 kernel_size: int = 7,
                  use_weight_norm: bool = True) -> None:
         super().__init__()
         self.norm = LayerNorm()
-        self.feed_forward = DenseStack([filter_size, hidden_size], output_activation=None,
-                                       kernel_initializer=kernel_initializer,
-                                       kernel_regularizer=kernel_regularizer,
-                                       bias_regularizer=bias_regularizer,
-                                       activity_regularizer=activity_regularizer,
-                                       use_weight_norm=use_weight_norm)
-        self.dropout = Dropout(0 if dropout is None else dropout)
+        layer_args = {
+            'kernel_initializer': kernel_initializer,
+            'kernel_regularizer': kernel_regularizer,
+            'bias_regularizer': bias_regularizer,
+            'activity_regularizer': activity_regularizer}
 
-    def call(self, inputs):
-        dense_out = self.feed_forward(inputs)
-        dense_out = self.dropout(dense_out)
-
-        return self.norm(dense_out + inputs)
-
-
-class TransformerConv(Model):
-
-    def __init__(self,
-                 filters: int,
-                 kernel_size: int,
-                 dropout: Optional[float]) -> None:
-        super().__init__()
-        self.norm = LayerNorm()
-        self.residual_conv = ResidualBlock(
-            dimension=1,
-            filters=filters,
-            kernel_size=kernel_size,
-            layer_norm=False,
-            activation='relu')
+        layer_type = Dense if not use_conv else Conv1D
+        if use_conv:
+            conv_args = {
+                'kernel_size': kernel_size,
+                'padding': 'same',
+                'strides': 1}
+            layer_args.update(conv_args)
+        self.feed_forward = Stack()
+        self.feed_forward.add(
+            layer_type(filter_size, activation='relu', **layer_args))
+        self.feed_forward.add(
+            layer_type(hidden_size, activation='linear', **layer_args))
+        self.feed_forward.add(Dropout(0 if dropout is None else dropout))
 
     def call(self, inputs, padding_mask=None):
         if padding_mask is not None:
             inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
+        dense_out = self.feed_forward(inputs)
 
-        return self.norm(self.residual_conv(inputs))
+        return self.norm(dense_out + inputs)
 
 
 class TransformerEncoderBlock(Model):
@@ -166,11 +159,6 @@ class TransformerEncoderBlock(Model):
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
 
-        if use_conv:
-            self.conv = TransformerConv(hidden_size, conv_kernel_size, dropout=dropout)
-            self.layer_drop_conv = LayerDropout(
-                0 if layer_dropout is None else layer_dropout)
-
         self.self_attention = TransformerSelfAttention(
             n_heads, dropout,
             kernel_initializer=kernel_initializer,
@@ -184,23 +172,20 @@ class TransformerEncoderBlock(Model):
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer,
+                                                   use_conv=use_conv,
+                                                   kernel_size=conv_kernel_size,
                                                    use_weight_norm=use_weight_norm)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
     def call(self, inputs, self_attention_mask=None, conv_mask=None, return_attention_weights=False):
 
-        if self.use_conv:
-            conv_result = self.conv(inputs, padding_mask=conv_mask)
-            conv_result = self.layer_drop_conv(conv_result, inputs)
-            inputs = conv_result
-
         # Perform a multi-headed self-attention across the inputs.
         res_attn, attention_weights = self.self_attention(
             inputs, mask=self_attention_mask, return_attention_weights=True)
         res_attn = self.layer_drop_1(res_attn, inputs)
 
-        output = self.feed_forward(res_attn)
+        output = self.feed_forward(res_attn, padding_mask=conv_mask)
         output = self.layer_drop_2(output, res_attn)
 
         if return_attention_weights:
@@ -430,6 +415,8 @@ class TransformerEncoder(Model):
 
         if self.embedding_layer is not None:
             inputs = self.embedding_layer(inputs)
+            if conv_mask is not None:
+                inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
         inputs.shape.assert_has_rank(3)
         batch_size, seqlen, dims = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
