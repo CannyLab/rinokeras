@@ -807,7 +807,6 @@ class TSAODecoder(Model):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
 
-
         if initial_input is None:
             shape = (batch_size, 1) if discrete else (
                 batch_size, 1, output_size)
@@ -941,6 +940,7 @@ class TSAODecoder(Model):
 
         return cache
 
+
 # TODO: Split this into a discrete/continuous embedding rather than handle the logic here
 class TransformerInputEmbedding(Model):
 
@@ -993,7 +993,8 @@ class TransformerInputEmbedding(Model):
 
         self.discrete = discrete
         self.freeze_embeddings = freeze_embeddings
-        self.position_encoding = PositionEmbedding(concat=self.concat_position_encoding,reproject_embedding=reproject_position_encoding)
+        self.position_encoding = PositionEmbedding(
+            concat=self.concat_position_encoding, reproject_embedding=reproject_position_encoding)
         self.dropout = Dropout(0 if dropout is None else dropout)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
 
@@ -1111,15 +1112,20 @@ class Transformer(Model):
 
             if not self.share_source_target_embedding:
                 target_embedding = TransformerInputEmbedding(
-                    d_model, discrete, n_symbols_out, dropout, embedding_initializer=embedding_initializer,
-                    kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                    activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
+                    d_model, discrete, n_symbols_out, dropout,
+                    embedding_initializer=embedding_initializer,
+                    kernel_regularizer=self.kernel_regularizer,
+                    bias_regularizer=self.bias_regularizer,
+                    activity_regularizer=self.activity_regularizer,
+                    concat_position_encoding=self.concat_position_encoding,
                     reproject_position_encoding=not self.position_encoding_expands_dims)
             else:
                 target_embedding = input_embedding
         else:
-            input_embedding = PositionEmbedding(concat=self.concat_position_encoding, reproject_embedding=not self.position_encoding_expands_dims)
-        
+            input_embedding = PositionEmbedding(
+                concat=self.concat_position_encoding,
+                reproject_embedding=not self.position_encoding_expands_dims)
+
         # If the position encoding is concatenation, then we need to reshape
         # the overall model to handle the position-encoded elements
 
@@ -1127,7 +1133,7 @@ class Transformer(Model):
             if self.position_encoding_expands_dims:
                 # There's two ways to handle this - one, we could add a dense layer too the elements,
                 # or two, we could change the dimension of the model
-                self.d_model *= 2 # This should handle the internal dimension shift
+                self.d_model *= 2  # This should handle the internal dimension shift
 
         if output_layer is None:
             if self.mtranspose:
