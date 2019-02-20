@@ -56,9 +56,9 @@ class RMCPolicy(RecurrentPolicy):
             initial_logstd=initial_logstd,
             normalize_observations=normalize_observations,
             **kwargs)
-        self.output_dense = Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))
+        # self.output_dense = Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))
 
-        def unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps):
-            output, state = super().unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps)
-            output = self.output_dense(output)
-            return output, state
+        # def unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps):
+            # output, state = super().unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps)
+            # output = self.output_dense(output)
+            # return output, state
