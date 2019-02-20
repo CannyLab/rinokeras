@@ -953,12 +953,15 @@ class TransformerInputEmbedding(Model):
                  n_embed_layers: int = 1,
                  embedding_initializer=None,
                  freeze_embeddings=False,
+                 concat_position_encoding=False,
+                 reproject_position_encoding=False,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,) -> None:
         super().__init__()
         self.embedding_dense = Lambda(lambda x: x)
         self.using_dense_embedding = False
+        self.concat_position_encoding = concat_position_encoding
 
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -990,7 +993,7 @@ class TransformerInputEmbedding(Model):
 
         self.discrete = discrete
         self.freeze_embeddings = freeze_embeddings
-        self.position_encoding = PositionEmbedding()
+        self.position_encoding = PositionEmbedding(concat=self.concat_position_encoding,reproject_embedding=reproject_position_encoding)
         self.dropout = Dropout(0 if dropout is None else dropout)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
 
@@ -1037,6 +1040,9 @@ class Transformer(Model):
                  bias_regularizer=None,
                  activity_regularizer=None,
                  use_weight_norm=True,
+                 concat_position_encoding=False,
+                 output_layer=None,
+                 position_encoding_expands_dims=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -1063,6 +1069,10 @@ class Transformer(Model):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
+
+        # Handle the position encoding
+        self.concat_position_encoding = concat_position_encoding
+        self.position_encoding_expands_dims = position_encoding_expands_dims
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -1096,31 +1106,43 @@ class Transformer(Model):
             input_embedding = TransformerInputEmbedding(
                 d_model, discrete, n_symbols_in, dropout, embedding_initializer=embedding_initializer,
                 kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                activity_regularizer=self.activity_regularizer)
+                activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
+                reproject_position_encoding=not self.position_encoding_expands_dims)
 
             if not self.share_source_target_embedding:
                 target_embedding = TransformerInputEmbedding(
                     d_model, discrete, n_symbols_out, dropout, embedding_initializer=embedding_initializer,
                     kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                    activity_regularizer=self.activity_regularizer)
+                    activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
+                    reproject_position_encoding=not self.position_encoding_expands_dims)
             else:
                 target_embedding = input_embedding
         else:
-            input_embedding = PositionEmbedding()
+            input_embedding = PositionEmbedding(concat=self.concat_position_encoding, reproject_embedding=not self.position_encoding_expands_dims)
+        
+        # If the position encoding is concatenation, then we need to reshape
+        # the overall model to handle the position-encoded elements
 
-        if self.mtranspose:
-            output_layer = EmbeddingTranspose(target_embedding.embedding)
-        else:
-            output_layer = Dense(
-                n_symbols_out if discrete else out_size, activation=output_activation,
-                kernel_regularizer=self.kernel_regularizer,
-                bias_regularizer=self.bias_regularizer,
-                activity_regularizer=self.activity_regularizer)
+        if self.concat_position_encoding:
+            if self.position_encoding_expands_dims:
+                # There's two ways to handle this - one, we could add a dense layer too the elements,
+                # or two, we could change the dimension of the model
+                self.d_model *= 2 # This should handle the internal dimension shift
+
+        if output_layer is None:
+            if self.mtranspose:
+                output_layer = EmbeddingTranspose(target_embedding.embedding)
+            else:
+                output_layer = Dense(
+                    n_symbols_out if discrete else out_size, activation=output_activation,
+                    kernel_regularizer=self.kernel_regularizer,
+                    bias_regularizer=self.bias_regularizer,
+                    activity_regularizer=self.activity_regularizer)
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
             input_embedding,
-            n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
+            n_layers, n_heads, self.d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             activity_regularizer=self.activity_regularizer,
@@ -1129,7 +1151,7 @@ class Transformer(Model):
         # Build the decoder stack.
         self.decoder = TransformerDecoder(
             target_embedding, output_layer,
-            n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
+            n_layers, n_heads, self.d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             activity_regularizer=self.activity_regularizer,
