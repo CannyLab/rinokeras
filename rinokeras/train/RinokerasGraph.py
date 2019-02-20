@@ -2,8 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
 
 import tensorflow as tf
+from tensorflow.python.client import timeline
 from tqdm import tqdm
 
+from rinokeras.utils import MetricsAccumulator
 from .train_utils import Inputs
 
 
@@ -16,11 +18,13 @@ class RinokerasGraph(ABC):
                  **kwargs) -> None:
         super().__init__()
         self._name = self.__class__.__name__.lower()
-        if RinokerasGraph._num_graphs > 0:
+        if self.__class__._num_graphs > 0:
             self._name += '_{}'.format(RinokerasGraph._num_graphs)
-        RinokerasGraph._num_graphs += 1
+        self.__class__._num_graphs += 1
 
         self.progress_bar = None
+        self.epoch_metrics = None
+        self.instrument_idx = 0
         self.inputs = ()
 
     def _map_to_placeholders(self, placeholders, inputs, feed_dict):
@@ -43,11 +47,11 @@ class RinokerasGraph(ABC):
         if inputs is None:
             return {}
 
-        feed_dict = {} # type: Dict[tf.placeholder, Any]
+        feed_dict = {}  # type: Dict[tf.placeholder, Any]
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, instrumented: bool = False) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -64,26 +68,42 @@ class RinokerasGraph(ABC):
         sess = self._get_session()
         feed_dict = self._get_feed_dict(inputs)
 
-        results = sess.run(ops, feed_dict=feed_dict)
+        if instrumented:
+            self.instrument_idx += 1
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+            results = sess.run(ops, feed_dict=feed_dict, options=run_options, run_metadata=run_metadata)
+            tl = timeline.Timeline(run_metadata.step_stats)
+            trace_file = tf.gfile.Open(name='timeline_{}'.format(self.instrument_idx), mode='a+')
+            trace_file.write(tl.generate_chrome_trace_format(show_memory=True))
+        else:
+            results = sess.run(ops, feed_dict=feed_dict)
         return results
 
     def add_progress_bar(self, data_len: Optional[int] = None, epoch_num: Optional[int] = None):
         desc = None if epoch_num is None else 'Epoch {:>3}'.format(epoch_num)
+        if data_len is None and self.epoch_metrics is not None:
+            data_len = self.epoch_metrics.nupdates
         progress_bar = tqdm(total=data_len, desc=desc, leave=False,
                             dynamic_ncols=True, smoothing=0.1)
         progress_bar.__enter__()
         self.progress_bar = progress_bar
         return self
 
-    def update_progress_bar(self, postfix=None):
+    def update_progress_bar(self, metrics=None):
+        assert self.epoch_metrics is not None
+        if metrics is not None:
+            self.epoch_metrics.add(metrics)
         if self.progress_bar is not None:
             self.progress_bar.update()
-            self.progress_bar.set_postfix(postfix)
+            if self.epoch_metrics.nupdates > 0:
+                self.progress_bar.set_postfix(self.epoch_metrics.get_average())
 
     def initialize(self):
         return self
 
     def __enter__(self):
+        self.epoch_metrics = MetricsAccumulator()
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -103,6 +123,9 @@ class RinokerasGraph(ABC):
         return NotImplemented
 
     @property
-    def global_step(self) -> int:
-        sess = self._get_session()
-        return tf.train.global_step(sess, self._global_step)
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def summary_collection(self) -> str:
+        return self.name + '_summaries'

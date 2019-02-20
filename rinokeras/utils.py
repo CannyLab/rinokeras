@@ -1,10 +1,13 @@
 """
 Various utility functions that are commonly used in our models and during training.
 """
-from typing import Sequence, Tuple, Optional, Union
+import collections
+import copy
+from collections import defaultdict
+from typing import Optional, Sequence, Tuple, Union, Dict
+
 import tensorflow as tf
 import tensorflow.keras.backend as K
-
 
 Gradients = Sequence[Tuple[Optional[tf.Tensor], tf.Variable]]
 
@@ -27,7 +30,9 @@ def convert_padding_mask_to_attention_mask(sequence, padding_mask):
                                   message='Can only convert 2D position mask to 3D attention mask')
 
     with tf.control_dependencies([batch_assert, rank_assert]):
-        attention_mask = tf.tile(padding_mask[:, None, :], (1, tf.shape(sequence)[1], 1))
+        attention_mask = tf.tile(
+            padding_mask[:, None, :], (1, tf.shape(sequence)[1], 1))
+
         return attention_mask
 
 
@@ -50,8 +55,10 @@ def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):
                                   message='Can only convert 1D sequence_lengths to 2D mask')
 
     with tf.control_dependencies([batch_assert, rank_assert]):
-        indices = tf.tile(tf.range(tf.shape(sequence)[1])[None, :], (tf.shape(sequence_lengths)[0], 1))
+        indices = tf.tile(tf.range(tf.shape(sequence)[1])[
+                          None, :], (tf.shape(sequence_lengths)[0], 1))
         mask = indices < sequence_lengths[:, None]
+
         return mask
 
 
@@ -71,16 +78,21 @@ def convert_to_attention_mask(sequence, mask):
     Returns:
         Optional[tf.Tensor[bool]]: Tensor of shape [batch_size, sequence_length, sequence_length]
     """
+
     if mask is None:
         return None
+
     if len(mask.shape) == 1:
         mask = convert_sequence_length_to_sequence_mask(
             sequence, mask)
+
     if len(mask.shape) == 2:
         mask = convert_padding_mask_to_attention_mask(
             sequence, mask)
+
     if mask.dtype != tf.bool:
         mask = tf.cast(mask, tf.bool)
+
     return mask
 
 
@@ -110,6 +122,7 @@ class LinearSchedule(object):
     def value(self, t):
         """See Schedule.value"""
         fraction = min(float(t) / self.schedule_timesteps, 1.0)
+
         return self.initial_p + fraction * (self.final_p - self.initial_p)
 
 
@@ -140,13 +153,16 @@ class PiecewiseSchedule(object):
 
     def value(self, t):
         """See Schedule.value"""
+
         for (l_t, l), (r_t, r) in zip(self._endpoints[:-1], self._endpoints[1:]):
             if l_t <= t and t < r_t:
                 alpha = float(t - l_t) / (r_t - l_t)
+
                 return self._interpolation(l, r, alpha)
 
         # t does not belong to any of the pieces, so doom.
         assert self._outside_value is not None
+
         return self._outside_value
 
 
@@ -157,14 +173,16 @@ def clip_gradients(grads: Gradients, clip_type: str, clip_bounds: Union[float, T
             pass
         elif clip_type == 'value':
             assert isinstance(clip_bounds, (tuple, list)) and len(clip_bounds) == 2, \
-                'Expected list or tuple of length 2, received {}'.format(clip_bounds)
+                'Expected list or tuple of length 2, received {}'.format(
+                    clip_bounds)
             g = tf.clip_by_value(g, clip_bounds[0], clip_bounds[1])
         elif clip_type in ['norm', 'global_norm', 'average_norm']:
             assert isinstance(clip_bounds, (int, float)) and clip_bounds > 0, \
                 'Expected positive float, received {}'.format(clip_bounds)
             g = tf.clip_by_norm(g, clip_bounds)
         else:
-            raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))
+            raise ValueError(
+                "Unrecognized gradient clipping method: {}.".format(clip_type))
 
         return g
 
@@ -196,7 +214,8 @@ def get_optimizer(optimizer, learning_rate=1e-3):
     if optimizer in optimizers:
         return optimizers[optimizer](learning_rate=learning_rate)
     else:
-        raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
+        raise ValueError(
+            "Unrecognized optimizer. Received {}.".format(optimizer))
 
 
 def load_distributed(distribution_strategy, model, filename, by_name=False):
@@ -204,10 +223,80 @@ def load_distributed(distribution_strategy, model, filename, by_name=False):
         model.load_weights(filename, by_name=by_name)
         weights = model.get_weights()
         assign_ops = []
+
         for layer in model.layers:
             num_param = len(layer.weights)
             layer_weights = weights[:num_param]
+
             for sw, w in zip(layer.weights, layer_weights):
                 assign_ops.append(distribution_strategy.unwrap(sw.assign(w)))
             weights = weights[num_param:]
         K.get_session().run(assign_ops)
+
+
+def get_shape(array, dim):
+    if isinstance(dim, collections.Iterable):
+        return [tf.shape(array)[d] if array.shape[d].value is None else array.shape[d].value for d in dim]
+    else:
+        return tf.shape(array)[dim] if array.shape[dim].value is None else array.shape[dim].value
+
+
+def gather_indices(array, indices, axis=-1):
+    ndims = array.shape.ndims
+    if not abs(axis) <= ndims:
+        raise IndexError("list index out of range")
+    axis %= ndims
+    shapes = get_shape(array, range(ndims))
+    other_indices = []
+
+    for dim, shape in enumerate(shapes):
+        if dim == axis:
+            other_indices.append(indices)
+            continue
+
+        ind_range = tf.range(shape)
+
+        expand_dims = list(range(ndims))
+        expand_dims.pop(dim)
+
+        tile_indices = copy.copy(shapes)
+        tile_indices[dim] = 1
+
+        tile_indices = tf.expand_dims(ind_range, expand_dims)
+        tile_indices = tf.tile(tile_indices, tile_indices)
+
+        other_indices.apend(tile_indices)
+
+
+class MetricsAccumulator(object):
+
+    def __init__(self):
+        self._totalmetrics = defaultdict(lambda: 0.0)
+        self._nupdates = 0
+
+    def add(self, metrics: Dict[str, float]):
+        for metric, value in metrics.items():
+            self._totalmetrics[metric] += value
+        self._nupdates += 1
+
+    def get_average(self):
+        assert self.nupdates > 0
+        return {metric: value / self.nupdates for metric, value in self._totalmetrics.items()}
+
+    def __iter__(self):
+        return iter(self.get_average())
+
+    def items(self):
+        return self.get_average().items()
+
+    def __getitem__(self, value: str) -> float:
+        if value not in self._totalmetrics:
+            raise KeyError(value)
+        return self._totalmetrics[value] / self.nupdates
+
+    def __str__(self) -> str:
+        return str(self.get_average())
+
+    @property
+    def nupdates(self) -> int:
+        return self._nupdates

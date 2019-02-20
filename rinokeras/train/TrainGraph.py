@@ -6,9 +6,8 @@ import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from .TestGraph import TestGraph
-from .train_utils import Inputs, Outputs, Losses, Gradients
+from .train_utils import Inputs, Outputs, Losses
 from rinokeras.train import Experiment
-from rinokeras.common import optimizers as rinokeras_optimizers
 
 
 class TrainGraph(TestGraph):
@@ -36,6 +35,7 @@ class TrainGraph(TestGraph):
                  inputs: Union[Inputs, tf.data.Dataset],
                  learning_rate: float = 1e-3,
                  return_loss_summaries: bool = False,
+                 return_variable_summaries: bool = False,
                  return_grad_summaries: bool = False,
                  gradient_clip_type: str = 'none',
                  gradient_clip_bounds: Union[float, Tuple[float, float]] = 1.0,
@@ -50,8 +50,11 @@ class TrainGraph(TestGraph):
             gradient_clip_type, gradient_clip_bounds)
 
         super().__init__(
-            model, build_model, loss_function, inputs, return_loss_summaries=return_loss_summaries,
-            distribution_strategy=distribution_strategy, **kwargs)
+            model, build_model, loss_function, inputs,
+            return_loss_summaries=return_loss_summaries,
+            return_variable_summaries=return_variable_summaries,
+            distribution_strategy=distribution_strategy,
+            **kwargs)
 
     @classmethod
     def from_experiment(cls, experiment: Experiment, inputs: Union[Inputs, tf.data.Dataset]):
@@ -59,6 +62,7 @@ class TrainGraph(TestGraph):
             experiment.model, experiment.build_model, experiment.optimizer,
             experiment.loss_function, inputs, experiment.learning_rate,
             return_loss_summaries=experiment.return_loss_summaries,
+            return_variable_summaries=experiment.return_variable_summaries,
             return_grad_summaries=experiment.return_grad_summaries,
             gradient_clip_type=experiment.gradient_clipping,
             gradient_clip_bounds=experiment.gradient_clipping_bounds,
@@ -121,8 +125,15 @@ class TrainGraph(TestGraph):
             self.optimizer = self._get_optimizer(self.optimizer)
 
     def _finalize_graph(self):
+        super()._finalize_graph()
         self._default_operation = 'update'
-        self.summaries = tf.summary.merge_all()
+
+    def _create_summaries(self):
+        super()._create_summaries()
+        if self.return_grad_summaries:
+            for grad, var in self.grads:
+                name = var.name.replace(':', '_')
+                tf.summary.histogram(name, grad, collections=[self.summary_collection])
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
@@ -179,18 +190,12 @@ class TrainGraph(TestGraph):
         else:
             raise ValueError("Unrecognized optimizer. Received {}.".format(optimizer))
 
-    def _create_summaries(self):
-        super()._create_summaries()
-        if self.return_grad_summaries:
-            with tf.name_scope('gradients'):
-                for grad, var in self.grads:
-                    name = var.name.replace(':', '_')
-                    tf.summary.histogram(name, grad)
-
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Any:
+    def run(self,
+            ops: Union[str, Sequence[tf.Tensor]],
+            inputs: Optional[Inputs] = None,
+            return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
-
         if ops == 'loss':
             return self.loss(inputs, return_outputs=return_outputs)
         elif ops == 'update':
@@ -218,8 +223,10 @@ class TrainGraph(TestGraph):
             ops.append(self.outputs)
         if self.return_loss_summaries or self.return_grad_summaries:
             ops.append(self.summaries)
-
         _, _, *result = self._run_tensor(ops, inputs)
+        self.update_progress_bar(result[0])
+        if len(result) == 1:
+            result = result[0]
         return result
 
     @property

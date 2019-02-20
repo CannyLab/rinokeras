@@ -1,4 +1,4 @@
-from typing import Sequence, Union, Any, Callable, Dict, Tuple, Optional
+from typing import Sequence, Union, Any, Callable, Optional
 
 import tensorflow as tf
 from tensorflow.keras import Model
@@ -6,6 +6,7 @@ import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from rinokeras.train import Experiment
+
 from .RinokerasGraph import RinokerasGraph
 from .train_utils import Inputs, Outputs, Losses
 
@@ -29,6 +30,7 @@ class TestGraph(RinokerasGraph):
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
                  return_loss_summaries: bool = False,
+                 return_variable_summaries: bool = False,
                  distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
                  **kwargs) -> None:
         super().__init__(**kwargs)
@@ -44,6 +46,8 @@ class TestGraph(RinokerasGraph):
         self.build_model = build_model
         self.loss_function = loss_function
         self.return_loss_summaries = return_loss_summaries
+        self.return_variable_summaries = return_variable_summaries
+        self._epoch_metrics = None
         self.build()
 
     @classmethod
@@ -51,6 +55,7 @@ class TestGraph(RinokerasGraph):
         return cls(
             experiment.model, experiment.build_model, experiment.loss_function, inputs,
             return_loss_summaries=experiment.return_loss_summaries,
+            return_variable_summaries=experiment.return_variable_summaries,
             distribution_strategy=experiment.distribution_strategy)
 
     def _distributed_fn(self):
@@ -65,7 +70,8 @@ class TestGraph(RinokerasGraph):
             self.distribution_strategy.call_for_each_tower(loss_fn, self.inputs)
 
     def _reduce_distributed_ops(self):
-        central_device = self.distribution_strategy.parameter_devices[0]
+        # central_device = self.distribution_strategy.parameter_devices[0]
+        central_device = '/cpu:0'
 
         reduced_total = self.distribution_strategy.reduce(
             tf.VariableAggregation.MEAN, self._distributed_total_loss, central_device)
@@ -78,19 +84,17 @@ class TestGraph(RinokerasGraph):
                        for name, metric in zip(self._distributed_losses, reduced_losses)}
 
         def reduce_distributed_outputs(output):
-            if isinstance(output, tf.Tensor):
+            if isinstance(output, (list, tuple)):
+                return type(output)(reduce_distributed_outputs(out) for out in output)
+            elif isinstance(output, dict):
+                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
+            else:
                 unwrapped = self.distribution_strategy.unwrap(output)
                 max_shape = tf.reduce_max([tf.shape(unwrapped_out)[1:] for unwrapped_out in unwrapped], 0)
                 padding = [tf.pad((max_shape - tf.shape(unwrapped_out)[1:])[:, None], [[1, 0], [1, 0]])
                            for unwrapped_out in unwrapped]
                 unwrapped = [tf.pad(unwrapped_out, pad) for unwrapped_out, pad in zip(unwrapped, padding)]
                 return tf.concat(unwrapped, 0)
-            elif isinstance(output, (list, tuple)):
-                return type(output)(reduce_distributed_outputs(out) for out in output)
-            elif isinstance(output, dict):
-                return {key: reduce_distributed_outputs(out) for key, out in output.items()}
-            else:
-                raise ValueError("Unrecognized output format: {}.".format(type(output)))
 
         self.outputs = reduce_distributed_outputs(self._distributed_outputs)
 
@@ -100,13 +104,16 @@ class TestGraph(RinokerasGraph):
 
     def _finalize_graph(self):
         self._default_operation = 'loss'
-        self.summaries = tf.summary.merge_all()
+        self.summaries = tf.summary.merge_all(self.summary_collection)
 
     def _create_summaries(self):
         if self.return_loss_summaries:
-            with tf.name_scope('losses'):
-                for i, loss in enumerate(self.losses):
-                    tf.summary.scalar(str(i), loss)
+            for name, loss in self.losses.items():
+                tf.summary.scalar(name, loss, collections=[self.summary_collection])
+        if self.return_variable_summaries:
+            with self.distribution_strategy.scope():
+                for v in self.model.variables:
+                    tf.summary.histogram(v.name, v, collections=[self.summary_collection])
 
     def initialize(self):
         if self.iterator is not None:
@@ -142,14 +149,16 @@ class TestGraph(RinokerasGraph):
             losses['Loss'] = total_loss
         else:
             total_loss = losses
-            losses = (losses,)
+            losses = {'Loss': total_loss}
 
         return total_loss, losses
 
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, return_outputs: bool = False) -> Any:
+    def run(self,
+            ops: Union[str, Sequence[tf.Tensor]],
+            inputs: Optional[Inputs] = None,
+            return_outputs: bool = False) -> Any:
         if ops == 'default':
             ops = self._default_operation
-
         if ops == 'loss':
             return self.loss(inputs, return_outputs=return_outputs)
         elif isinstance(ops, str):
@@ -175,4 +184,13 @@ class TestGraph(RinokerasGraph):
             ops.append(self.outputs)
         if self.return_loss_summaries:
             ops.append(self.summaries)
-        return self._run_tensor(ops, inputs)
+        result = self._run_tensor(ops, inputs)
+        self.update_progress_bar(result[0])
+        if len(result) == 1:
+            result = result[0]
+        return result
+
+    @property
+    def global_step(self) -> int:
+        sess = self._get_session()
+        return tf.train.global_step(sess, self._global_step)

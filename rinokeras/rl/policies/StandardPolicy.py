@@ -1,23 +1,31 @@
 from operator import mul
 from functools import reduce
+from collections import namedtuple
+from typing import Optional, Dict
 
 import tensorflow as tf
+import tensorflow.keras.backend as K
 import numpy as np
 
 from typing import Tuple
 
 from .Policy import Policy
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Reshape
+from tensorflow.keras.layers import Reshape, BatchNormalization
 from rinokeras.common.layers import Stack, DenseStack
 from rinokeras.common.distributions import CategoricalPd, DiagGaussianPd
+from rinokeras.utils import get_shape
+
+from baselines.common.tf_util import adjust_shape
+
+import gym
 
 
 class StandardPolicy(Model):
 
     def __init__(self,
-                 action_shape: Tuple[int, ...],
-                 action_space: str,
+                 obs_space: gym.Space,
+                 act_space: gym.Space,
                  embedding_model: Model,
                  model_dim: int = 64,
                  n_layers_logits: int = 1,
@@ -27,16 +35,14 @@ class StandardPolicy(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
+                 normalize_observations: bool = False,
                  **kwargs) -> None:
 
         super().__init__(**kwargs)
-        if not isinstance(action_shape, (tuple, list)):
-            raise TypeError("Expected tuple or list for action shape, received {}".format(type(action_shape)))
-        if action_space not in ['discrete', 'continuous']:
-            raise ValueError("action_space must be one of <discrete, continuous>, received {}".format(action_space))
 
-        self.action_shape = action_shape
-        self.action_space = action_space
+        self.obs_space = obs_space
+        self.act_space = act_space
+        self.act_shape = (act_space.n,) if isinstance(act_space, gym.spaces.Discrete) else act_space.shape
         self.model_dim = model_dim
         self.n_layers_logits = n_layers_logits
         self.n_layers_value = n_layers_value
@@ -45,22 +51,28 @@ class StandardPolicy(Model):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
+        self.initial_state = None
+        self.normalize_observations = normalize_observations
+
+        if normalize_observations:
+            self.batch_norm = BatchNormalization(center=False, scale=False)
 
         self.embedding_model = embedding_model
         self.logits_function = self._setup_logits_function()
         self.value_function = self._setup_value_function()
-        self.action_distribution = CategoricalPd(name='action') if action_space == 'discrete' \
-            else DiagGaussianPd(action_shape, initial_logstd=initial_logstd, name='action')
+        self.pd = CategoricalPd(name='action') if isinstance(act_space, gym.spaces.Discrete) \
+            else DiagGaussianPd(act_space.shape, initial_logstd=initial_logstd, name='action')
 
     def _setup_logits_function(self, activation=None):
-        ac_dim = reduce(mul, self.action_shape)
+        ac_dim = reduce(mul, self.act_shape)
 
         logits_function = Stack(name='logits')
         logits_function.add(
             DenseStack(self.n_layers_logits * [self.model_dim] + [ac_dim], output_activation=activation,
                        kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                       activity_regularizer=self.activity_regularizer))
-        logits_function.add(Reshape(self.action_shape))
+                       activity_regularizer=self.activity_regularizer,
+                       kernel_initializer=tf.keras.initializers.Orthogonal()))
+        logits_function.add(Reshape(self.act_shape))
         return logits_function
 
     def _setup_value_function(self):
@@ -73,58 +85,39 @@ class StandardPolicy(Model):
     def call(self, obs, training=False):
         self._obs = obs
 
-        if self._obs.shape[1].value is None:
-            bs, seqlen = tf.shape(obs)[0], tf.shape(obs)[1]
-            obs = tf.reshape(obs, (bs * seqlen, obs.shape[-1]))
+        if self.normalize_observations and obs.dtype == tf.float32:
+            obs = self.batch_norm(obs)
+            obs = tf.clip_by_value(obs, -5.0, 5.0)
 
         embedding = self.embedding_model(obs)
+        state = tf.constant([])
+
         logits = self.logits_function(embedding)
 
         value = tf.squeeze(self.value_function(embedding), -1)
-        action = self.action_distribution(logits, greedy=self.take_greedy_actions)
 
-        if self._obs.shape[1].value is None:
-            value = tf.reshape(value, (bs, seqlen))
-            logits = tf.reshape(logits, (bs, seqlen) + self.action_shape)
+        action = self.pd(logits, greedy=self.take_greedy_actions)
+        neglogpac = self.neglogp(action)
 
-        self._action = action
-        self._value = value
+        return {'latent': embedding,
+                'q': logits,
+                'vf': value,
+                'state': state,
+                'action': action,
+                'neglogp': neglogpac}
 
-        if training:
-            return logits, value
-        else:
-            return action
+    def logp_actions(self, actions):
+        return self.pd.logp_actions(actions)
 
-    def predict(self, obs):
+    def neglogp(self, actions):
+        return - self.logp_actions(actions)
 
-        if tf.executing_eagerly():
-            obs = tf.cast(tf.constant(obs), tf.float32)
-            action = self(obs, training=False).numpy()
-        else:
-            if not self.built:
-                raise RuntimeError("Policy is not built, please call the policy before running predict.")
-            if self._obs.shape[1].value is None:
-                obs = obs[:, None]  # Expand the time dimension
-            sess = self._get_session()
-            action = sess.run(self._action, feed_dict={self._obs: obs})[0]
-
-        return action
-
-    def logp_actions(self, logits, actions):
-        return self.action_distribution.logp_actions(logits, actions)
-
-    def entropy(self, logits):
-        return self.action_distribution.entropy(logits)
-
-    def _get_session(self):
-        sess = tf.get_default_session()
-        if sess is None:
-            raise RuntimeError("This method must be run inside a tf.Session context")
-        return sess
+    def entropy(self):
+        return self.pd.entropy()
 
     def get_config(self):
         config = {
-            'action_shape': self.action_shape,
+            'action_shape': self.act_shape,
             'action_space': self.action_space,
             'embedding_model': self.embedding_model.__class__.from_config(self.embedding_model.get_config()),
             'model_dim': self.model_dim,
