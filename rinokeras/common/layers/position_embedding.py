@@ -5,7 +5,7 @@ Positional embedding layers
 from typing import Dict
 
 import tensorflow as tf
-from tensorflow.keras.layers import Layer  # pylint: disable=F0401
+from tensorflow.keras.layers import Layer, Dense  # pylint: disable=F0401
 
 from rinokeras.utils import get_shape
 
@@ -16,9 +16,10 @@ class PositionEmbedding(Layer):
 
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
-    def __init__(self, concat: bool = False, **kwargs) -> None:
+    def __init__(self, concat: bool = False, reproject_embedding: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         self.concat = concat
+        self.reproject_embedding = reproject_embedding
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
@@ -28,6 +29,9 @@ class PositionEmbedding(Layer):
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
+
+        if self.reproject_embedding:
+            self.projection_layer = Dense(self.hidden_size)
 
     def call(self, inputs, start=1):
         """
@@ -56,9 +60,13 @@ class PositionEmbedding(Layer):
 
         if self.concat:
             position_embedding = tf.tile(position_embedding, (batch_size, 1, 1))
+            if self.reproject_embedding:
+                # Return the reprojection to the hidden size of the layer, if we're doing
+                # that, otherwise, just return the layer
+                return self.projection_layer(position_embedding)
             return tf.concat((inputs, position_embedding), -1)
-        else:
-            return inputs + position_embedding
+        
+        return inputs + position_embedding
 
 
     def get_config(self) -> Dict:

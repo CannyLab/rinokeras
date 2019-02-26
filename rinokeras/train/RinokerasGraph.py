@@ -23,6 +23,7 @@ class RinokerasGraph(ABC):
         self.__class__._num_graphs += 1
 
         self.progress_bar = None
+        self.descr_offset = 0
         self.epoch_metrics = None
         self.instrument_idx = 0
         self.inputs = ()
@@ -90,14 +91,30 @@ class RinokerasGraph(ABC):
         self.progress_bar = progress_bar
         return self
 
-    def update_progress_bar(self, metrics=None):
+    def update_progress_bar(self, metrics=None, scroll=True, round_metrics=True):
         assert self.epoch_metrics is not None
         if metrics is not None:
             self.epoch_metrics.add(metrics)
         if self.progress_bar is not None:
             self.progress_bar.update()
             if self.epoch_metrics.nupdates > 0:
-                self.progress_bar.set_postfix(self.epoch_metrics.get_average())
+                
+                epoch_metric_dict = self.epoch_metrics.get_average()
+
+                # Round off the numbers in the dictionary
+                if round_metrics:
+                    for k,v in epoch_metric_dict.items():
+                        if isinstance(v, float):
+                            epoch_metric_dict[k] = round(v, 2)
+
+                postfix = str(epoch_metric_dict)
+                if scroll and len(postfix) > 60:
+                    self.descr_offset += 1
+                    if self.descr_offset + 60 >= len(postfix):
+                        self.descr_offset = 0
+                    self.progress_bar.set_postfix_str(postfix[self.descr_offset:60 + self.descr_offset])
+                else:
+                    self.progress_bar.set_postfix(epoch_metric_dict)
 
     def initialize(self):
         return self

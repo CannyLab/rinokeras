@@ -267,6 +267,7 @@ class BaselinesPolicyFnWrapper:
         if self.recurrent:
             mask = tf.placeholder(tf.float32, [nbatch])
             nenv = nbatch // nsteps
+            assert nenv > 0, 'nbatch cannot be less than nsteps'
             initial_state = tf.placeholder(tf.float32, [nenv, self.policy.state_size])
             extra_inputs = {
                 'initial_state': initial_state,

@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import (BatchNormalization, Dropout, Embedding,
-                                     Lambda)
+                                     Lambda, Conv1D)
 
 import rinokeras as rk
 from rinokeras.common.attention import MultiHeadAttention, SelfAttention
@@ -94,44 +94,37 @@ class TransformerFeedForward(Model):
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
+                 use_conv: bool = False,
+                 kernel_size: int = 7,
                  use_weight_norm: bool = True) -> None:
         super().__init__()
         self.norm = LayerNorm()
-        self.feed_forward = DenseStack([filter_size, hidden_size], output_activation=None,
-                                       kernel_initializer=kernel_initializer,
-                                       kernel_regularizer=kernel_regularizer,
-                                       bias_regularizer=bias_regularizer,
-                                       activity_regularizer=activity_regularizer,
-                                       use_weight_norm=use_weight_norm)
-        self.dropout = Dropout(0 if dropout is None else dropout)
+        layer_args = {
+            'kernel_initializer': kernel_initializer,
+            'kernel_regularizer': kernel_regularizer,
+            'bias_regularizer': bias_regularizer,
+            'activity_regularizer': activity_regularizer}
 
-    def call(self, inputs):
-        dense_out = self.feed_forward(inputs)
-        dense_out = self.dropout(dense_out)
-
-        return self.norm(dense_out + inputs)
-
-
-class TransformerConv(Model):
-
-    def __init__(self,
-                 filters: int,
-                 kernel_size: int,
-                 dropout: Optional[float]) -> None:
-        super().__init__()
-        self.norm = LayerNorm()
-        self.residual_conv = ResidualBlock(
-            dimension=1,
-            filters=filters,
-            kernel_size=kernel_size,
-            layer_norm=False,
-            activation='relu')
+        layer_type = Dense if not use_conv else Conv1D
+        if use_conv:
+            conv_args = {
+                'kernel_size': kernel_size,
+                'padding': 'same',
+                'strides': 1}
+            layer_args.update(conv_args)
+        self.feed_forward = Stack()
+        self.feed_forward.add(
+            layer_type(filter_size, activation='relu', **layer_args))
+        self.feed_forward.add(
+            layer_type(hidden_size, activation='linear', **layer_args))
+        self.feed_forward.add(Dropout(0 if dropout is None else dropout))
 
     def call(self, inputs, padding_mask=None):
         if padding_mask is not None:
             inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
+        dense_out = self.feed_forward(inputs)
 
-        return self.norm(self.residual_conv(inputs))
+        return self.norm(dense_out + inputs)
 
 
 class TransformerEncoderBlock(Model):
@@ -166,11 +159,6 @@ class TransformerEncoderBlock(Model):
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
 
-        if use_conv:
-            self.conv = TransformerConv(hidden_size, conv_kernel_size, dropout=dropout)
-            self.layer_drop_conv = LayerDropout(
-                0 if layer_dropout is None else layer_dropout)
-
         self.self_attention = TransformerSelfAttention(
             n_heads, dropout,
             kernel_initializer=kernel_initializer,
@@ -184,23 +172,20 @@ class TransformerEncoderBlock(Model):
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
                                                    activity_regularizer=activity_regularizer,
+                                                   use_conv=use_conv,
+                                                   kernel_size=conv_kernel_size,
                                                    use_weight_norm=use_weight_norm)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
 
     def call(self, inputs, self_attention_mask=None, conv_mask=None, return_attention_weights=False):
 
-        if self.use_conv:
-            conv_result = self.conv(inputs, padding_mask=conv_mask)
-            conv_result = self.layer_drop_conv(conv_result, inputs)
-            inputs = conv_result
-
         # Perform a multi-headed self-attention across the inputs.
         res_attn, attention_weights = self.self_attention(
             inputs, mask=self_attention_mask, return_attention_weights=True)
         res_attn = self.layer_drop_1(res_attn, inputs)
 
-        output = self.feed_forward(res_attn)
+        output = self.feed_forward(res_attn, padding_mask=conv_mask)
         output = self.layer_drop_2(output, res_attn)
 
         if return_attention_weights:
@@ -430,6 +415,8 @@ class TransformerEncoder(Model):
 
         if self.embedding_layer is not None:
             inputs = self.embedding_layer(inputs)
+            if conv_mask is not None:
+                inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
         inputs.shape.assert_has_rank(3)
         batch_size, seqlen, dims = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
@@ -820,7 +807,6 @@ class TSAODecoder(Model):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
 
-
         if initial_input is None:
             shape = (batch_size, 1) if discrete else (
                 batch_size, 1, output_size)
@@ -954,6 +940,7 @@ class TSAODecoder(Model):
 
         return cache
 
+
 # TODO: Split this into a discrete/continuous embedding rather than handle the logic here
 class TransformerInputEmbedding(Model):
 
@@ -966,12 +953,15 @@ class TransformerInputEmbedding(Model):
                  n_embed_layers: int = 1,
                  embedding_initializer=None,
                  freeze_embeddings=False,
+                 concat_position_encoding=False,
+                 reproject_position_encoding=False,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 activity_regularizer=None,) -> None:
         super().__init__()
         self.embedding_dense = Lambda(lambda x: x)
         self.using_dense_embedding = False
+        self.concat_position_encoding = concat_position_encoding
 
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -1003,7 +993,8 @@ class TransformerInputEmbedding(Model):
 
         self.discrete = discrete
         self.freeze_embeddings = freeze_embeddings
-        self.position_encoding = PositionEmbedding()
+        self.position_encoding = PositionEmbedding(
+            concat=self.concat_position_encoding, reproject_embedding=reproject_position_encoding)
         self.dropout = Dropout(0 if dropout is None else dropout)
         self.batch_norm = None if batch_norm is False else BatchNormalization()
 
@@ -1050,6 +1041,9 @@ class Transformer(Model):
                  bias_regularizer=None,
                  activity_regularizer=None,
                  use_weight_norm=True,
+                 concat_position_encoding=False,
+                 output_layer=None,
+                 position_encoding_expands_dims=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -1076,6 +1070,10 @@ class Transformer(Model):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
+
+        # Handle the position encoding
+        self.concat_position_encoding = concat_position_encoding
+        self.position_encoding_expands_dims = position_encoding_expands_dims
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -1109,31 +1107,48 @@ class Transformer(Model):
             input_embedding = TransformerInputEmbedding(
                 d_model, discrete, n_symbols_in, dropout, embedding_initializer=embedding_initializer,
                 kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                activity_regularizer=self.activity_regularizer)
+                activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
+                reproject_position_encoding=not self.position_encoding_expands_dims)
 
             if not self.share_source_target_embedding:
                 target_embedding = TransformerInputEmbedding(
-                    d_model, discrete, n_symbols_out, dropout, embedding_initializer=embedding_initializer,
-                    kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
-                    activity_regularizer=self.activity_regularizer)
+                    d_model, discrete, n_symbols_out, dropout,
+                    embedding_initializer=embedding_initializer,
+                    kernel_regularizer=self.kernel_regularizer,
+                    bias_regularizer=self.bias_regularizer,
+                    activity_regularizer=self.activity_regularizer,
+                    concat_position_encoding=self.concat_position_encoding,
+                    reproject_position_encoding=not self.position_encoding_expands_dims)
             else:
                 target_embedding = input_embedding
         else:
-            input_embedding = PositionEmbedding()
+            input_embedding = PositionEmbedding(
+                concat=self.concat_position_encoding,
+                reproject_embedding=not self.position_encoding_expands_dims)
 
-        if self.mtranspose:
-            output_layer = EmbeddingTranspose(target_embedding.embedding)
-        else:
-            output_layer = Dense(
-                n_symbols_out if discrete else out_size, activation=output_activation,
-                kernel_regularizer=self.kernel_regularizer,
-                bias_regularizer=self.bias_regularizer,
-                activity_regularizer=self.activity_regularizer)
+        # If the position encoding is concatenation, then we need to reshape
+        # the overall model to handle the position-encoded elements
+
+        if self.concat_position_encoding:
+            if self.position_encoding_expands_dims:
+                # There's two ways to handle this - one, we could add a dense layer too the elements,
+                # or two, we could change the dimension of the model
+                self.d_model *= 2  # This should handle the internal dimension shift
+
+        if output_layer is None:
+            if self.mtranspose:
+                output_layer = EmbeddingTranspose(target_embedding.embedding)
+            else:
+                output_layer = Dense(
+                    n_symbols_out if discrete else out_size, activation=output_activation,
+                    kernel_regularizer=self.kernel_regularizer,
+                    bias_regularizer=self.bias_regularizer,
+                    activity_regularizer=self.activity_regularizer)
 
         # Build the encoder stack.
         self.encoder = TransformerEncoder(
             input_embedding,
-            n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
+            n_layers, n_heads, self.d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             activity_regularizer=self.activity_regularizer,
@@ -1142,7 +1157,7 @@ class Transformer(Model):
         # Build the decoder stack.
         self.decoder = TransformerDecoder(
             target_embedding, output_layer,
-            n_layers, n_heads, d_model, d_filter, dropout, layer_dropout,
+            n_layers, n_heads, self.d_model, d_filter, dropout, layer_dropout,
             kernel_regularizer=self.kernel_regularizer,
             bias_regularizer=self.bias_regularizer,
             activity_regularizer=self.activity_regularizer,
@@ -1157,7 +1172,7 @@ class Transformer(Model):
 
         # TODO: Replace this with something more robust
         target_dtype = tf.int32 if self.discrete else tf.float32
-        output_size = self.n_symbols_out if self.discrete else self.output_size
+        output_size = self.n_symbols_out if self.discrete else self.out_size
 
         # Generate the masks for the encoder and decoder. There are a lot of different ways that
         # the attention masks could be passed in, so this method handles a lot of these different
