@@ -1,12 +1,18 @@
 import os
+from operator import attrgetter
 from typing import Optional, Dict, Any, Type, Union  # noqa: F401
+import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+import pickle as pkl
 
 from tensorflow.keras import Model
+import tensorflow.keras.backend as K
 import gym
 from baselines.common.distributions import make_pdtype
-from baselines.common.tf_util import adjust_shape
+from baselines.common.tf_util import adjust_shape, ALREADY_INITIALIZED
 from baselines.common.input import observation_placeholder
+import h5py
 
 from .NatureCNN import NatureCNN
 from .Policy import Policy  # noqa: F401
@@ -14,11 +20,32 @@ from .StandardPolicy import StandardPolicy
 from .LSTMPolicy import LSTMPolicy
 from .RMCPolicy import RMCPolicy
 
+receptive_field = np.load('/home/roshan_rao/projects/spatial-transformer/visualize/receptive_field.npy')
+contrib = receptive_field / np.sum(receptive_field, (0, 1), keepdims=True)
+
+
+def show_attention(batch: int, images, attention) -> None:
+    plt.close('all')
+    num_heads = attention.shape[1]
+    mem_slots = attention.shape[2]
+    #  attn shape: [num_heads, mem_slots, 84, 84]
+    attn = np.sum(attention[batch, :, :, None, None] * contrib, (-1, -2))
+    # fig = plt.figure(figsize=(mem_slots, num_heads))
+    plt.figure()
+    full_image = np.tile(images[batch, :, :, -1], (mem_slots, num_heads, 1))
+    full_attn = attn.swapaxes(1, 2).reshape((num_heads * 84, mem_slots * 84)).swapaxes(0, 1)
+    plt.imshow(full_image)
+    plt.contourf(full_attn)
+
+    plt.show()
+
 
 class BaselinesPolicyWrapper(object):
     """
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
+
+    policy_num: int = 0
 
     def __init__(self,
                  env: gym.Env,
@@ -43,10 +70,12 @@ class BaselinesPolicyWrapper(object):
         **tensors       tensorflow tensors for additional attributes such as state or mask
 
         """
-
+        BaselinesPolicyWrapper.policy_num += 1
+        self.this_policy = BaselinesPolicyWrapper.policy_num
         if extra_inputs is None:
             extra_inputs = {}
         output = policy(observations, **extra_inputs)
+
         self.policy = policy
         self.X = observations
         self.initial_state = None
@@ -54,6 +83,7 @@ class BaselinesPolicyWrapper(object):
 
         # Based on the action space, will select what probability distribution type
         self.pdtype = make_pdtype(env.action_space)
+        self.test = []
 
         # self.pd, self.pi = self.pdtype.pdfromlatent(latent, init_scale=0.01)
         self.pd = policy.pd
@@ -61,9 +91,59 @@ class BaselinesPolicyWrapper(object):
         # Calculate the neg log of our probability
         self.sess = sess or tf.get_default_session()
 
+        self.load_from_lrl()
+
         if estimate_q:
             assert isinstance(env.action_space, gym.spaces.Discrete)
             self.vf = self.q  # type: ignore
+
+    def load_from_lrl(self):
+        weights = h5py.File('weights.h5')
+        embedding_prefix = 'vqa_image_embedding/lrl_model/vqa_image_embedding/'
+        rmc_prefix = 'rmc_memory/lrl_model/rmc_memory/relational_memory_core'
+
+        def get_weights(prefix):
+            all_weights = []
+
+            def _recursive_get(prefix):
+                if isinstance(weights[prefix], h5py.Dataset):
+                    print(prefix)
+                    all_weights.append(np.asarray(weights[prefix]))
+                else:
+                    for name in weights[prefix]:
+                        newprefix = '/'.join([prefix, name])
+                        _recursive_get(newprefix)
+
+            _recursive_get(prefix)
+            return all_weights
+
+        def get_variables(layer):
+            all_variables = []
+
+            def _recursive_get(layer):
+                if hasattr(layer, 'layers'):
+                    for sublayer in sorted(filter(lambda l: l.variables, layer.layers), key=attrgetter('name')):
+                        _recursive_get(sublayer)
+                else:
+                    all_variables.extend(list(sorted(layer.variables, key=attrgetter('name'))))
+
+            _recursive_get(layer)
+            return all_variables
+
+        def set_weights(layer, prefix):
+            variables = get_variables(layer)
+            weights = get_weights(prefix)
+            assert len(variables) == len(weights), \
+                'Trying to load weight prefix with {} layers into a model with {} layers'.format(
+                    len(weights), len(variables))
+            for v, w in zip(variables, weights):
+                if v.shape != w.shape:
+                    print(v.name, v.shape, w.shape)
+            K.batch_set_value(zip(variables, weights))
+            ALREADY_INITIALIZED.update(variables)
+
+        set_weights(self.policy.embedding_model, embedding_prefix)
+        set_weights(self.policy.cell, rmc_prefix)
 
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess
@@ -93,8 +173,15 @@ class BaselinesPolicyWrapper(object):
         (action, value estimate, next state,
             negative log likelihood of the action under current policy parameters) tuple
         """
-        a, v, state, neglogp = self._evaluate(
-            [self.action, self.vf, self.state, self.neglogp], observation, **extra_feed)
+        a, v, state, neglogp, attn = self._evaluate(
+            [self.action, self.vf, self.state, self.neglogp, self.policy.attention], observation, **extra_feed)
+
+        if self.this_policy == 1 and len(self.test) < 50:
+            self.test.append((observation, attn))
+            if len(self.test) >= 50:
+                with open('test.pkl', 'wb') as f:
+                    pkl.dump(self.test, f)
+
         if state.size == 0:
             state = None
         return a, v, state, neglogp
@@ -150,10 +237,10 @@ class BaselinesPolicyFnWrapper:
             policy_type = RMCPolicy
             extra_args = {
                 'mem_slots': 10,
-                'mem_size': 64,
-                'n_heads': 4,
+                'mem_size': 256,
+                'n_heads': 8,
                 'treat_input_as_sequence': True,
-                'use_cross_attention': False}
+                'use_cross_attention': True}
             self.recurrent = True
             use_rmc = True
 

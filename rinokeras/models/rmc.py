@@ -207,6 +207,7 @@ class RelationalMemoryCoreCell(Model):
             self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
             self.qkv_projection = AttentionQKV(
                 self.mem_size, self.mem_size, kernel_initializer=kernel_initializer)
+
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 

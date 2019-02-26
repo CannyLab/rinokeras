@@ -1,6 +1,7 @@
 import math
 from typing import Optional
 
+import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.initializers import Orthogonal
 from rinokeras.models.rmc import RelationalMemoryCoreCell
@@ -42,8 +43,9 @@ class RMCPolicy(RecurrentPolicy):
             gate_style=gate_style,
             treat_input_as_sequence=treat_input_as_sequence,
             use_cross_attention=use_cross_attention,
-            return_attention_weights=False,
-            kernel_initializer=Orthogonal(math.sqrt(2.0)))
+            return_attention_weights=True,
+            kernel_initializer=Orthogonal(math.sqrt(2.0)),
+            name='relational_memory_core')
         super().__init__(
             obs_space,
             act_space,
@@ -58,7 +60,12 @@ class RMCPolicy(RecurrentPolicy):
             **kwargs)
         self.output_dense = Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))
 
-        def unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps):
-            output, state = super().unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps)
-            output = self.output_dense(output)
-            return output, state
+    def unroll_recurrence(self, embedding, mask, initial_state, nenv, nsteps):
+        output, state = super().unroll_recurrence(embedding, mask, initial_state, nenv, nsteps)
+        output_attention = output[:, self.cell.mem_slots * self.cell.mem_size:]
+        if not hasattr(self, 'attention'):
+            self.attention = tf.reshape(
+                output_attention, (embedding.shape[0], self.cell.n_heads, self.cell.mem_slots, embedding.shape[1]))
+        output = output[:, :self.cell.mem_slots * self.cell.mem_size]
+        output = self.output_dense(output)
+        return output, state

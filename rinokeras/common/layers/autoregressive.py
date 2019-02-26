@@ -56,17 +56,15 @@ class CouplingLayer(Model):
     def __init__(self, n_units, layer, **kwargs):
         super().__init__(**kwargs)
         self.layer = layer
-        self.pred_log_s = Dense(n_units)
-        self.pred_t = Dense(n_units)
+        self.pred_log_s = Dense(n_units * 2)
 
     def call(self, inputs, reverse=False, **kwargs):
         inputs_a, inputs_b = inputs
         transform = self.layer(inputs_a, **kwargs)
-        log_s = self.pred_s(transform)
-        t = self.pred_t(transform)
+        log_s, t = tf.split(self.pred_s(transform), axis=-1, num_or_size_splits=2)
         if reverse:
             b_transform = (inputs_b - t) / tf.exp(log_s)
             return b_transform
 
-        b_transform = tf.exp(log_s) * inputs_b + t            
+        b_transform = tf.exp(log_s) * inputs_b + t
         return b_transform, log_s

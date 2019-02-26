@@ -42,7 +42,7 @@ class RecurrentPolicy(StandardPolicy):
         state = [s * (1 - mask) + init_s * mask for s, init_s in zip(state, initial_state)]
         return state
 
-    def unroll_recurrance(self, embedding, mask, initial_state, nenv, nsteps):
+    def unroll_recurrence(self, embedding, mask, initial_state, nenv, nsteps):
         unrolled_embedding = self.batch_to_seq(embedding, nenv, nsteps)
         unrolled_masks = self.batch_to_seq(mask[..., None], nenv, nsteps)
 
@@ -72,21 +72,7 @@ class RecurrentPolicy(StandardPolicy):
             obs = tf.clip_by_value(obs, -5.0, 5.0)
 
         embedding = self.embedding_model(obs)
-        embedding, state = self.unroll_recurrance(embedding, mask, initial_state, nenv, nsteps)
-        # embedding_list = self.batch_to_seq(nenv, nsteps, embedding)
-        # mask_list = self.batch_to_seq(nenv, nsteps, mask[..., None])
-#
-        # h, c = tf.split(initial_state, axis=-1, num_or_size_splits=2)
-        # embedding_out = []
-        # for embed_t, mask_t in zip(embedding_list, mask_list):
-            # h = h * (1 - mask_t)
-            # c = c * (1 - mask_t)
-            # _, (h, c) = self.cell(embed_t, (h, c))
-            # embedding_out.append(h)
-#
-        # state = tf.concat((h, c), -1)
-#
-        # embedding = self.seq_to_batch(embedding_out)
+        embedding, state = self.unroll_recurrence(embedding, mask, initial_state, nenv, nsteps)
 
         logits = self.logits_function(embedding)
 
