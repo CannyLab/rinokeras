@@ -161,6 +161,7 @@ class RelationalMemoryCoreCell(Model):
                  forget_bias: float = 1.0,
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
+                 layer_norm: bool = False,
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
@@ -182,6 +183,7 @@ class RelationalMemoryCoreCell(Model):
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
+        self.layer_norm = layer_norm
 
         self.reshape = Reshape((mem_slots, mem_size))
         self.initial_embed = Dense(
@@ -221,6 +223,8 @@ class RelationalMemoryCoreCell(Model):
             16, use_bias=False, kernel_initializer=kernel_initializer)
         self.input_projection = Dense(
             16, use_bias=False, kernel_initializer=kernel_initializer)
+        if layer_norm:
+            self.norm = LayerNorm()
         self._initial_state = None
         if not tf.executing_eagerly():
             self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
@@ -379,7 +383,10 @@ class RelationalMemoryCoreCell(Model):
         next_memory = self.flatten(next_memory)
         attention_weights = self.flatten(attention_weights)
 
-        output = next_memory if not self.return_attention_weights else tf.concat((next_memory, attention_weights), 1)
+        output = next_memory
+        if self.layer_norm:
+            output = self.norm(output)
+        output = output if not self.return_attention_weights else tf.concat((output, attention_weights), 1)
 
         return output, [next_memory]
 
@@ -394,6 +401,7 @@ class RelationalMemoryCore(RNN):
                  forget_bias: float = 1.0,
                  input_bias: float = 0.0,
                  dropout: Optional[float] = None,
+                 layer_norm: bool = False,
                  gate_style: str = 'unit',
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,

@@ -23,7 +23,11 @@ class PositionEmbedding(Layer):
 
     def build(self, input_shape):
         hidden_size = input_shape[-1]
-        assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
+        if not self.concat:
+            assert hidden_size % 2 == 0, 'Model vector size must be even for sinusoidal encoding'
+        else:
+            if hidden_size % 2 != 0:
+                hidden_size += 1
         power = tf.range(0, hidden_size.value, 2,
                          dtype=tf.float32) / hidden_size.value
         divisor = 10000 ** power
@@ -31,7 +35,7 @@ class PositionEmbedding(Layer):
         self.hidden_size = hidden_size
 
         if self.reproject_embedding:
-            self.projection_layer = Dense(self.hidden_size)
+            self.projection_layer = Dense(input_shape[-1])
 
     def call(self, inputs, start=1):
         """
@@ -42,7 +46,8 @@ class PositionEmbedding(Layer):
                 embedding: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
         """
         inputs.shape.assert_has_rank(3)
-        assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
+        if not self.concat:
+            assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
         batch_size = get_shape(inputs, 0)
         sequence_length = get_shape(inputs, 1)
         seq_pos = tf.cast(tf.range(start, sequence_length + start)
@@ -65,8 +70,16 @@ class PositionEmbedding(Layer):
                 # that, otherwise, just return the layer
                 return self.projection_layer(position_embedding)
             return tf.concat((inputs, position_embedding), -1)
-        
+
         return inputs + position_embedding
+
+    def compute_output_shape(self, input_shape):
+        if not self.concat or self.reproject_embedding:
+            return input_shape
+        else:
+            if isinstance(input_shape, tf.TensorShape):
+                input_shape = input_shape.as_list()
+            return tf.TensorShape(input_shape[:-1] + [2 * input_shape[-1]])
 
 
     def get_config(self) -> Dict:
@@ -84,11 +97,13 @@ class PositionEmbedding2D(PositionEmbedding):
 
     def build(self, input_shape):
         # self.embedding = self.add_weight('embedding', input_shape.as_list()[1:], dtype=tf.float32, trainable=True)
+        if isinstance(input_shape, tf.TensorShape):
+            input_shape = input_shape.as_list()
         hidden_size = input_shape[-1]
         assert hidden_size % 4 == 0, 'Model vector size must be multiple of four for 2D sinusoidal encoding'
 
-        power = tf.range(0, hidden_size.value, 4,
-                         dtype=tf.float32) / hidden_size.value
+        power = tf.range(0, hidden_size, 4,
+                         dtype=tf.float32) / hidden_size
         divisor = 1000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
