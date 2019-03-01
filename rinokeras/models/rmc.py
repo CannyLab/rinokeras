@@ -178,7 +178,9 @@ class RelationalMemoryCoreCell(Model):
         self.input_bias = input_bias
         self.forget_bias = forget_bias
         self.gate_style = gate_style
-        self.state_size = (mem_slots * mem_size,)
+        self.state_size = [mem_slots * mem_size]
+        if gate_style == 'lstm':
+            self.state_size = [mem_slots * mem_size, mem_slots * mem_size]
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
@@ -213,15 +215,18 @@ class RelationalMemoryCoreCell(Model):
 
         self.posembed = PositionEmbedding()
         self.flatten = Flatten()
-        num_gates = self._calculate_gate_size() * 2
-        self.gate_inputs = Dense(
-            num_gates, use_bias=True, kernel_initializer=kernel_initializer)
-        self.gate_memory = Dense(
-            num_gates, use_bias=True, kernel_initializer=kernel_initializer)
-        self.memory_projection = Dense(
-            16, use_bias=False, kernel_initializer=kernel_initializer)
-        self.input_projection = Dense(
-            16, use_bias=False, kernel_initializer=kernel_initializer)
+        if gate_style == 'unit' or gate_style == 'memory':
+            num_gates = self._calculate_gate_size() * 2
+            self.gate_inputs = Dense(
+                num_gates, use_bias=True, kernel_initializer=kernel_initializer)
+            self.gate_memory = Dense(
+                num_gates, use_bias=True, kernel_initializer=kernel_initializer)
+            self.memory_projection = Dense(
+                16, use_bias=False, kernel_initializer=kernel_initializer)
+            self.input_projection = Dense(
+                16, use_bias=False, kernel_initializer=kernel_initializer)
+        elif gate_style == 'lstm':
+            self.gates = Dense(self._calculate_gate_size())
         self._initial_state = None
         if not tf.executing_eagerly():
             self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
@@ -250,7 +255,10 @@ class RelationalMemoryCoreCell(Model):
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
         position = self.posembed(zeros)
-        return [self.flatten(position)]
+        if self.gate_style == 'lstm':
+            return [self.flatten(position), zeros]
+        else:
+            return [self.flatten(position)]
         # init_state = tf.one_hot(tf.range(self.mem_slots),
                                 # self.mem_size, dtype=dtype)
         # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
@@ -279,6 +287,8 @@ class RelationalMemoryCoreCell(Model):
             return self.mem_size
         elif self.gate_style == 'memory':
             return 1
+        elif self.gate_style == 'lstm':
+            return 4 * self.mem_size
         else:  # self._gate_style == None
             return 0
 
@@ -332,9 +342,11 @@ class RelationalMemoryCoreCell(Model):
             output: This time step's output
             next_memory: This time step's memory
         """
-
         memory = states[0]
         memory = self.reshape(memory)
+        if self.gate_style == 'lstm':
+            carry = states[1]
+            carry = self.reshape(carry)
 
         if self.treat_input_as_sequence:
             inputs.shape.assert_has_rank(3)
@@ -364,7 +376,6 @@ class RelationalMemoryCoreCell(Model):
             next_memory = input_gate * tf.tanh(next_memory)
             next_memory += forget_gate * memory
         elif self.gate_style == 'attention':
-
             memory_update = tf.tanh(next_memory)  # This is the input of the memory
 
             # Do a QKV projection

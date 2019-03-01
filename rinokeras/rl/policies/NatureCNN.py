@@ -16,8 +16,7 @@ class NatureCNN(Model):
         self.forward = Stack()
         self.forward.add(BatchNormalization())
         self.forward.add(Conv2DStack(
-            # [32, 64, 64], [8, 4, 3], [4, 2, 1],
-            [8, 16, 32], [8, 4, 3], [4, 2, 2],
+            [32, 64, 64], [8, 4, 3], [4, 2, 1],
             activation='relu',
             padding='valid',
             flatten_output=not use_rmc,

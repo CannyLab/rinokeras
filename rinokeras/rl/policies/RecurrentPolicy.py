@@ -80,7 +80,7 @@ class RecurrentPolicy(StandardPolicy):
 
         action = self.pd(logits, greedy=self.take_greedy_actions)
         neglogpac = self.neglogp(action)
-        initial_state_numpy = np.zeros([nenv, self.state_size], dtype=np.float32)
+        initial_state_numpy = self.get_initial_state(nenv)
 
         return {'latent': embedding,
                 'q': logits,
@@ -91,6 +91,9 @@ class RecurrentPolicy(StandardPolicy):
                 'S': initial_state,
                 'M': mask,
                 'initial_state': initial_state_numpy}
+
+    def get_initial_state(self, batch_size):
+        return np.zeros([batch_size, self.state_size])
 
     def batch_to_seq(self, inputs, batch_size, seqlen):
         remaining_shape = [get_shape(inputs, dim) for dim in range(1, inputs.shape.ndims)]

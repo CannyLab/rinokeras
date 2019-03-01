@@ -6,6 +6,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.initializers import Orthogonal
 from rinokeras.models.rmc import RelationalMemoryCoreCell
 from rinokeras.common.layers import WeightNormDense as Dense
+from rinokeras.common.layers import LayerNorm, Stack
 
 import gym
 
@@ -58,7 +59,11 @@ class RMCPolicy(RecurrentPolicy):
             initial_logstd=initial_logstd,
             normalize_observations=normalize_observations,
             **kwargs)
-        self.output_dense = Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))
+        self.output_dense = Stack([
+            LayerNorm(), Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))])
+
+    def get_initial_state(self, batch_size):
+        return self.cell.get_initial_state_numpy(batch_size)[0]
 
     def unroll_recurrence(self, embedding, mask, initial_state, nenv, nsteps):
         output, state = super().unroll_recurrence(embedding, mask, initial_state, nenv, nsteps)

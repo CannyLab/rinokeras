@@ -107,7 +107,6 @@ class BaselinesPolicyWrapper(object):
 
             def _recursive_get(prefix):
                 if isinstance(weights[prefix], h5py.Dataset):
-                    print(prefix)
                     all_weights.append(np.asarray(weights[prefix]))
                 else:
                     for name in weights[prefix]:
