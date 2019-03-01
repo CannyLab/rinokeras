@@ -356,6 +356,7 @@ class MultiHeadAttention(Model):
                  n_heads: int,
                  dropout: Optional[float] = None,
                  key_size: Optional[int] = None,
+                 value_size: Optional[int] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -367,6 +368,7 @@ class MultiHeadAttention(Model):
 
         self.similarity_metric = similarity_metric
         self.key_size = key_size
+        self.value_size = value_size
         self.n_heads = n_heads
         assert key_size is None or key_size % n_heads == 0, \
             'Key size must be divisible by n_heads if provided'
@@ -384,17 +386,16 @@ class MultiHeadAttention(Model):
 
     def build(self, input_shapes):
         query_antecedent_shape, memory_antecedent_shape = input_shapes
-        qa_channels = query_antecedent_shape[-1] if self.key_size is None else self.key_size
-        ma_channels = memory_antecedent_shape[-1]
-        assert qa_channels % self.n_heads == 0 and ma_channels % self.n_heads == 0, \
-            'Feature size must be divisible by n_heads'
+        key_size = query_antecedent_shape[-1] if self.key_size is None else self.key_size
+        value_size = query_antecedent_shape[-1] if self.value_size is None else self.value_size
+        assert key_size % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         # assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
-        self.compute_qkv = AttentionQKV(qa_channels, ma_channels,
+        self.compute_qkv = AttentionQKV(key_size, value_size,
                                         kernel_initializer=self.kernel_initializer,
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
                                         activity_regularizer=self.activity_regularizer)
-        self.output_layer = Dense(qa_channels, use_bias=False,
+        self.output_layer = Dense(value_size, use_bias=False,
                                   kernel_initializer=self.kernel_initializer,
                                   kernel_regularizer=self.kernel_regularizer,
                                   bias_regularizer=self.bias_regularizer,

@@ -92,18 +92,17 @@ class RinokerasGraph(ABC):
         return self
 
     def update_progress_bar(self, metrics=None, scroll=True, round_metrics=True):
-        assert self.epoch_metrics is not None
-        if metrics is not None:
+        if metrics is not None and self.epoch_metrics is not None:
             self.epoch_metrics.add(metrics)
         if self.progress_bar is not None:
             self.progress_bar.update()
             if self.epoch_metrics.nupdates > 0:
-                
+
                 epoch_metric_dict = self.epoch_metrics.get_average()
 
                 # Round off the numbers in the dictionary
                 if round_metrics:
-                    for k,v in epoch_metric_dict.items():
+                    for k, v in epoch_metric_dict.items():
                         if isinstance(v, float):
                             epoch_metric_dict[k] = round(v, 2)
 
