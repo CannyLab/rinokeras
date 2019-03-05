@@ -25,8 +25,8 @@ class NatureCNN(Model):
             self.forward.add(
                 Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2))))
         else:
-            self.forward.add(Dense(256, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2))))
-            self.forward.add(PositionEmbedding2D(concat=False))
+            self.forward.add(Dense(64, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2))))
+            self.forward.add(PositionEmbedding2D(concat=True))
 
     def call(self, inputs):
         assert inputs.dtype == tf.uint8

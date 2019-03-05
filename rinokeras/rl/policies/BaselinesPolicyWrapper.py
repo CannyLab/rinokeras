@@ -235,9 +235,9 @@ class BaselinesPolicyFnWrapper:
         elif 'rmc' in policy_network:
             policy_type = RMCPolicy
             extra_args = {
-                'mem_slots': 10,
-                'mem_size': 256,
-                'n_heads': 8,
+                'mem_slots': 3,
+                'mem_size': 64,
+                'n_heads': 1,
                 'treat_input_as_sequence': True,
                 'use_cross_attention': True}
             self.recurrent = True

@@ -79,6 +79,7 @@ class TrainGraph(TestGraph):
             return outputs, loss, losses
 
         def grads_fn(inputs):
+
             if tf.executing_eagerly():
                 with tf.GradientTape() as tape:
                     outputs, loss, losses = loss_fn(inputs)
