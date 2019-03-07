@@ -2,9 +2,10 @@
 Various utility functions that are commonly used in our models and during training.
 """
 import collections
-import copy
+from copy import copy
 from collections import defaultdict
 from typing import Optional, Sequence, Tuple, Union, Dict
+from timeit import default_timer as timer
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -241,31 +242,22 @@ def get_shape(array, dim):
         return tf.shape(array)[dim] if array.shape[dim].value is None else array.shape[dim].value
 
 
-def gather_indices(array, indices, axis=-1):
-    ndims = array.shape.ndims
-    if not abs(axis) <= ndims:
-        raise IndexError("list index out of range")
-    axis %= ndims
-    shapes = get_shape(array, range(ndims))
-    other_indices = []
+def gather_from_last(array, indices):
+    rank = array.shape.ndims
+    dims = get_shape(array, range(rank - 1))
+    range_indices = [tf.range(dim) for dim in dims]
+    tile = dims + [indices.shape[-1]]
+    tiled_indices = []
+    for currdim, ind in enumerate(range_indices):
+        for dim in range(rank):
+            if dim != currdim:
+                ind = tf.expand_dims(ind, dim)
+        currtile = copy(tile)
+        currtile[currdim] = 1
+        tiled_indices.append(tf.tile(ind, currtile))
 
-    for dim, shape in enumerate(shapes):
-        if dim == axis:
-            other_indices.append(indices)
-            continue
-
-        ind_range = tf.range(shape)
-
-        expand_dims = list(range(ndims))
-        expand_dims.pop(dim)
-
-        tile_indices = copy.copy(shapes)
-        tile_indices[dim] = 1
-
-        tile_indices = tf.expand_dims(ind_range, expand_dims)
-        tile_indices = tf.tile(tile_indices, tile_indices)
-
-        other_indices.apend(tile_indices)
+    indices = tf.stack(tiled_indices + [indices], -1)
+    return tf.gather_nd(array, indices)
 
 
 class MetricsAccumulator(object):
@@ -273,11 +265,18 @@ class MetricsAccumulator(object):
     def __init__(self):
         self._totalmetrics = defaultdict(lambda: 0.0)
         self._nupdates = 0
+        self._start_time = float('nan')
 
     def add(self, metrics: Dict[str, float]):
         for metric, value in metrics.items():
             self._totalmetrics[metric] += value
         self._nupdates += 1
+
+    def start_timer(self):
+        self._start_time = timer()
+
+    def end_timer(self):
+        self.runtime = timer() - self._start_time
 
     def get_average(self):
         assert self.nupdates > 0
