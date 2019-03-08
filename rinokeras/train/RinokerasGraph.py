@@ -26,8 +26,6 @@ class RinokerasGraph(ABC):
         self.progress_bar = None
         self.descr_offset = 0
         self.epoch_metrics = None
-        self._epoch_start_time = float('nan')
-        self.epoch_run_time = float('nan')
         self.instrument_idx = 0
         self.inputs = ()
 

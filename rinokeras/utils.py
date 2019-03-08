@@ -6,6 +6,7 @@ from copy import copy
 from collections import defaultdict
 from typing import Optional, Sequence, Tuple, Union, Dict
 from timeit import default_timer as timer
+from warnings import warn
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -13,28 +14,36 @@ import tensorflow.keras.backend as K
 Gradients = Sequence[Tuple[Optional[tf.Tensor], tf.Variable]]
 
 
-def convert_padding_mask_to_attention_mask(sequence, padding_mask):
+def convert_sequence_mask_to_attention_mask(sequence, sequence_mask):
     """Given a padded input tensor of sequences and a boolean mask for each position
     in the sequence, returns a 3D boolean mask for use in attention.
 
     Args:
         sequence (tf.Tensor): Tensor of shape [batch_size, sequence_length_1, ndim]
-        padding_mask (tf.Tensor[bool]): Tensor of shape [batch_size, sequence_length_2]
+        sequence_mask (tf.Tensor[bool]): Tensor of shape [batch_size, sequence_length_2]
 
     Returns:
         tf.Tensor[bool]: Tensor of shape [batch_size, sequence_length_1, sequence_length_2]
     """
-    batch_assert = tf.assert_equal(tf.shape(padding_mask)[0], tf.shape(sequence)[0],
+    batch_assert = tf.assert_equal(tf.shape(sequence_mask)[0], tf.shape(sequence)[0],
                                    message='batch size mismatch between input sequence and  \
-                                            padding_mask')
-    rank_assert = tf.assert_equal(tf.rank(padding_mask), 2,
+                                            sequence_mask')
+    rank_assert = tf.assert_equal(tf.rank(sequence_mask), 2,
                                   message='Can only convert 2D position mask to 3D attention mask')
 
     with tf.control_dependencies([batch_assert, rank_assert]):
         attention_mask = tf.tile(
-            padding_mask[:, None, :], (1, tf.shape(sequence)[1], 1))
+            sequence_mask[:, None, :], (1, tf.shape(sequence)[1], 1))
 
         return attention_mask
+
+
+def convert_padding_mask_to_attention_mask(sequence, padding_mask):
+    """ DEPRECATED: use convert_sequence_mask_to_attention_mask instead
+    """
+    warn("convert_padding_mask_to_attention_mask is deprecated, \
+          please use convert_sequence_mask_to_attention_mask intead", DeprecationWarning)
+    convert_sequence_mask_to_attention_mask(sequence, padding_mask)
 
 
 def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):
@@ -88,7 +97,7 @@ def convert_to_attention_mask(sequence, mask):
             sequence, mask)
 
     if len(mask.shape) == 2:
-        mask = convert_padding_mask_to_attention_mask(
+        mask = convert_sequence_mask_to_attention_mask(
             sequence, mask)
 
     if mask.dtype != tf.bool:
