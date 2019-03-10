@@ -86,7 +86,8 @@ class TrainGraph(TestGraph):
                 grads = zip(grads, self.model.variables)
             else:
                 outputs, loss, losses = loss_fn(inputs)
-                grads = self.optimizer.compute_gradients(loss, self.model.variables)
+                with tf.control_dependencies(self.model.updates):
+                    grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
             grads = self._clip_gradients(grads)
             return grads, outputs, loss, losses
