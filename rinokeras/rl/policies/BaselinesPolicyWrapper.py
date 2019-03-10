@@ -91,7 +91,7 @@ class BaselinesPolicyWrapper(object):
         # Calculate the neg log of our probability
         self.sess = sess or tf.get_default_session()
 
-        self.load_from_lrl()
+        # self.load_from_lrl()
 
         if estimate_q:
             assert isinstance(env.action_space, gym.spaces.Discrete)
@@ -101,7 +101,8 @@ class BaselinesPolicyWrapper(object):
         weights = h5py.File('weights.h5')
         embedding_prefix = 'vqa_image_embedding/lrl_model/vqa_image_embedding/'
         rmc_prefix = 'rmc_memory/lrl_model/rmc_memory/relational_memory_core'
-
+        # import IPython
+        # IPython.embed()
         def get_weights(prefix):
             all_weights = []
 
@@ -237,9 +238,9 @@ class BaselinesPolicyFnWrapper:
             extra_args = {
                 'mem_slots': 3,
                 'mem_size': 64,
-                'n_heads': 1,
+                'n_heads': 4,
                 'treat_input_as_sequence': True,
-                'use_cross_attention': True}
+                'use_cross_attention': False}
             self.recurrent = True
             use_rmc = True
 

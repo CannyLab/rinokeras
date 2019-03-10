@@ -37,7 +37,7 @@ class PositionEmbedding(Layer):
         if self.reproject_embedding:
             self.projection_layer = Dense(input_shape[-1])
 
-    def call(self, inputs, start=1):
+    def call(self, inputs, start=1, training=False):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, sequence_length, hidden_size]
@@ -108,7 +108,7 @@ class PositionEmbedding2D(PositionEmbedding):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs, start=None):
+    def call(self, inputs, start=None, training=False):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]
@@ -171,7 +171,7 @@ class PositionEmbedding3D(PositionEmbedding2D):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
-    def call(self, inputs, start=None):
+    def call(self, inputs, start=None, training=False):
         """
             Args:
                 inputs: a float32 Tensor with shape [batch_size, Width, Height, Channels]

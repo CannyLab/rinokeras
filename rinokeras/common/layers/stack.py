@@ -6,6 +6,7 @@ Stack-type layers
 
 import collections
 from typing import Optional, Dict, Sequence, Any, Union, List
+from inspect import getfullargspec
 
 from tensorflow.keras import Model  # pylint: disable=F0401
 from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
@@ -28,10 +29,15 @@ class Stack(Model):
     def add(self, layer):
         self._layer_list.append(layer)
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, training=False, **kwargs):
         output = inputs
         for layer in self._layer_list:
-            output = layer(output, **kwargs)
+            layer_argspec = getfullargspec(layer.call)
+            if layer_argspec.varkw is not None:
+                layer_kwargs = kwargs
+            else:
+                layer_kwargs = {kw: arg for kw, arg in kwargs.items() if kw in layer_argspec.args}
+            output = layer(output, **layer_kwargs)
         return output
 
     def get_config(self) -> Dict:

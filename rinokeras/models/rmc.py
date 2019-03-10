@@ -370,8 +370,10 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = rk.utils.convert_to_attention_mask(memory_plus_input, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
                 memory_plus_input, self_attention_mask=None, return_attention_weights=True)
+            output = next_memory[:, self.mem_slots:]
             next_memory = next_memory[:, :self.mem_slots, :]
-            attention_weights = attention_weights[:, :self.mem_slots]
+            attention_weights = attention_weights[:, :, :self.mem_slots, self.mem_slots:]
+            output = self.flatten(output)
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
@@ -393,7 +395,7 @@ class RelationalMemoryCoreCell(Model):
         next_memory = self.flatten(next_memory)
         attention_weights = self.flatten(attention_weights)
 
-        output = next_memory
+        # output = next_memory
         if self.layer_norm:
             output = self.norm(output)
         output = output if not self.return_attention_weights else tf.concat((output, attention_weights), 1)

@@ -67,10 +67,11 @@ class RMCPolicy(RecurrentPolicy):
 
     def unroll_recurrence(self, embedding, mask, initial_state, nenv, nsteps):
         output, state = super().unroll_recurrence(embedding, mask, initial_state, nenv, nsteps)
-        output_attention = output[:, self.cell.mem_slots * self.cell.mem_size:]
+        num_out = embedding.shape[1] * self.cell.mem_size
+        output_attention = output[:, num_out:]
         if not hasattr(self, 'attention'):
             self.attention = tf.reshape(
                 output_attention, (embedding.shape[0], self.cell.n_heads, self.cell.mem_slots, embedding.shape[1]))
-        output = output[:, :self.cell.mem_slots * self.cell.mem_size]
+        output = output[:, :num_out]
         output = self.output_dense(output)
         return output, state
