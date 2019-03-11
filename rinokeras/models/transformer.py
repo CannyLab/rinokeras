@@ -28,11 +28,13 @@ class TransformerSelfAttention(Model):
                  dropout: Optional[float],
                  key_size: Optional[int] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 use_residual_norm: bool = True,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
         self.self_attention = SelfAttention(
             'scaled_dot', n_heads, dropout,
             key_size=key_size,
@@ -44,7 +46,11 @@ class TransformerSelfAttention(Model):
     def call(self, inputs, mask, return_attention_weights=False):
         attention, attention_weights = self.self_attention(
             inputs, mask=mask, return_attention_weights=True)
-        output = self.norm(attention + inputs)
+
+        if self.use_residual_norm:
+            output = inputs + self.norm(attention)
+        else:
+            output = self.norm(attention + inputs)
 
         if return_attention_weights:
             return output, attention_weights
@@ -59,6 +65,7 @@ class TransformerMultiAttention(Model):
                  dropout: Optional[float],
                  key_size: Optional[int] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 use_residual_norm: bool = True,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -72,12 +79,17 @@ class TransformerMultiAttention(Model):
             activity_regularizer=activity_regularizer
         )
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
 
     def call(self, target, source=None, mask=None, return_attention_weights=False):
         assert source is not None
         attention, attention_weights = self.multi_attention(
             (target, source), mask=mask, return_attention_weights=True)
-        output = self.norm(attention + target)
+
+        if self.use_residual_norm:
+            output = target + self.norm(attention)
+        else:
+            output = self.norm(attention + target)
 
         if return_attention_weights:
             return output, attention_weights
@@ -96,9 +108,11 @@ class TransformerFeedForward(Model):
                  activity_regularizer=None,
                  use_conv: bool = False,
                  kernel_size: int = 7,
-                 use_weight_norm: bool = True) -> None:
+                 use_weight_norm: bool = True,
+                 use_residual_norm: bool = True) -> None:
         super().__init__()
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
         layer_args = {
             'kernel_initializer': kernel_initializer,
             'kernel_regularizer': kernel_regularizer,
@@ -124,7 +138,10 @@ class TransformerFeedForward(Model):
             inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
         dense_out = self.feed_forward(inputs)
 
-        return self.norm(dense_out + inputs)
+        if self.use_residual_norm:
+            return inputs + self.norm(dense_out)
+
+        return self.norm(inputs + dense_out)
 
 
 class TransformerEncoderBlock(Model):

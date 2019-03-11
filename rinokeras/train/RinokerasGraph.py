@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
+from timeit import default_timer as timer
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -120,12 +121,14 @@ class RinokerasGraph(ABC):
 
     def __enter__(self):
         self.epoch_metrics = MetricsAccumulator()
+        self.epoch_metrics.start_timer()
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if self.progress_bar is not None:
             self.progress_bar.__exit__()
         self.progress_bar = None
+        self.epoch_metrics.end_timer()
         return exc_type is None or exc_type == tf.errors.OutOfRangeError
 
     def _get_session(self) -> tf.Session:
@@ -145,3 +148,12 @@ class RinokerasGraph(ABC):
     @property
     def summary_collection(self) -> str:
         return self.name + '_summaries'
+
+    def run_epoch(self,
+                  data_len: Optional[int] = None,
+                  epoch_num: Optional[int] = None,
+                  summary_writer: Optional[tf.summary.FileWriter] = None) -> MetricsAccumulator:
+        with self.add_progress_bar(data_len, epoch_num).initialize():
+            while True:
+                self.run('default')
+        return self.epoch_metrics
