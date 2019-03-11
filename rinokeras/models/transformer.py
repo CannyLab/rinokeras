@@ -562,6 +562,10 @@ class TransformerDecoder(Model):
             shape = (batch_size, 1) if discrete else (
                 batch_size, 1, output_size)
             initial_input = tf.zeros((shape), dtype=output_dtype)
+        elif isinstance(initial_input, int):
+            shape = (batch_size, 1) if discrete else (
+                batch_size, 1, output_size)
+            initial_input = initial_input * tf.ones((shape), dtype=output_dtype)
 
         if stopping_criterion is not None:
             assert callable(stopping_criterion), \
