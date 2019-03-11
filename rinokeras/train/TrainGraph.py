@@ -33,7 +33,7 @@ class TrainGraph(TestGraph):
                  optimizer: tf.train.Optimizer,
                  loss_function: Callable[[Inputs, Outputs], Losses],
                  inputs: Union[Inputs, tf.data.Dataset],
-                 learning_rate: float = 1e-3,
+                 learning_rate: Union[float, Callable[[int], float]] = 1e-3,
                  return_loss_summaries: bool = False,
                  return_variable_summaries: bool = False,
                  return_grad_summaries: bool = False,
@@ -44,7 +44,7 @@ class TrainGraph(TestGraph):
 
         self.optimizer = optimizer
         self.return_grad_summaries = return_grad_summaries
-        self.initial_learning_rate = learning_rate
+        self._learning_rate_func = learning_rate
 
         self._clip_gradients = self._get_gradient_clip_function(
             gradient_clip_type, gradient_clip_bounds)
@@ -114,9 +114,11 @@ class TrainGraph(TestGraph):
         self._update_global_step = self._global_step.assign(self._global_step + 1)
         K.set_learning_phase(1)
         with tf.variable_scope(self._name):
+            learning_rate = self._learning_rate_func if isinstance(self._learning_rate_func, float) \
+                else self._learning_rate_func(0)
             self._learning_rate = tf.get_variable(
                 'learning_rate', shape=(), dtype=tf.float32,
-                initializer=tf.constant_initializer(self.initial_learning_rate), trainable=False)
+                initializer=tf.constant_initializer(learning_rate), trainable=False)
             if not tf.executing_eagerly():
                 self._update_learning_rate_ph = tf.placeholder(
                     tf.float32, shape=(), name='learning_rate_placeholder')
@@ -220,6 +222,8 @@ class TrainGraph(TestGraph):
             RuntimeError: If not run inside a tf.Session context
         """
         ops = [self.update_op, self._update_global_step, self.losses]
+        if not isinstance(self._learning_rate_func, float):
+            self.learning_rate = self._learning_rate_func(self.global_step)
         if return_outputs:
             ops.append(self.outputs)
         if self.return_loss_summaries or self.return_grad_summaries:
