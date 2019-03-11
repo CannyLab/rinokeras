@@ -43,8 +43,8 @@ class TransformerSelfAttention(Model):
 
     def call(self, inputs, mask, return_attention_weights=False):
         attention, attention_weights = self.self_attention(
-            inputs, mask=mask, return_attention_weights=True)
-        output = self.norm(attention + inputs)
+            self.norm(inputs), mask=mask, return_attention_weights=True)
+        output = inputs + attention
 
         if return_attention_weights:
             return output, attention_weights
@@ -76,8 +76,8 @@ class TransformerMultiAttention(Model):
     def call(self, target, source=None, mask=None, return_attention_weights=False):
         assert source is not None
         attention, attention_weights = self.multi_attention(
-            (target, source), mask=mask, return_attention_weights=True)
-        output = self.norm(attention + target)
+            (self.norm(target), source), mask=mask, return_attention_weights=True)
+        output = target + attention
 
         if return_attention_weights:
             return output, attention_weights
@@ -122,9 +122,9 @@ class TransformerFeedForward(Model):
     def call(self, inputs, padding_mask=None):
         if padding_mask is not None:
             inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
-        dense_out = self.feed_forward(inputs)
+        dense_out = self.feed_forward(self.norm(inputs))
 
-        return self.norm(dense_out + inputs)
+        return inputs + dense_out
 
 
 class TransformerEncoderBlock(Model):
@@ -179,7 +179,6 @@ class TransformerEncoderBlock(Model):
             0 if layer_dropout is None else layer_dropout)
 
     def call(self, inputs, self_attention_mask=None, conv_mask=None, return_attention_weights=False):
-
         # Perform a multi-headed self-attention across the inputs.
         res_attn, attention_weights = self.self_attention(
             inputs, mask=self_attention_mask, return_attention_weights=True)
@@ -417,6 +416,7 @@ class TransformerEncoder(Model):
             inputs = self.embedding_layer(inputs)
             if conv_mask is not None:
                 inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
+
         inputs.shape.assert_has_rank(3)
         batch_size, seqlen, dims = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
@@ -999,7 +999,6 @@ class TransformerInputEmbedding(Model):
         self.batch_norm = None if batch_norm is False else BatchNormalization()
 
     def call(self, inputs, start=1):
-
         # Compute the actual embedding of the inputs by using the embedding layer
         # TODO: Make sure that for non-discrete embeddings, this is handled correctly
         # and allow the shape to be correctly sorted. This should have a tensor
