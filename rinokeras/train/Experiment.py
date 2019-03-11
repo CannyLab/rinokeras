@@ -12,7 +12,7 @@ class Experiment(ABC):
     def __init__(self,
                  model: Model,
                  optimizer: str = 'adam',
-                 learning_rate: float = 1e-3,
+                 learning_rate: Union[float, Callable[[int], float]] = 1e-3,
                  gradient_clipping: str = 'none',
                  gradient_clipping_bounds: Union[float, Tuple[float, float]] = (-1, 1),
                  return_loss_summaries: bool = False,
