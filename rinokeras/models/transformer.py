@@ -13,8 +13,7 @@ from rinokeras.common.attention import MultiHeadAttention, SelfAttention
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import (DenseStack, EmbeddingTranspose,
                                      LayerDropout, LayerNorm,
-                                     PositionEmbedding, Stack,
-                                     ResidualBlock)
+                                     PositionEmbedding, Stack)
 from rinokeras.utils import get_shape
 
 DecoderResult = namedtuple('DecoderResult', [
@@ -28,11 +27,13 @@ class TransformerSelfAttention(Model):
                  dropout: Optional[float],
                  key_size: Optional[int] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 use_residual_norm: bool = True,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
         self.self_attention = SelfAttention(
             'scaled_dot', n_heads, dropout,
             key_size=key_size,
@@ -42,9 +43,13 @@ class TransformerSelfAttention(Model):
             activity_regularizer=activity_regularizer)
 
     def call(self, inputs, mask, return_attention_weights=False):
+        attn_inputs = self.norm(inputs) if self.use_residual_norm else inputs
         attention, attention_weights = self.self_attention(
-            self.norm(inputs), mask=mask, return_attention_weights=True)
+            attn_inputs, mask=mask, return_attention_weights=True)
+
         output = inputs + attention
+        if not self.use_residual_norm:
+            output = self.norm(output)
 
         if return_attention_weights:
             return output, attention_weights
@@ -59,6 +64,7 @@ class TransformerMultiAttention(Model):
                  dropout: Optional[float],
                  key_size: Optional[int] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 use_residual_norm: bool = True,
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
@@ -72,12 +78,17 @@ class TransformerMultiAttention(Model):
             activity_regularizer=activity_regularizer
         )
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
 
     def call(self, target, source=None, mask=None, return_attention_weights=False):
         assert source is not None
+        attn_inputs = self.norm(target) if self.use_residual_norm else target
         attention, attention_weights = self.multi_attention(
-            (self.norm(target), source), mask=mask, return_attention_weights=True)
+            (attn_inputs, source), mask=mask, return_attention_weights=True)
+
         output = target + attention
+        if not self.use_residual_norm:
+            output = self.norm(output)
 
         if return_attention_weights:
             return output, attention_weights
@@ -96,9 +107,11 @@ class TransformerFeedForward(Model):
                  activity_regularizer=None,
                  use_conv: bool = False,
                  kernel_size: int = 7,
-                 use_weight_norm: bool = True) -> None:
+                 use_weight_norm: bool = True,
+                 use_residual_norm: bool = True) -> None:
         super().__init__()
         self.norm = LayerNorm()
+        self.use_residual_norm = use_residual_norm
         layer_args = {
             'kernel_initializer': kernel_initializer,
             'kernel_regularizer': kernel_regularizer,
@@ -122,9 +135,14 @@ class TransformerFeedForward(Model):
     def call(self, inputs, padding_mask=None):
         if padding_mask is not None:
             inputs = inputs * tf.cast(padding_mask[..., None], inputs.dtype)
-        dense_out = self.feed_forward(self.norm(inputs))
 
-        return inputs + dense_out
+        ff_inputs = self.norm(inputs) if self.use_residual_norm else inputs
+        dense_out = self.feed_forward(ff_inputs)
+
+        output = inputs + dense_out
+        if not self.use_residual_norm:
+            output = self.norm(output)
+        return output
 
 
 class TransformerEncoderBlock(Model):
@@ -562,6 +580,10 @@ class TransformerDecoder(Model):
             shape = (batch_size, 1) if discrete else (
                 batch_size, 1, output_size)
             initial_input = tf.zeros((shape), dtype=output_dtype)
+        elif isinstance(initial_input, int):
+            shape = (batch_size, 1) if discrete else (
+                batch_size, 1, output_size)
+            initial_input = initial_input * tf.ones((shape), dtype=output_dtype)
 
         if stopping_criterion is not None:
             assert callable(stopping_criterion), \
@@ -745,9 +767,9 @@ class TSAODecoder(Model):
         super().__init__()
         self.embedding_layer = embedding_layer
         self.decoding_stack = Stack([TSAODBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
-                                                             kernel_regularizer=kernel_regularizer,
-                                                             bias_regularizer=bias_regularizer,
-                                                             activity_regularizer=activity_regularizer)
+                                                kernel_regularizer=kernel_regularizer,
+                                                bias_regularizer=bias_regularizer,
+                                                activity_regularizer=activity_regularizer)
 
                                      for _ in range(n_layers)],
                                     name='decoder_blocks')

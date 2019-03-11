@@ -82,7 +82,6 @@ class PositionEmbedding(Layer):
                 input_shape = input_shape.as_list()
             return tf.TensorShape(input_shape[:-1] + [2 * input_shape[-1]])
 
-
     def get_config(self) -> Dict:
         return dict()
 
