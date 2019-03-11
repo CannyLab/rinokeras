@@ -68,7 +68,7 @@ class PositionEmbedding(Layer):
             if self.reproject_embedding:
                 # Return the reprojection to the hidden size of the layer, if we're doing
                 # that, otherwise, just return the layer
-                return self.projection_layer(position_embedding)
+                return self.projection_layer(tf.concat((inputs, position_embedding), -1))
             return tf.concat((inputs, position_embedding), -1)
 
         return inputs + position_embedding
