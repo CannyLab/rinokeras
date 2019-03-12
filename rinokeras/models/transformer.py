@@ -376,8 +376,14 @@ class TSAODBlock(Model):
         else:
             all_inputs = decoder_inputs
             cache = None
-        target_selfattn = self.layer_drop_1(
-            self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
+
+        target_selfattn, self_attention_weights = self.self_attention(
+            decoder_inputs,
+            source=all_inputs,
+            mask=self_attention_mask,
+            return_attention_weights=True)
+        target_selfattn = self.layer_drop_1(target_selfattn, decoder_inputs)
+
         output = self.layer_drop_2(self.feed_forward, target_selfattn)
         return output if cache is None else (output, cache)
 
@@ -1111,8 +1117,6 @@ class Transformer(Model):
 
             if not self.preembedded:
                 assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
-                assert embedding_initializer is not None, \
-                    'embedding_initializer not passed in but model set to discrete'
 
                 if self.share_source_target_embedding:
                     assert n_symbols_in == n_symbols_out, \
