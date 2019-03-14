@@ -384,7 +384,7 @@ class TSAODBlock(Model):
             return_attention_weights=True)
         target_selfattn = self.layer_drop_1(target_selfattn, decoder_inputs)
 
-        output = self.layer_drop_2(self.feed_forward, target_selfattn)
+        output = self.layer_drop_2(self.feed_forward(target_selfattn), target_selfattn)
         return output if cache is None else (output, cache)
 
 
@@ -985,11 +985,13 @@ class TransformerInputEmbedding(Model):
                  reproject_position_encoding=False,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None,) -> None:
+                 activity_regularizer=None,
+                 use_position_encoding=True,) -> None:
         super().__init__()
         self.embedding_dense = Lambda(lambda x: x)
         self.using_dense_embedding = False
         self.concat_position_encoding = concat_position_encoding
+        self.use_position_encoding = use_position_encoding
 
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -1040,8 +1042,8 @@ class TransformerInputEmbedding(Model):
 
         if self.batch_norm:
             embedding = self.batch_norm(embedding)
-
-        embedding = self.position_encoding(embedding, start=start)
+        if self.use_position_encoding:
+            embedding = self.position_encoding(embedding, start=start)
 
         return embedding
 
@@ -1071,6 +1073,7 @@ class Transformer(Model):
                  concat_position_encoding=False,
                  output_layer=None,
                  position_encoding_expands_dims=True,
+                 encoder_use_position_encoding=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -1101,6 +1104,7 @@ class Transformer(Model):
         # Handle the position encoding
         self.concat_position_encoding = concat_position_encoding
         self.position_encoding_expands_dims = position_encoding_expands_dims
+        self.encoder_use_position_encoding = encoder_use_position_encoding
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -1133,7 +1137,7 @@ class Transformer(Model):
                 d_model, discrete, n_symbols_in, dropout, embedding_initializer=embedding_initializer,
                 kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
                 activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
-                reproject_position_encoding=not self.position_encoding_expands_dims)
+                reproject_position_encoding=not self.position_encoding_expands_dims, use_position_encoding=self.encoder_use_position_encoding)
 
             if not self.share_source_target_embedding:
                 target_embedding = TransformerInputEmbedding(
