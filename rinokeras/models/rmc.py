@@ -3,14 +3,13 @@ from typing import Optional
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
-from tensorflow.keras.layers import RNN, Flatten, Reshape, Input, LSTMCell
-import numpy as np
+from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
 from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
-    LayerNorm, DenseStack, Dropout
+    LayerNorm
 
 from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward
 
@@ -215,7 +214,8 @@ class RelationalMemoryCoreCell(Model):
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
-        self.posembed = PositionEmbedding()
+        # self.posembed = PositionEmbedding()
+        self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(
