@@ -65,11 +65,12 @@ class PositionEmbedding(Layer):
 
         if self.concat:
             position_embedding = tf.tile(position_embedding, (batch_size, 1, 1))
+            output = tf.concat((inputs, position_embedding), -1)
+            # Return the reprojection to the hidden size of the layer, if we're doing
+            # that, otherwise, just return the layer
             if self.reproject_embedding:
-                # Return the reprojection to the hidden size of the layer, if we're doing
-                # that, otherwise, just return the layer
-                return self.projection_layer(position_embedding)
-            return tf.concat((inputs, position_embedding), -1)
+                output = self.projection_layer(output)
+            return output
 
         return inputs + position_embedding
 
@@ -80,7 +81,6 @@ class PositionEmbedding(Layer):
             if isinstance(input_shape, tf.TensorShape):
                 input_shape = input_shape.as_list()
             return tf.TensorShape(input_shape[:-1] + [2 * input_shape[-1]])
-
 
     def get_config(self) -> Dict:
         return dict()

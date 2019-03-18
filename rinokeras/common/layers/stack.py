@@ -8,6 +8,7 @@ import collections
 from typing import Optional, Dict, Sequence, Any, Union, List
 from inspect import getfullargspec
 
+import tensorflow as tf
 from tensorflow.keras import Model  # pylint: disable=F0401
 from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
     BatchNormalization, Flatten, Activation, Dense, Layer  # pylint: disable=F0401
@@ -39,6 +40,12 @@ class Stack(Model):
                 layer_kwargs = {kw: arg for kw, arg in kwargs.items() if kw in layer_argspec.args}
             output = layer(output, **layer_kwargs)
         return output
+
+    def compute_output_shape(self, input_shape: tf.TensorShape) -> tf.TensorShape:
+        output_shape = input_shape
+        for layer in self._layer_list:
+            output_shape = layer.compute_output_shape(output_shape)
+        return output_shape
 
     def get_config(self) -> Dict:
         config = {

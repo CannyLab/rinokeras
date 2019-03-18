@@ -90,6 +90,7 @@ class TestGraph(RinokerasGraph):
                 return {key: reduce_distributed_outputs(out) for key, out in output.items()}
             else:
                 unwrapped = self.distribution_strategy.unwrap(output)
+                # TODO: deal with None values properly
                 max_shape = tf.reduce_max([tf.shape(unwrapped_out)[1:] for unwrapped_out in unwrapped], 0)
                 padding = [tf.pad((max_shape - tf.shape(unwrapped_out)[1:])[:, None], [[1, 0], [1, 0]])
                            for unwrapped_out in unwrapped]
