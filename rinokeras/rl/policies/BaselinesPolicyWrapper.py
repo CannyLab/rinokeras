@@ -91,18 +91,19 @@ class BaselinesPolicyWrapper(object):
         # Calculate the neg log of our probability
         self.sess = sess or tf.get_default_session()
 
-        # self.load_from_lrl()
+        self.load_from_lrl()
 
         if estimate_q:
             assert isinstance(env.action_space, gym.spaces.Discrete)
             self.vf = self.q  # type: ignore
 
     def load_from_lrl(self):
-        weights = h5py.File('weights.h5')
-        embedding_prefix = 'vqa_image_embedding/lrl_model/vqa_image_embedding/'
-        rmc_prefix = 'rmc_memory/lrl_model/rmc_memory/relational_memory_core'
-        # import IPython
-        # IPython.embed()
+        weights = h5py.File('rmc_weights.h5')
+        # embedding_prefix = 'vqa_image_embedding/lrl_model/vqa_image_embedding/'
+        embedding_prefix = 'stack/lrl_model/stack'
+        recurrent_prefix = 'rmc_memory/lrl_model/rmc_memory/relational_memory_core'
+        # recurrent_prefix = 'lstm_memory/lrl_model/lstm_memory/gru'
+
         def get_weights(prefix):
             all_weights = []
 
@@ -143,7 +144,7 @@ class BaselinesPolicyWrapper(object):
             ALREADY_INITIALIZED.update(variables)
 
         set_weights(self.policy.embedding_model, embedding_prefix)
-        set_weights(self.policy.cell, rmc_prefix)
+        set_weights(self.policy.cell, recurrent_prefix)
 
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess
@@ -173,14 +174,14 @@ class BaselinesPolicyWrapper(object):
         (action, value estimate, next state,
             negative log likelihood of the action under current policy parameters) tuple
         """
-        a, v, state, neglogp, attn = self._evaluate(
-            [self.action, self.vf, self.state, self.neglogp, self.policy.attention], observation, **extra_feed)
+        a, v, state, neglogp = self._evaluate(
+            [self.action, self.vf, self.state, self.neglogp], observation, **extra_feed)
 
-        if self.this_policy == 1 and len(self.test) < 50:
-            self.test.append((observation, attn))
-            if len(self.test) >= 50:
-                with open('test.pkl', 'wb') as f:
-                    pkl.dump(self.test, f)
+        # if self.this_policy == 1 and len(self.test) < 50:
+            # self.test.append((observation, attn))
+            # if len(self.test) >= 50:
+                # with open('test.pkl', 'wb') as f:
+                    # pkl.dump(self.test, f)
 
         if state.size == 0:
             state = None
@@ -231,14 +232,14 @@ class BaselinesPolicyFnWrapper:
 
         if 'lstm' in policy_network:
             policy_type = LSTMPolicy
-            extra_args = {'lstm_cell_size': 128}
+            extra_args = {'lstm_cell_size': 512}
             self.recurrent = True
         elif 'rmc' in policy_network:
             policy_type = RMCPolicy
             extra_args = {
-                'mem_slots': 3,
+                'mem_slots': 10,
                 'mem_size': 64,
-                'n_heads': 4,
+                'n_heads': 1,
                 'treat_input_as_sequence': True,
                 'use_cross_attention': False}
             self.recurrent = True

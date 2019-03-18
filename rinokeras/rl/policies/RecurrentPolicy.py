@@ -39,6 +39,10 @@ class RecurrentPolicy(StandardPolicy):
 
     def mask_state(self, inputs, state, mask):
         initial_state = self.cell.get_initial_state(inputs)
+
+        if not isinstance(initial_state, collections.Sequence):
+            initial_state = [initial_state]
+
         state = [s * (1 - mask) + init_s * mask for s, init_s in zip(state, initial_state)]
         return state
 
@@ -47,8 +51,8 @@ class RecurrentPolicy(StandardPolicy):
         unrolled_masks = self.batch_to_seq(mask[..., None], nenv, nsteps)
 
         state_size = self.cell.state_size
-        if not isinstance(state_size, collections.Iterable):
-            state_size = (state_size,)
+        if not isinstance(state_size, collections.Sequence):
+            state_size = [state_size]
 
         state = tf.split(initial_state, axis=-1, num_or_size_splits=state_size)
         unrolled_outputs = []

@@ -215,7 +215,7 @@ class RelationalMemoryCoreCell(Model):
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
-        self.posembed = PositionEmbedding()
+        self.posembed = LearnedEmbedding()
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(
@@ -256,7 +256,7 @@ class RelationalMemoryCoreCell(Model):
         if dtype is None:
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
-        position = self.posembed(zeros)
+        position = tf.stop_gradient(self.posembed(zeros))
         if self.gate_style == 'lstm':
             return [self.flatten(position), zeros]
         else:
