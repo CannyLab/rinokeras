@@ -449,6 +449,7 @@ class RelationalMemoryCore(RNN):
             input_bias=input_bias,
             dropout=dropout,
             gate_style=gate_style,
+            layer_norm=layer_norm,
             treat_input_as_sequence=treat_input_as_sequence,
             use_cross_attention=use_cross_attention,
             return_attention_weights=return_attention_weights,
