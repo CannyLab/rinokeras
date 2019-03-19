@@ -256,7 +256,8 @@ class RelationalMemoryCoreCell(Model):
         if dtype is None:
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
-        position = self.posembed(zeros)
+        # position = self.posembed(zeros)
+        position = zeros
         if self.gate_style == 'lstm':
             return [self.flatten(position), zeros]
         else:
@@ -345,7 +346,18 @@ class RelationalMemoryCoreCell(Model):
             next_memory: This time step's memory
         """
         memory = states[0]
+        memory.shape.assert_has_rank(2)
+
+        is_new_state = tf.reduce_all(tf.equal(memory, 0), 1)
+        is_new_state = tf.cast(is_new_state, inputs.dtype)[:, None, None]
+
         memory = self.reshape(memory)
+
+        is_same_shape = tf.assert_equal(
+            tf.shape(memory), tf.shape(inputs), message='input shape does not match memory shape!')
+        with tf.control_dependencies([is_same_shape]):
+            memory = (1 - is_new_state) * memory + is_new_state * inputs
+
         if self.gate_style == 'lstm':
             carry = states[1]
             carry = self.reshape(carry)
@@ -364,6 +376,7 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
                 memory, rmc_inputs=inputs, cross_attention_mask=None, return_cross_attention_weights=True)
+            output = self.flatten(next_memory)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
@@ -377,8 +390,7 @@ class RelationalMemoryCoreCell(Model):
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
-            next_memory = input_gate * tf.tanh(next_memory)
-            next_memory += forget_gate * memory
+            next_memory = input_gate * tf.tanh(next_memory) + forget_gate * memory
         elif self.gate_style == 'attention':
             memory_update = tf.tanh(next_memory)  # This is the input of the memory
 
