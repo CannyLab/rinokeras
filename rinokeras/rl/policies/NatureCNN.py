@@ -18,6 +18,7 @@ class NatureCNN(Model):
         # self.prepare_input.add(BatchNormalization())
         self.conv_net = Conv2DStack(
             [32, 64, 64], [8, 4, 3], [4, 2, 1],
+            # [16, 16], [3, 3], [1, 2],
             activation='relu',
             padding='valid',
             flatten_output=not use_rmc,
@@ -27,10 +28,11 @@ class NatureCNN(Model):
             self.prepare_output.add(
                 Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2))))
         else:
+            self.prepare_output.add(PositionEmbedding2D(concat=True))
             self.prepare_output.add(Dense(64, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2))))
             # self.prepare_output.add(BatchNormalization())
-            self.prepare_output.add(PositionEmbedding2D(concat=True))
-            self.prepare_output.add(Reshape((49, 128)))
+            self.prepare_output.add(Reshape((49, 64)))
+            # self.prepare_output.add(Reshape((80, 128)))
 
     def call(self, inputs):
         assert inputs.dtype == tf.uint8

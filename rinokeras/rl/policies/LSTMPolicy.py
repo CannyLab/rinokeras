@@ -1,5 +1,5 @@
 from tensorflow.keras import Model
-from tensorflow.keras.layers import LSTMCell
+from tensorflow.keras.layers import LSTMCell, GRUCell
 
 import gym
 
@@ -22,7 +22,7 @@ class LSTMPolicy(RecurrentPolicy):
                  use_rmc: bool = False,
                  **kwargs) -> None:
 
-        recurrent_cell = LSTMCell(lstm_cell_size, implementation=2)
+        recurrent_cell = GRUCell(lstm_cell_size, implementation=2)
         super().__init__(
             obs_space,
             act_space,
