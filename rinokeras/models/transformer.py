@@ -299,15 +299,19 @@ class TransformerDecoderBlock(Model):
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention, cross_attention_weights = self.multi_attention(
-            target_selfattn,
-            source=encoder_outputs,
-            mask=cross_attention_mask,
-            return_attention_weights=True)
-        encdec_attention = self.layer_drop_2(encdec_attention, target_selfattn)
 
-        output = self.feed_forward(encdec_attention)
-        output = self.layer_drop_3(output, encdec_attention)
+        if encoder_outputs is not None:
+            encdec_attention, cross_attention_weights = self.multi_attention(
+                target_selfattn,
+                source=encoder_outputs,
+                mask=cross_attention_mask,
+                return_attention_weights=True)
+            attn_output = self.layer_drop_2(encdec_attention, target_selfattn)
+        else:
+            attn_output = target_selfattn
+
+        output = self.feed_forward(attn_output)
+        output = self.layer_drop_3(output, attn_output)
 
         output = output if cache is None else (output, cache)
 
@@ -544,7 +548,8 @@ class TransformerDecoder(Model):
 
         # Check the input and target dimensions
         target_embedding.shape.assert_has_rank(3)
-        encoder_output.shape.assert_has_rank(3)
+        if encoder_output is not None:
+            encoder_output.shape.assert_has_rank(3)
 
         with tf.control_dependencies(self.check_mask_shapes(encoder_mask, decoder_mask)):
             # Build the future-mask if necessary. This is an upper-triangular mask
@@ -556,8 +561,10 @@ class TransformerDecoder(Model):
                 batch_size, sequence_length, decoder_mask, mask_future)
             # Build the cross-attention mask. This is an upper-left block matrix which takes care of the masking
             # of the output shapes
-            cross_attention_mask = self.get_cross_attention_mask(
-                encoder_output, target_input, encoder_mask, decoder_mask)
+            if encoder_output is not None:
+                cross_attention_mask = self.get_cross_attention_mask(encoder_output, target_input, encoder_mask, decoder_mask)
+            else:
+                cross_attention_mask = None
 
             # Now actually do the decoding which should take us to the right dimension
             decoder_output = self.decoding_stack(
@@ -1352,8 +1359,7 @@ class Transformer(Model):
         # Generate the masks for the encoder and decoder. There are a lot of different ways that
         # the attention masks could be passed in, so this method handles a lot of these different
         # mask shapes.
-        encoder_mask = rk.utils.convert_to_attention_mask(
-            source_sequence, encoder_mask)
+        encoder_mask = rk.utils.convert_to_attention_mask(source_sequence, encoder_mask)
         # Compute the encoder output
         encoder_output = self.encoder(
             source_sequence, encoder_mask=encoder_mask)
