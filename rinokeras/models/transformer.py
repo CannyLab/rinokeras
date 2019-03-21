@@ -673,7 +673,7 @@ class TransformerDecoder(Model):
         return tensor
 
     def fast_beam_decode(self, encoder_output, max_seq_len, batch_size, beam_size, output_dtype=tf.int32, initial_input=None, 
-                            preembed_hook=None, stopping_criterion=None, encoder_mask=None):
+                            preembed_hook=None, stopping_criterion=None, encoder_mask=None, sample=False):
         
         if preembed_hook is not None:
             raise NotImplementedError("Prembedding hook is not supported in fast_beam_decode")
@@ -691,7 +691,18 @@ class TransformerDecoder(Model):
             vocab_size = logit_shapes[1]
 
             last_output_logits_logs = tf.nn.log_softmax(last_output_logits)
-            best_logits_2, best_indices_2 = tf.nn.top_k(last_output_logits_logs, k=beam_size, sorted=True, name=None)
+
+            if not sample:
+                best_logits_2, best_indices_2 = tf.nn.top_k(last_output_logits_logs, k=beam_size, sorted=True, name=None)
+            else:
+                best_indices_2 = tf.cast(tf.multinomial(last_output_logits, num_samples=beam_size), dtype=tf.int32)
+                
+                flat_logits_logs = tf.reshape(last_output_logits_logs, [-1]) # Flatten the last_output_logits
+                to_add_to_indeces = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*vocab_size*beam_size, delta=vocab_size), [-1,1]), [1,beam_size]), [-1])
+                flat_indices = to_add_to_indeces + tf.reshape(best_indices_2, [-1])
+                gathered_scores = tf.gather(flat_logits_logs, flat_indices)
+                best_logits_2 = tf.reshape(gathered_scores, [beam_size*batch_size, beam_size])
+                print("here")
 
             # When flattened, this should include first beam_size words from beam 1, then beam_size words from beam 2, etc.
             flattened_best_indices = tf.reshape(best_indices_2, (-1,1))
