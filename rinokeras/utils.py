@@ -269,6 +269,16 @@ def gather_from_last(array, indices):
     return tf.gather_nd(array, indices)
 
 
+def accuracy(labels, predictions, weights=None, dtype=tf.float32):
+    is_correct = tf.equal(labels, predictions)
+    is_correct = tf.cast(is_correct, dtype)
+    if weights is None:
+        return tf.reduce_mean(is_correct)
+    else:
+        weights = tf.ones_like(is_correct) * weights
+        return tf.reduce_sum(is_correct * weights) / tf.reduce_sum(weights)
+
+
 class MetricsAccumulator(object):
 
     def __init__(self):
