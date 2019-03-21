@@ -683,8 +683,7 @@ class TransformerDecoder(Model):
 
             output = self(inputs, encoder_output, encoder_mask=encoder_mask,
                           decoder_mask=None, shift_target_sequence_right=False,
-                          mask_future=False, cache=cache,
-                          seqpos=seqpos + 1)
+                          mask_future=False, cache=cache, seqpos=seqpos + 1)
 
             last_output_logits = output[:, -1, :]
 
@@ -730,6 +729,12 @@ class TransformerDecoder(Model):
             shuffled_is_finished = tf.gather(is_finished, chosen_from_beam_index)
             last_words_chosen = last_words_chosen * tf.reshape(1-tf.cast(is_finished, tf.int32), (beam_size*batch_size, 1))
 
+
+            def copy_mech(): return tf.slice(initial_input,[0,seqpos], [-1,1])
+            def choose_mech(): return  last_words_chosen
+            copy_cdn = tf.less(seqpos, tf.shape(initial_input)[-1])
+            last_words_chosen = tf.cond(copy_cdn, copy_mech, choose_mech)
+
             def start_output_function():
                 return last_words_chosen
 
@@ -738,7 +743,8 @@ class TransformerDecoder(Model):
                 output_seq = tf.concat([output_seq, last_words_chosen], axis=1)
                 return output_seq
 
-            output_s0equence = tf.cond(start_cdn, start_output_function, normal_output_function)
+            output_sequence = tf.cond(start_cdn, start_output_function, normal_output_function)
+
             scores = chosen_beam_scores
 
             # Decide which beams are finished or not
@@ -755,26 +761,22 @@ class TransformerDecoder(Model):
                     cache[k] = tf.gather(cache[k], chosen_from_beam_index, axis=0)
 
             cache['seqpos'] = seqpos+1
-            result = DecRes(
-                seqpos=seqpos + 1,
-                inputs=last_words_chosen,
-                cache=cache,
-                output_sequence=output_sequence,
-                is_finished=is_finished,
-                seq_length=seq_length,
-                scores=scores)
+            result = DecRes(seqpos=seqpos + 1, inputs=last_words_chosen, cache=cache, output_sequence=output_sequence, is_finished=is_finished, seq_length=seq_length, scores=scores)
 
             return result
 
-        encoder_output = self.tile_for_beams(encoder_output, beam_size)
-        if encoder_mask is not None:
-            encoder_mask = self.tile_for_beams(encoder_mask, beam_size)
+        if encoder_output is not None:
+            encoder_output = self.tile_for_beams(encoder_output, beam_size)
+            if encoder_mask is not None:
+                encoder_mask = self.tile_for_beams(encoder_mask, beam_size)
 
 
         if initial_input is None:
             initial_input = tf.zeros((batch_size*beam_size, 1), dtype=output_dtype)
+        else:
+            initial_input = tf.tile(initial_input, [beam_size,1])
 
-        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers[0]} # [0]
         initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
 
         inputs = DecRes(
