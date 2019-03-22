@@ -5,12 +5,13 @@ Positional embedding layers
 from typing import Dict
 
 import tensorflow as tf
+from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Dense  # pylint: disable=F0401
 
 from rinokeras.utils import get_shape
 
 
-class PositionEmbedding(Layer):
+class PositionEmbedding(Model):
     """
     Adds positional embedding to an input embedding.
 
