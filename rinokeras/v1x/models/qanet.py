@@ -4,10 +4,10 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Embedding, Conv1D, SeparableConv1D, Dropout, BatchNormalization
 import numpy as np
 
-import rinokeras as rk
-from rinokeras.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway, LayerDropout
-from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.attention import ContextQueryAttention, SelfAttention
+import rinokeras.v1x as rk
+from rinokeras.v1x.common.layers import Stack, DenseStack, LayerNorm, PositionEmbedding, Highway, LayerDropout
+from rinokeras.v1x.common.layers import WeightNormDense as Dense
+from rinokeras.v1x.common.attention import ContextQueryAttention, SelfAttention
 
 
 class QANetSelfAttention(Model):

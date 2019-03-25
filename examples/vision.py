@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 from tqdm import tqdm
 
-from rinokeras.common.layers import Conv2DStack, DenseStack, PositionEmbedding2D
+from rinokeras.v1x.common.layers import Conv2DStack, DenseStack, PositionEmbedding2D
 from rinokeras.models.transformer import TransformerEncoder
 from rinokeras.trainers import SupervisedTrainer
 

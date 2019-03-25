@@ -1,7 +1,7 @@
 Standard RNN
 =====================================
 
-.. automodule:: rinokeras.common.rnn
+.. automodule:: rinokeras.v1x.common.rnn
     :members:
     :undoc-members:
     :show-inheritance:

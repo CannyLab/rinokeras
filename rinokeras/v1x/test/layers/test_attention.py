@@ -9,7 +9,7 @@ tf.set_random_seed(182)
 
 def test_luongAttention():
     
-    from rinokeras.common.attention import LuongAttention
+    from rinokeras.v1x.common.attention import LuongAttention
     
     # Get some testing data
     target_hidden = np.random.rand(5, 2).astype(np.float32)  # Target Hidden shape
@@ -63,7 +63,7 @@ def test_attentionQKV():
 
 
 def test_trilinearSimilarity():
-    from rinokeras.common.attention import TrilinearSimilarity
+    from rinokeras.v1x.common.attention import TrilinearSimilarity
     
     # Just test the construction and passing random data through the layers
     layer = TrilinearSimilarity()

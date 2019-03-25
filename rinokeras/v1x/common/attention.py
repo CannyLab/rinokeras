@@ -21,8 +21,7 @@ class LuongAttention(Layer):
     def build(self, input_shape):
         inputs0, inputs1 = input_shape
         self.attention_weights = self.add_variable('attention_weights',
-                                                   (inputs0[-1] + inputs1
-                                                    [-1], inputs1[-1]),
+                                                   (int(inputs0[-1]) + int(inputs1[-1]), int(inputs1[-1])),
                                                    initializer=tf.initializers.variance_scaling(),
                                                    regularizer=self.regularizer)
         super().build(input_shape)

@@ -1,7 +1,7 @@
 Losses
 =====================================
 
-.. automodule:: rinokeras.common.losses
+.. automodule:: rinokeras.v1x.common.losses
     :members:
     :undoc-members:
     :show-inheritance:

@@ -6,9 +6,9 @@ import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dropout
 
-import rinokeras as rk
-from rinokeras.common.layers import InvertibleDense, CouplingLayer
-from rinokeras.common.layers import WeightNormDense as Dense
+import rinokeras.v1x as rk
+from rinokeras.v1x.common.layers import InvertibleDense, CouplingLayer
+from rinokeras.v1x.common.layers import WeightNormDense as Dense
 
 from rinokeras.models.transformer import TransformerInputEmbedding, TransformerEncoder, TransformerDecoderBlock
 from rinokeras.train import Experiment

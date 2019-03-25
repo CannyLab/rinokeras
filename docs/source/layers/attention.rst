@@ -1,7 +1,7 @@
 Attention
 =====================================
 
-.. automodule:: rinokeras.common.attention
+.. automodule:: rinokeras.v1x.common.attention
     :members:
     :undoc-members:
     :show-inheritance:

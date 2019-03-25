@@ -6,7 +6,7 @@ import numpy as np
 
 import gym
 
-from rinokeras.utils import get_shape
+from rinokeras.v1x.utils import get_shape
 from .StandardPolicy import StandardPolicy
 
 

@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 import tensorflow as tf
 import numpy as np
-from rinokeras.common.layers import RandomGaussNoise
+from rinokeras.v1x.common.layers import RandomGaussNoise
 
 
 class Pd(tf.keras.Model, ABC):

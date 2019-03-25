@@ -1,7 +1,7 @@
 Position Embedding
 =======
 
-.. automodule:: rinokeras.common.layers
+.. automodule:: rinokeras.v1x.common.layers
 
     .. autoclass:: PositionEmbedding
         :members:

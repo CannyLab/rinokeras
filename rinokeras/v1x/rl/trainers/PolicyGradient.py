@@ -6,7 +6,7 @@ from tensorflow.keras import Model
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
 from rinokeras.train import Experiment
-import rinokeras as rk
+import rinokeras.v1x as rk
 
 
 class PolicyGradient(Experiment):

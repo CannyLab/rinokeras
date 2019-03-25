@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import sys
 
-from rinokeras.models.transformer import Transformer
+from rinokeras.v1x.models.transformer import Transformer
 
 
 def test_transformer():

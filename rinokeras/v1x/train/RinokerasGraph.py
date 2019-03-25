@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow.python.client import timeline
 from tqdm import tqdm
 
-from rinokeras.utils import MetricsAccumulator
+from rinokeras.v1x.utils import MetricsAccumulator
 from .train_utils import Inputs
 
 

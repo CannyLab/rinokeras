@@ -8,13 +8,13 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import (BatchNormalization, Dropout, Embedding,
                                      Lambda, Conv1D)
 
-import rinokeras as rk
-from rinokeras.common.attention import MultiHeadAttention, SelfAttention
-from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.layers import (DenseStack, EmbeddingTranspose,
+import rinokeras.v1x as rk
+from rinokeras.v1x.common.attention import MultiHeadAttention, SelfAttention
+from rinokeras.v1x.common.layers import WeightNormDense as Dense
+from rinokeras.v1x.common.layers import (DenseStack, EmbeddingTranspose,
                                      LayerDropout, LayerNorm,
                                      PositionEmbedding, Stack)
-from rinokeras.utils import get_shape
+from rinokeras.v1x.utils import get_shape
 
 DecoderResult = namedtuple('DecoderResult', [
                            'seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])

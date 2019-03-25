@@ -12,9 +12,9 @@ from typing import Tuple
 from .Policy import Policy
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Reshape, BatchNormalization
-from rinokeras.common.layers import Stack, DenseStack
-from rinokeras.common.distributions import CategoricalPd, DiagGaussianPd
-from rinokeras.utils import get_shape
+from rinokeras.v1x.common.layers import Stack, DenseStack
+from rinokeras.v1x.common.distributions import CategoricalPd, DiagGaussianPd
+from rinokeras.v1x.utils import get_shape
 
 from baselines.common.tf_util import adjust_shape
 

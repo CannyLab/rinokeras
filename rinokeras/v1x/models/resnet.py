@@ -1,7 +1,7 @@
 
 import tensorflow as tf
 from typing import Tuple
-from rinokeras.common.layers import LayerNorm, Stack
+from rinokeras.v1x.common.layers import LayerNorm, Stack
 
 
 class GroupedConvolution(tf.keras.Model):

@@ -5,10 +5,10 @@ import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import RNN, Flatten, Reshape
 
-import rinokeras as rk
-from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
-from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
+import rinokeras.v1x as rk
+from rinokeras.v1x.common.layers import WeightNormDense as Dense
+from rinokeras.v1x.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
+from rinokeras.v1x.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
     LayerNorm, DenseStack, Dropout
 
 from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward

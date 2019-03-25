@@ -1,7 +1,7 @@
 Layer Norm
 =================
 
-.. automodule:: rinokeras.common.layers
+.. automodule:: rinokeras.v1x.common.layers
 
     .. autoclass:: LayerNorm
         :members:
