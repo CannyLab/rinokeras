@@ -9,6 +9,7 @@ from .layers import WeightNormDense as Dense
 from .layers import LayerNorm
 
 
+
 class LuongAttention(Layer):
 
     def __init__(self, local=False, stddev=1.0, regularizer=None):
@@ -19,15 +20,22 @@ class LuongAttention(Layer):
             self.stddev = stddev
 
     def build(self, input_shape):
-        inputs0, inputs1 = input_shape
+        if self.local:
+            inputs0, inputs1, _ = input_shape
+        else:
+            inputs0, inputs1 = input_shape
         self.attention_weights = self.add_variable('attention_weights',
-                                                   (int(inputs0[-1]) + int(inputs1[-1]), int(inputs1[-1])),
-                                                   initializer=tf.initializers.variance_scaling(),
-                                                   regularizer=self.regularizer)
+                                                (int(inputs0[-1]) + int(inputs1[-1]), int(inputs1[-1])),
+                                                initializer=tf.initializers.variance_scaling(),
+                                                regularizer=self.regularizer)
         super().build(input_shape)
 
-    def call(self, inputs, t=None):
-        target_hidden, source_hidden_sequence = inputs
+
+    def call(self, inputs):
+        if self.local:
+            target_hidden, source_hidden_sequence, positions = inputs
+        else:
+           target_hidden, source_hidden_sequence = inputs
         # source hidden sequence shape -> (None, None, encoder_cell_size)
         # target hidden shape -> (None, decoder_cell_size)
         score = tf.matmul(source_hidden_sequence,
@@ -36,12 +44,10 @@ class LuongAttention(Layer):
         weights = alignment
 
         if self.local:
-            if t is None:
-                raise TypeError("Must pass in position for local attention")
-            relative_position = tf.cast(
-                tf.range(source_hidden_sequence.shape[1]), tf.float32) - t
-            position_weighting = tf.exp(-1. * tf.square(relative_position) / (2 * tf.square(self.stddev)))
-            weights = alignment * tf.reshape(position_weighting, (1, -1, 1))
+            relative_position = tf.cast(tf.range(source_hidden_sequence.shape[1]), positions.dtype) -  tf.reshape(positions, (-1, 1))
+            position_weighting = tf.exp(tf.cast(-1.,source_hidden_sequence.dtype) * tf.cast(tf.square(relative_position),source_hidden_sequence.dtype) / \
+                tf.cast((2 * tf.square(self.stddev)), source_hidden_sequence.dtype))
+            weights = alignment * position_weighting[:,:,None]
 
         # will broadcast over third dimension
         weighted = tf.reduce_sum(source_hidden_sequence * weights, 1)
@@ -52,7 +58,7 @@ class LuongAttention(Layer):
 # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/common_attention.py
 
 
-class AttentionQKV(Model):
+class AttentionQKVProjection(Model):
     """Computes query, key, and value from antecedents
 
             :param key_depth: integer depth of query and keys
@@ -82,24 +88,30 @@ class AttentionQKV(Model):
                                  bias_regularizer=self.bias_regularizer,
                                  activity_regularizer=self.activity_regularizer)
         self.query_norm = LayerNorm()
-        self.projection_layer = Dense(self.key_depth + self.value_depth, use_bias=False,
+        self.key_layer = Dense(self.key_depth, use_bias=False,
                                       kernel_initializer=kernel_initializer,
                                       kernel_regularizer=self.kernel_regularizer,
                                       bias_regularizer=self.bias_regularizer,
                                       activity_regularizer=self.activity_regularizer)
-        self.projection_norm = LayerNorm()
+        self.key_norm = LayerNorm()
+        self.value_layer = Dense(self.value_depth, use_bias=False,
+                                      kernel_initializer=kernel_initializer,
+                                      kernel_regularizer=self.kernel_regularizer,
+                                      bias_regularizer=self.bias_regularizer,
+                                      activity_regularizer=self.activity_regularizer)
+        self.value_norm = LayerNorm()
 
     def call(self, inputs):
         """
             :param inputs: tuple of (query_antecedent, memory_antecedent)
                 query_antecedent -> tensor w/ shape [batch_size, n_queries, channels]
-                memory_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
+                key_antecedent -> tensor w/ shape [batch_size, n_queries, channels]
+                value_antecedent -> tensor w/ shape [batch_size, n_queries, channels]
         """
-        query_antecedent, memory_antecedent = inputs
+        query_antecedent, key_antecedent, value_antecedent = inputs
         queries = self.query_norm(self.query_layer(query_antecedent))
-        projection = self.projection_norm(self.projection_layer(memory_antecedent))
-        keys, values = tf.split(projection, tf.stack((self.key_depth, self.value_depth)), axis=-1)
-
+        keys = self.key_norm(self.key_layer(key_antecedent))
+        values = self.value_norm(self.value_layer(value_antecedent))
         return [queries, keys, values]
 
 
@@ -123,12 +135,12 @@ class TrilinearSimilarity(Layer):
         """
             Args:
                 (query_shape, context_shape) ->
-                      query_shape: a tf.Shape [batch_size, query_length, channels]
-                      context_shape: a tf.Shape [batch_size, context_length, channels]
+                    context_shape: a tf.Shape [batch_size, context_length, channels]
+                    query_shape: a tf.Shape [batch_size, query_length, channels]
 
             Returns: None
         """
-        query_shape, context_shape = input_shapes
+        context_shape, query_shape = input_shapes
         query_channels = query_shape.as_list()[-1]
         context_channels = context_shape.as_list()[-1]
 
@@ -151,13 +163,12 @@ class TrilinearSimilarity(Layer):
         """
             Args:
                 (query, context) ->
-                      query: a Tensor with shape [batch_size, query_length, channels]
-                      context: a Tensor with shape [batch_size, context_length, channels]
-
+                    context: a Tensor with shape [batch_size, context_length, channels]
+                    query: a Tensor with shape [batch_size, query_length, channels]
             Returns:
                 similarity: a Tensor with shape [batch_size, context_length, query_length]
         """
-        query, context = inputs
+        context, query = inputs
         query = self.dropout(query)
         context = self.dropout(context)
 
@@ -389,7 +400,7 @@ class MultiHeadAttention(Model):
         value_size = query_antecedent_shape[-1] if self.value_size is None else self.value_size
         assert key_size % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         # assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
-        self.compute_qkv = AttentionQKV(key_size, value_size,
+        self.compute_qkv = AttentionQKVProjection(key_size, value_size,
                                         kernel_initializer=self.kernel_initializer,
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
@@ -409,7 +420,8 @@ class MultiHeadAttention(Model):
         """
         assert isinstance(inputs, tuple) or isinstance(inputs, list) and len(inputs) == 2, \
             'Must pass query and memory'
-        q, k, v = self.compute_qkv(inputs)
+        qa, ma = inputs
+        q, k, v = self.compute_qkv((qa, ma, ma))
         attention_output, attention_weights = self.attention_layer(
             (q, k, v), mask=mask, return_attention_weights=True)
         output = self.output_layer(attention_output)
@@ -471,7 +483,7 @@ class ContextQueryAttention(Model):
         """
         assert context is not None
         # similarity -> Tensor with shape [batch_size, context_length, query_length]
-        similarity = self.trilinear_similarity((query, context))
+        similarity = self.trilinear_similarity((context, query))
         masked_similarity = self.apply_mask(similarity, mask=mask)
 
         c2q_similarity = tf.nn.softmax(masked_similarity, axis=-1)
@@ -489,5 +501,5 @@ class ContextQueryAttention(Model):
         return outputs
 
 
-__all__ = ['LuongAttention', 'AttentionQKV', 'TrilinearSimilarity', 'ScaledDotProductSimilarity', 'ApplyAttentionMask',
+__all__ = ['LuongAttention', 'AttentionQKVProjection', 'TrilinearSimilarity', 'ScaledDotProductSimilarity', 'ApplyAttentionMask',
            'AttentionMap', 'MultiHeadAttentionMap', 'MultiHeadAttention', 'SelfAttention', 'ContextQueryAttention']

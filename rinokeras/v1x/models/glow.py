@@ -11,7 +11,7 @@ from rinokeras.v1x.common.layers import InvertibleDense, CouplingLayer
 from rinokeras.v1x.common.layers import WeightNormDense as Dense
 
 from rinokeras.models.transformer import TransformerInputEmbedding, TransformerEncoder, TransformerDecoderBlock
-from rinokeras.train import Experiment
+from rinokeras.v1x.train import Experiment
 
 
 class EvenOddInvertibleDense(Model):

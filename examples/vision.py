@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from rinokeras.v1x.common.layers import Conv2DStack, DenseStack, PositionEmbedding2D
 from rinokeras.models.transformer import TransformerEncoder
-from rinokeras.trainers import SupervisedTrainer
+from rinokeras.v1x.trainers import SupervisedTrainer
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"

@@ -1,7 +1,7 @@
 Test
 ============
 
-.. automodule:: rinokeras.train.TestGraph
+.. automodule:: rinokeras.v1x.train.TestGraph
     :members:
     :undoc-members:
     :show-inheritance:

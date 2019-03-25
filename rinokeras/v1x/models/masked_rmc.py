@@ -7,7 +7,7 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras.v1x as rk
 from rinokeras.v1x.common.layers import WeightNormDense as Dense
-from rinokeras.v1x.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
+from rinokeras.v1x.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKVProjection
 from rinokeras.v1x.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
     LayerNorm, DenseStack, Dropout
 
@@ -87,7 +87,7 @@ class MaskedRelationalMemoryCoreCell(Model):
 
         if self.gate_style == 'attention':
             self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
-            self.qkv_projection = AttentionQKV(self.mem_size, self.mem_size)
+            self.qkv_projection = AttentionQKVProjection(self.mem_size, self.mem_size)
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 
@@ -230,7 +230,7 @@ class MaskedRelationalMemoryCoreCell(Model):
             memory_update = tf.tanh(next_memory)  # This is the input of the memory
 
             # Do a QKV projection
-            queries, keys, values = self.qkv_projection((inputs, memory_update))
+            queries, keys, values = self.qkv_projection((inputs, memory_update, memory_update))
             _, attention_weights = self.attention_map(queries, keys, values)
 
             # Reduce max

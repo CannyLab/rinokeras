@@ -7,7 +7,7 @@ from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrateg
 
 from .TestGraph import TestGraph
 from .train_utils import Inputs, Outputs, Losses
-from rinokeras.train import Experiment
+from rinokeras.v1x.train import Experiment
 
 
 class TrainGraph(TestGraph):
@@ -93,7 +93,7 @@ class TrainGraph(TestGraph):
             return grads, outputs, loss, losses
 
         self._distributed_grads, self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
-            self.distribution_strategy.call_for_each_tower(grads_fn, self.inputs)
+            self.distribution_strategy.call_for_each_replica(grads_fn, self.inputs)
 
         self.update_op = self.optimizer._distributed_apply(
             self.distribution_strategy, self._distributed_grads)

@@ -5,7 +5,7 @@ from tensorflow.keras import Model
 
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
-from rinokeras.train import Experiment
+from rinokeras.v1x.train import Experiment
 import rinokeras.v1x as rk
 
 class DQN(Experiment):

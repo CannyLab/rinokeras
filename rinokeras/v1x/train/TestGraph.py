@@ -5,7 +5,7 @@ from tensorflow.keras import Model
 import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
-from rinokeras.train import Experiment
+from rinokeras.v1x.train import Experiment
 
 from .RinokerasGraph import RinokerasGraph
 from .train_utils import Inputs, Outputs, Losses
@@ -67,17 +67,17 @@ class TestGraph(RinokerasGraph):
             return outputs, loss, losses
 
         self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
-            self.distribution_strategy.call_for_each_tower(loss_fn, self.inputs)
+            self.distribution_strategy.call_for_each_replica(loss_fn, self.inputs)
 
     def _reduce_distributed_ops(self):
         # central_device = self.distribution_strategy.parameter_devices[0]
         central_device = '/cpu:0'
 
         reduced_total = self.distribution_strategy.reduce(
-            tf.VariableAggregation.MEAN, self._distributed_total_loss, central_device)
+            tf.distribute.ReduceOp.MEAN, self._distributed_total_loss)
         to_reduce = [(metric, central_device) for name, metric in self._distributed_losses.items()]
         reduced_losses = self.distribution_strategy.batch_reduce(
-            tf.VariableAggregation.MEAN, to_reduce)
+            tf.distribute.ReduceOp.MEAN, to_reduce)
 
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
         self.losses = {name: self.distribution_strategy.unwrap(metric)[0]

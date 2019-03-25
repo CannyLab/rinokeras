@@ -9,7 +9,7 @@ from tensorflow.keras.layers import Dense, Input
 from rinokeras.rl.env_runners import BatchRollout, PGEnvironmentRunner
 from rinokeras.rl.policies import LSTMPolicy, StandardPolicy
 from rinokeras.rl.trainers import PPO, PolicyGradient
-from rinokeras.train import TrainGraph
+from rinokeras.v1x.train import TrainGraph
 
 parser = argparse.ArgumentParser('Rinokeras RL Example Script')
 parser.add_argument('--env', type=str, default='CartPole-v0',

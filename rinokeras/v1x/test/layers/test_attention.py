@@ -1,75 +1,169 @@
 
 import tensorflow as tf
 import numpy as np
+import json
+import os
 
-tf.enable_eager_execution()  
-np.random.seed(182)
-tf.set_random_seed(182)
-
+def get_local_file(fpath):
+    return '/'+os.path.join(*__file__.split(os.sep)[:-1], fpath)
 
 def test_luongAttention():
-    
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
     from rinokeras.v1x.common.attention import LuongAttention
+    luong_attention_layer = LuongAttention(local=False, stddev=1.0, regularizer=None)
+    assert luong_attention_layer is not None
+
+    # Encoded values
+    encoded_values = np.random.sample((16, 10, 128))
+    query_values = np.random.sample((16, 128))
+
+    # Get some sample input tensors
+    encoder_tensor = tf.constant(encoded_values) # BS x SEQLEN x ENC_CELL_SIZE
+    query_tensor = tf.constant(query_values) # BS x DEC_CELL_SIZE
+
+    value = luong_attention_layer((query_tensor, encoder_tensor))
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+        jf = json.loads(json_file.read())
+        expected_output = np.array(jf['luong_attention_expected_output'])    
     
-    # Get some testing data
-    target_hidden = np.random.rand(5, 2).astype(np.float32)  # Target Hidden shape
-    source_hidden_sequence = np.random.rand(5, 5, 2).astype(np.float32)
+    assert output is not None  # Make sure the value is correct
+    assert output.shape == (16, 128)  # Make sure the output shape is correct
+    assert np.isclose(output, expected_output).all()
 
-    # Test non-local, stddev 1
-    test_attention_map = LuongAttention(local=False, stddev=1.0)
+def test_luongAttention_local():
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import LuongAttention
+    luong_attention_layer = LuongAttention(local=True, stddev=1.0, regularizer=None)
+    assert luong_attention_layer is not None
 
-    # Apply the attention map
-    output = test_attention_map((target_hidden, source_hidden_sequence))
+    # Encoded values
+    encoded_values = np.random.sample((16, 10, 128))
+    query_values = np.random.sample((16, 128))
+    position_values = np.random.randint(0, 10, (16,))
 
-    # Get the expected output
-    expected_output = np.array([[-0.5965891, 0.33805916],
-                                [-0.49869075, 0.48035246],
-                                [-0.6700753, 0.38853297],
-                                [-0.6930723, 0.4312901],
-                                [-0.7170821, 0.48857006]], dtype=np.float32)
- 
-    if not np.allclose(output, expected_output):
-        raise AssertionError("Luong Attention [Local=False, stddev=1.0] not as expected.")
+    # Get some sample input tensors
+    encoder_tensor = tf.constant(encoded_values) # BS x SEQLEN x ENC_CELL_SIZE
+    query_tensor = tf.constant(query_values) # BS x DEC_CELL_SIZE
+    position_tensor = tf.constant(position_values) # BS
 
-    # Test non-local, stddev 0.5
-    test_attention_map = LuongAttention(local=False, stddev=0.5)
-    output = test_attention_map((target_hidden, source_hidden_sequence))
+    value = luong_attention_layer((query_tensor, encoder_tensor, position_tensor))
 
-    expected_output = np.array([[-0.4305752, 0.10952884],
-                                [0.30076617, -0.5722779],
-                                [-0.36495835, -0.04738057],
-                                [-0.2308154, -0.23675343],
-                                [0.04679149, -0.53293025]], dtype=np.float32)
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
 
-    if not np.allclose(output, expected_output):
-        raise AssertionError("Luong Attention [Local=False, stddev=0.5] not as expected.")
+    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+        jf = json.loads(json_file.read())
+        expected_output = np.array(jf['luong_attention_local_expected_output'])    
+    
+    assert output is not None  # Make sure the value is correct
+    assert output.shape == (16, 128)  # Make sure the output shape is correct
+    assert np.isclose(output, expected_output).all()
 
-    # Test local, stddev 1.0
-    test_attention_map = LuongAttention(local=True, stddev=1.0)
-    output = test_attention_map((target_hidden, source_hidden_sequence), t=3)
+def test_attentionQKVProjection():
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import AttentionQKVProjection
+    attention_qkv_projection = AttentionQKVProjection(key_depth=8, value_depth=12)
+    assert attention_qkv_projection is not None
 
-    expected_output = np.array([[0.27935886, 0.24433741],
-                                [-0.6575557, 0.23246999],
-                                [0.10390171, 0.23293544],
-                                [-0.15431388, 0.31091437],
-                                [-0.5740663, 0.39107955]], dtype=np.float32)
+    # Encoded values
+    query_values = np.random.sample((16, 10, 128))
+    key_values = np.random.sample((16, 5, 128))
+    value_values = np.random.sample((16, 5, 128))
 
-    if not np.allclose(output, expected_output):
-        raise AssertionError("Luong Attention [Local=True, stddev=1.0] not as expected.")
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    key_tensor = tf.constant(key_values)
+    value_tensor = tf.constant(value_values)
 
+    value = attention_qkv_projection((query_tensor, key_tensor, value_tensor))
 
-def test_attentionQKV():
-    pass
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
 
+    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+        jf = json.loads(json_file.read())
+    jf['attention_qkv_projection_expected_output'] = [i.tolist() for i in output]
+    with open(get_local_file('test_attention_outputs.json'), 'w') as json_file:
+        json.dump(jf, json_file)
+    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+        jf = json.loads(json_file.read())
+        expected_output = [np.array(v) for v in jf['attention_qkv_projection_expected_output']] 
+    
+    assert output is not None  # Make sure the value is correct
+    assert output[0].shape == (16, 10, 8)  # Make sure the output shape is correct
+    assert output[1].shape == (16, 5, 8)  # Make sure the output shape is correct
+    assert output[2].shape == (16, 5, 12)  # Make sure the output shape is correct
+    assert np.isclose(output[0], expected_output[0]).all()
+    assert np.isclose(output[1], expected_output[1]).all()
+    assert np.isclose(output[2], expected_output[2]).all()
 
 def test_trilinearSimilarity():
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
     from rinokeras.v1x.common.attention import TrilinearSimilarity
-    
-    # Just test the construction and passing random data through the layers
-    layer = TrilinearSimilarity()
-    layer = TrilinearSimilarity(regularizer=tf.keras.regularizers.l2)
-    layer = TrilinearSimilarity(dropout=0.1, regularizer=tf.keras.regularizers.l2)
+    trilinear_similarity_layer = TrilinearSimilarity()
+    assert trilinear_similarity_layer is not None
 
+    # Encoded values
+    query_values = np.random.sample((16, 10, 128))
+    context_values = np.random.sample((16, 5, 128))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    context_tensor = tf.constant(context_values)
+
+    value = trilinear_similarity_layer((context_tensor, query_tensor))
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    # with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+    #     jf = json.loads(json_file.read())
+    # jf['trilinear_similarity_expected_output'] = output.tolist()
+    # with open(get_local_file('test_attention_outputs.json'), 'w') as json_file:
+    #     json.dump(jf, json_file)
+    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
+        jf = json.loads(json_file.read())
+        expected_output = np.array(jf['trilinear_similarity_expected_output'])
+    
+    assert output is not None  # Make sure the value is correct
+    assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
+    assert np.isclose(output, expected_output).all() 
 
 def test_scaledDotProductSimilarity():
     pass
