@@ -4,7 +4,7 @@
 
 ### Major Changes:
 - Changed default to tensorflow 2.0
-- Moved tensorflow 1.x libraries to rinokeras.v1x
+- Moved tensorflow 1.x rinokeras to rinokeras.v1x
 - Added support for tensorflow 1.13
 - Added support for tensorflow 2.0
 - Added TPU support for tensorflow 2.0 libraries
