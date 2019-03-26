@@ -1,5 +1,15 @@
 import numpy as np
 import tensorflow as tf
+import pytest
+
+def gpu_setup(req_gpus):
+    from tensorflow.python.client import device_lib
+    def get_available_gpus():
+        local_device_protos = device_lib.list_local_devices()
+        return [x.name for x in local_device_protos if x.device_type == 'GPU']
+    if len(get_available_gpus()) < req_gpus:
+        pytest.skip('Not enough available GPUs to run this test')
+
 
 def get_test_data():
     x = np.random.sample((1000,50))
@@ -50,6 +60,7 @@ def test_test_graph_multi_device_construction():
     assert graph is not None
 
 def test_test_graph_one_device_run_step():
+    gpu_setup(1)
     from rinokeras.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
@@ -79,6 +90,7 @@ def test_test_graph_one_device_run_step():
         assert total_losses > 0
 
 def test_test_graph_multi_device_run_step():
+    gpu_setup(2)
     from rinokeras.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
@@ -124,6 +136,7 @@ def test_train_graph_one_device_construction():
     assert graph is not None
 
 def test_train_graph_multi_device_construction():
+    gpu_setup(2)
     from rinokeras.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     # Sample setup variables
@@ -139,6 +152,7 @@ def test_train_graph_multi_device_construction():
     assert graph is not None
 
 def test_train_graph_one_device_run_step():
+    gpu_setup(1)
     from rinokeras.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
@@ -169,6 +183,7 @@ def test_train_graph_one_device_run_step():
         assert total_losses > 0
 
 def test_train_graph_multi_device_run_step():
+    gpu_setup(2)
     from rinokeras.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
@@ -199,6 +214,7 @@ def test_train_graph_multi_device_run_step():
         assert total_losses > 0
 
 def test_train_graph_multi_device_run_multi_step():
+    gpu_setup(2)
     from rinokeras.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
