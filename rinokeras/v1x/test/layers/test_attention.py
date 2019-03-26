@@ -434,8 +434,8 @@ def test_selfAttention():
     assert attention_map is not None
 
     # Encoded values
-    sa_values = np.random.sample((16, 8, 12))
-    mask_values = np.random.choice([0,1], size=(16, 8, 8))
+    sa_values = np.random.sample((4, 128, 12))
+    mask_values = np.random.choice([0,1], size=(4, 128, 128))
 
     # Get some sample input tensors
     sa_tensor = tf.constant(sa_values)
@@ -455,10 +455,10 @@ def test_selfAttention():
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 8, 12)
-    assert output[1].shape == (16, 4, 8, 8)
+    assert output[0].shape == (4, 128, 12)
+    assert output[1].shape == (4, 4, 128, 128)
 
-    # Check the masking
+    # WARNING: This might fail because probability
     masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
