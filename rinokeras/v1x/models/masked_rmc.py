@@ -230,8 +230,8 @@ class MaskedRelationalMemoryCoreCell(Model):
             memory_update = tf.tanh(next_memory)  # This is the input of the memory
 
             # Do a QKV projection
-            queries, keys, values = self.qkv_projection((inputs, memory_update, memory_update))
-            _, attention_weights = self.attention_map(queries, keys, values)
+            qkv_projection = self.qkv_projection((inputs, memory_update, memory_update))
+            _, attention_weights = self.attention_map(qkv_projection)
 
             # Reduce max
             max_attention = tf.reduce_max(attention_weights, axis=-1)  # [bs, num_slots]

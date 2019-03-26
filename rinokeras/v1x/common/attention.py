@@ -196,7 +196,7 @@ class ScaledDotProductSimilarity(Layer):
     def __init__(self,):
         super().__init__()
 
-    def call(self, queries, keys):
+    def call(self, inputs):
         """
             Args:
                 (query, keys) ->
@@ -206,29 +206,29 @@ class ScaledDotProductSimilarity(Layer):
             Returns:
                 similarity: a Tensor with shape [batch_size, heads (optional), query_length, key_length]
         """
-        key_dim = tf.cast(tf.shape(keys)[-1], tf.float32)
-
-        similarity = tf.matmul(queries / tf.sqrt(key_dim), keys, transpose_b=True)
-
-        return similarity
+        queries, keys = inputs
+        key_dim = tf.cast(tf.shape(keys)[-1], queries.dtype)
+        return tf.matmul(queries / tf.sqrt(key_dim), keys, transpose_b=True)
 
 
 class ApplyAttentionMask(Layer):
     """
     Applies a mask to the attention similarities.
     """
-    def __init__(self, ):
+    def __init__(self, hadamard=False):
+        self.hadamard = hadamard
         super().__init__()
 
-    def call(self, similarity, mask=None):
+    def call(self, inputs, mask=None):
         """
             Args:
-                  similarity: a Tensor with shape [batch_size, heads (optional), q/k_length, q/k_length]
+                  inputs: a Tensor with shape [batch_size, heads (optional), q/k_length, q/k_length]
                   mask: a Tensor with shape [batch_size, q/k_length, q/k_length]
 
             Returns:
                 masked_similarity: a Tensor with shape [batch_size, heads (optional), q/k_length, q/k_length]
         """
+        similarity = inputs
         if mask is None:
             return similarity
 
@@ -248,7 +248,10 @@ class ApplyAttentionMask(Layer):
             # We know that we're passing this through a softmax later, thus just add a relatively large negative
             # value to mask the output avoids a hadamard product (though I think that technically it's not
             # any more efficient to do it this way operations wise)
-            bias = -1e9 * tf.cast(tf.logical_not(mask), tf.float32)
+            if self.hadamard:
+                # If we're not going through a softmax layer, apply the hadamard product between the mask and the similarity
+                return tf.cast(tf.cast(mask, tf.bool), similarity.dtype) * similarity 
+            bias = -1e9 * tf.cast(tf.logical_not(tf.cast(mask, tf.bool)), similarity.dtype)
             masked_similarity = similarity + bias
             return masked_similarity
 
@@ -265,20 +268,23 @@ class AttentionMap(Model):
         super().__init__()
         self.similarity_metric = similarity_metric
         self.attention_function = attention_function
-        self.apply_mask = ApplyAttentionMask()
+
+        use_hadamard_mask = False if self.attention_function == tf.nn.softmax else True
+        self.apply_mask = ApplyAttentionMask(hadamard=use_hadamard_mask)
         self.dropout = Dropout(0 if dropout is None else dropout)
 
-    def call(self, queries, keys, values, mask=None):
+    def call(self, inputs, mask=None):
         """Fast scaled dot product attention.
 
             :param queries: Tensor with shape [batch_size, heads (optional), n_queries, depth_k]
             :param keys:    Tensor with shape [batch_size, heads (optional), n_keyval, depth_k]
             :param values:  Tensor with shape [batch_size, heads (optional), n_keyval, depth_v]
-            :param mask:    Tensor with shape [batch_size, n_queries, n_queries]
+            :param mask:    Tensor with shape [batch_size, n_queries, n_keyval]
 
             :return: output: Tensor with shape [batch_size, heads (optional), n_queries, depth_v]
         """
-        similarity = self.similarity_metric(queries, keys)
+        queries, keys, values = inputs
+        similarity = self.similarity_metric((queries, keys))
         masked_similarity = self.apply_mask(similarity, mask=mask)
         # (batch_size, heads, n_queries, n_keyval)
         if self.attention_function == tf.nn.softmax:
@@ -322,12 +328,11 @@ class MultiHeadAttentionMap(Model):
         :return: output: Tensor with shape [batch_size, n_queries, depth_v]
         """
         queries, keys, values = inputs
-
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)
         attention_output_split, attention_weights = self.attention_map(
-            queries_split, keys_split, values_split, mask=mask)
+            (queries_split, keys_split, values_split), mask=mask)
         output = self._combine_heads(attention_output_split)
         if return_attention_weights:
             return output, attention_weights

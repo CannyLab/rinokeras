@@ -3,10 +3,39 @@ import tensorflow as tf
 import numpy as np
 import json
 import os
+import warnings
 
 def get_local_file(fpath):
     return '/'+os.path.join(*__file__.split(os.sep)[:-1], fpath)
 
+def check_regression(regression_key, output, fname, debug=False):
+    try:
+        with open(get_local_file(fname), 'r') as json_file:
+            jf = json.loads(json_file.read())
+    except FileNotFoundError:
+        warnings.warn('{} not found. Creating it.'.format(fname))
+        jf = {}
+    if not debug and regression_key in jf:
+        with open(get_local_file(fname), 'r') as json_file:
+            jf = json.loads(json_file.read())
+            expected_output = [np.array(v) for v in jf[regression_key]]
+    else:
+        if isinstance(output, (list, tuple)):
+            jf[regression_key] = [i.tolist() for i in output]
+            expected_output = output
+        else:
+            jf[regression_key] = [output.tolist()]
+            expected_output = [output]
+        with open(get_local_file(fname), 'w') as json_file:
+            json.dump(jf, json_file)
+        warnings.warn('Regression test not found for {} in {}: Building this now.'.format(regression_key, fname))
+
+    # Now do assertions
+    if not isinstance(output, (list, tuple)):
+        output = [output]
+    for x, y in zip(output, expected_output):
+        assert np.isclose(x, y).all()
+        
 def test_luongAttention():
     tf.reset_default_graph()
     np.random.seed(256)
@@ -33,14 +62,12 @@ def test_luongAttention():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         output = sess.run(value)
-
-    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-        jf = json.loads(json_file.read())
-        expected_output = np.array(jf['luong_attention_expected_output'])    
     
-    assert output is not None  # Make sure the value is correct
+    assert output is not None  # Make sure the value is not none
     assert output.shape == (16, 128)  # Make sure the output shape is correct
-    assert np.isclose(output, expected_output).all()
+
+    # Do regression testing
+    check_regression('luong_attention_expected_output', output, 'test_attention_outputs.json')
 
 def test_luongAttention_local():
     tf.reset_default_graph()
@@ -70,14 +97,12 @@ def test_luongAttention_local():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         output = sess.run(value)
-
-    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-        jf = json.loads(json_file.read())
-        expected_output = np.array(jf['luong_attention_local_expected_output'])    
     
     assert output is not None  # Make sure the value is correct
     assert output.shape == (16, 128)  # Make sure the output shape is correct
-    assert np.isclose(output, expected_output).all()
+    
+    # Do regression testing
+    check_regression('luong_attention_local_expected_output', output, 'test_attention_outputs.json')
 
 def test_attentionQKVProjection():
     tf.reset_default_graph()
@@ -107,23 +132,14 @@ def test_attentionQKVProjection():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         output = sess.run(value)
-
-    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-        jf = json.loads(json_file.read())
-    jf['attention_qkv_projection_expected_output'] = [i.tolist() for i in output]
-    with open(get_local_file('test_attention_outputs.json'), 'w') as json_file:
-        json.dump(jf, json_file)
-    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-        jf = json.loads(json_file.read())
-        expected_output = [np.array(v) for v in jf['attention_qkv_projection_expected_output']] 
     
     assert output is not None  # Make sure the value is correct
     assert output[0].shape == (16, 10, 8)  # Make sure the output shape is correct
     assert output[1].shape == (16, 5, 8)  # Make sure the output shape is correct
     assert output[2].shape == (16, 5, 12)  # Make sure the output shape is correct
-    assert np.isclose(output[0], expected_output[0]).all()
-    assert np.isclose(output[1], expected_output[1]).all()
-    assert np.isclose(output[2], expected_output[2]).all()
+    
+    # Do regression testing
+    check_regression('attentionqkv_projection_expected_output', output, 'test_attention_outputs.json')
 
 def test_trilinearSimilarity():
     tf.reset_default_graph()
@@ -152,29 +168,126 @@ def test_trilinearSimilarity():
         sess.run(tf.local_variables_initializer())
         output = sess.run(value)
 
-    # with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-    #     jf = json.loads(json_file.read())
-    # jf['trilinear_similarity_expected_output'] = output.tolist()
-    # with open(get_local_file('test_attention_outputs.json'), 'w') as json_file:
-    #     json.dump(jf, json_file)
-    with open(get_local_file('test_attention_outputs.json'), 'r') as json_file:
-        jf = json.loads(json_file.read())
-        expected_output = np.array(jf['trilinear_similarity_expected_output'])
+    assert output is not None  # Make sure the value is correct
+    assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
+    
+    # Do regression testing
+    check_regression('trilinear_similarity_expected_output', output, 'test_attention_outputs.json')
+
+def test_scaledDotProductSimilarity():
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import ScaledDotProductSimilarity
+    sdp_layer = ScaledDotProductSimilarity()
+    assert sdp_layer is not None
+
+    # Encoded values
+    query_values = np.random.sample((16, 10, 128))
+    context_values = np.random.sample((16, 5, 128))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    context_tensor = tf.constant(context_values)
+
+    value = sdp_layer((context_tensor, query_tensor))
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    
     
     assert output is not None  # Make sure the value is correct
     assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
-    assert np.isclose(output, expected_output).all() 
 
-def test_scaledDotProductSimilarity():
-    pass
-
+    # Do regression testing
+    check_regression('scaled_dot_product_similarity_expected_output', output, 'test_attention_outputs.json')
 
 def test_applyAttentionMask():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import ApplyAttentionMask
+    aam_layer = ApplyAttentionMask()
+    assert aam_layer is not None
+
+    # Encoded values
+    similarity_values = np.ones((16, 10, 10))
+    similarity_values_heads = np.ones((16, 4, 10, 10))
+    mask_values = np.random.choice([0,1], size=(16, 10,10))
+    mask_values_heads = np.random.choice([0,1], size=(16, 10,10))
+
+    # Get some sample input tensors
+    similarity_tensor = tf.constant(similarity_values)
+    similarity_heads_tensor = tf.constant(similarity_values_heads)
+    mask_tensor = tf.constant(mask_values)
+    mask_heads_tensor = tf.constant(mask_values_heads)
+
+    value = aam_layer(inputs=similarity_tensor, mask=mask_tensor)
+    value_heads = aam_layer(inputs=similarity_heads_tensor, mask=mask_heads_tensor)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run([value, value_heads])
+    
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 10, 10)  # Make sure the value is not none
+    assert output[1].shape == (16, 4, 10, 10)  # Make sure the value is not none
+
+    check_regression('apply_attention_mask_expected_output', output, 'test_attention_outputs.json')
 
 
 def test_attentionMap():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import AttentionMap, ScaledDotProductSimilarity
+    sdp = ScaledDotProductSimilarity()
+    attention_map = AttentionMap(similarity_metric=sdp, attention_function=tf.nn.softmax)
+    assert attention_map is not None
+    assert sdp is not None
+
+    # Encoded values
+    query_values = np.random.sample((16, 4, 8, 12))
+    key_values = np.random.sample((16, 4, 20, 12))
+    value_values = np.random.sample((16, 4, 20, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 20))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    key_tensor = tf.constant(key_values)
+    value_tensor = tf.constant(value_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=(query_tensor, key_tensor, value_tensor), mask=mask_tensor)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 4, 8, 12)
+    assert output[1].shape == (16, 4, 8, 20)
+
+    check_regression('attention_map_expected_output', output, 'test_attention_outputs.json')
 
 
 def test_multiHeadAttentionMap():
