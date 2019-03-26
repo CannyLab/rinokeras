@@ -462,7 +462,7 @@ def test_selfAttention():
     masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
-    check_regression('self_attention_expected_output', output, 'test_attention_outputs.json', debug=True)
+    check_regression('self_attention_expected_output', output, 'test_attention_outputs.json')
 
 
 def test_contextQueryAttention():
