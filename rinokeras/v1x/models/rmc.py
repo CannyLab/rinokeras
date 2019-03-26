@@ -208,7 +208,7 @@ class RelationalMemoryCoreCell(Model):
         if self.gate_style == 'attention':
             self.attention_map = AttentionMap(ScaledDotProductSimilarity())  # ,tf.identity
             self.qkv_projection = AttentionQKVProjection(
-                self.mem_size, self.mem_size, kernel_initializer=kernel_initializer)
+                self.mem_size, self.mem_size, project_value=True, kernel_initializer=kernel_initializer)
         if treat_input_as_sequence:
             self.similarity = ScaledDotProductSimilarity()
 

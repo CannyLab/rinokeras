@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-import sys
 
 def get_test_data():
     x = np.random.sample((1000,50))
@@ -21,8 +20,6 @@ def do_setup():
     data = get_test_data()
 
     return model, build_model, loss_function, data
-
-
 
 def test_test_graph_one_device_construction():
     from rinokeras.v1x.train.TestGraph import TestGraph
@@ -109,7 +106,6 @@ def test_test_graph_multi_device_run_step():
             assert losses['Loss'].shape == (16, 1), losses['Loss'].shape
             total_losses += np.mean(losses['Loss'])
         assert total_losses > 0
-
 
 def test_train_graph_one_device_construction():
     from rinokeras.v1x.train.TrainGraph import TrainGraph

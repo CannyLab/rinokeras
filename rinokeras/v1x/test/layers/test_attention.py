@@ -261,9 +261,9 @@ def test_attentionMap():
     assert sdp is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 4, 8, 12))
-    key_values = np.random.sample((16, 4, 20, 12))
-    value_values = np.random.sample((16, 4, 20, 12))
+    query_values = np.random.sample((16, 8, 12))
+    key_values = np.random.sample((16, 20, 12))
+    value_values = np.random.sample((16, 20, 12))
     mask_values = np.random.choice([0,1], size=(16, 8, 20))
 
     # Get some sample input tensors
@@ -284,24 +284,219 @@ def test_attentionMap():
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 4, 8, 12)
-    assert output[1].shape == (16, 4, 8, 20)
+    assert output[0].shape == (16, 8, 12)
+    assert output[1].shape == (16, 8, 20)
 
     check_regression('attention_map_expected_output', output, 'test_attention_outputs.json')
 
 
 def test_multiHeadAttentionMap():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import MultiHeadAttentionMap, ScaledDotProductSimilarity
+    sdp = ScaledDotProductSimilarity()
+    attention_map = MultiHeadAttentionMap(similarity_metric=sdp, n_heads=4, attention_function=tf.nn.softmax)
+    assert attention_map is not None
+    assert sdp is not None
+
+    # Encoded values
+    query_values = np.random.sample((16, 8, 12))
+    key_values = np.random.sample((16, 20, 12))
+    value_values = np.random.sample((16, 20, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 20))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    key_tensor = tf.constant(key_values)
+    value_tensor = tf.constant(value_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=(query_tensor, key_tensor, value_tensor),
+                          mask=mask_tensor,
+                          return_attention_weights=True)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 8, 12)
+    assert output[1].shape == (16, 4, 8, 20)
+
+    masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
+    assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
+
+    check_regression('multihead_attention_map_expected_output', output, 'test_attention_outputs.json')
 
 
 def test_multiHeadAttention():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import MultiHeadAttention
+    attention_map = MultiHeadAttention(similarity_metric='scaled_dot', n_heads=4)
+    assert attention_map is not None
 
+    # Encoded values
+    query_values = np.random.sample((16, 8, 12))
+    key_values = np.random.sample((16, 20, 12))
+    value_values = np.random.sample((16, 20, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 20))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    key_tensor = tf.constant(key_values)
+    value_tensor = tf.constant(value_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=(query_tensor, key_tensor, value_tensor),
+                          mask=mask_tensor,
+                          return_attention_weights=True)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 8, 12)
+    assert output[1].shape == (16, 4, 8, 20)
+
+    # Check the masking
+    masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
+    assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
+
+    check_regression('multihead_attention_expected_output', output, 'test_attention_outputs.json')
+
+def test_multiHeadAttention():
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import MultiHeadAttention
+    attention_map = MultiHeadAttention(similarity_metric='trilinear', n_heads=4)
+    assert attention_map is not None
+
+    # Encoded values
+    query_values = np.random.sample((16, 8, 12))
+    key_values = np.random.sample((16, 20, 12))
+    value_values = np.random.sample((16, 20, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 20))
+
+    # Get some sample input tensors
+    query_tensor = tf.constant(query_values)
+    key_tensor = tf.constant(key_values)
+    value_tensor = tf.constant(value_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=(query_tensor, key_tensor, value_tensor),
+                          mask=mask_tensor,
+                          return_attention_weights=True)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 8, 12)
+    assert output[1].shape == (16, 4, 8, 20)
+
+    # Check the masking
+    masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
+    assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
+
+    check_regression('multihead_attention_trilinear_expected_output', output, 'test_attention_outputs.json')
 
 def test_selfAttention():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import SelfAttention
+    attention_map = SelfAttention(similarity_metric='scaled_dot', n_heads=4)
+    assert attention_map is not None
+
+    # Encoded values
+    sa_values = np.random.sample((16, 8, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 8))
+
+    # Get some sample input tensors
+    sa_tensor = tf.constant(sa_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=sa_tensor,
+                          mask=mask_tensor,
+                          return_attention_weights=True)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output[0] is not None  # Make sure the value is not none
+    assert output[1] is not None  # Make sure the value is not none
+    assert output[0].shape == (16, 8, 12)
+    assert output[1].shape == (16, 4, 8, 8)
+
+    # Check the masking
+    masked_vals = np.squeeze(output[1][:,0,:,:])[np.where(mask_values == 0)]
+    assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
+
+    check_regression('self_attention_expected_output', output, 'test_attention_outputs.json', debug=True)
 
 
 def test_contextQueryAttention():
-    pass
+    tf.reset_default_graph()
+    np.random.seed(256)
+    tf.random.set_random_seed(256)
+    # Construct the layer
+    from rinokeras.v1x.common.attention import ContextQueryAttention
+    attention_map = ContextQueryAttention(similarity_metric='trilinear')
+    assert attention_map is not None
+
+    # Encoded values
+    context_values = np.random.sample((16, 8, 12))
+    query_values = np.random.sample((16, 10, 12))
+    mask_values = np.random.choice([0,1], size=(16, 8, 10))
+
+    # Get some sample input tensors
+    context_tensor = tf.constant(context_values)
+    query_tensor = tf.constant(query_values)
+    mask_tensor = tf.constant(mask_values)
+
+    value = attention_map(inputs=(context_tensor, query_tensor),
+                          mask=mask_tensor)
+
+    # Construct the session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        output = sess.run(value)
+
+    assert output is not None  # Make sure the value is not none
+    assert output.shape == (16, 8, 4*12)
+
+    check_regression('context_query_attention_expected_output', output, 'test_attention_outputs.json')
 

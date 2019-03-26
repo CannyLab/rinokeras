@@ -72,6 +72,7 @@ class TransformerMultiAttention(Model):
         self.multi_attention = MultiHeadAttention(
             'scaled_dot', n_heads, dropout,
             key_size=key_size,
+            project_value=True,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=kernel_regularizer,
             bias_regularizer=bias_regularizer,
@@ -84,7 +85,7 @@ class TransformerMultiAttention(Model):
         assert source is not None
         attn_inputs = self.norm(target) if self.use_residual_norm else target
         attention, attention_weights = self.multi_attention(
-            (attn_inputs, source), mask=mask, return_attention_weights=True)
+            (attn_inputs, source, source), mask=mask, return_attention_weights=True)
 
         output = target + attention
         if not self.use_residual_norm:

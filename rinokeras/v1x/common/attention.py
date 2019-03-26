@@ -68,6 +68,7 @@ class AttentionQKVProjection(Model):
     def __init__(self,
                  key_depth: int,
                  value_depth: int = None,
+                 project_value: bool = True,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -78,6 +79,7 @@ class AttentionQKVProjection(Model):
 
         self.key_depth = key_depth
         self.value_depth = value_depth
+        self.project_value = project_value
 
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
@@ -94,12 +96,14 @@ class AttentionQKVProjection(Model):
                                       bias_regularizer=self.bias_regularizer,
                                       activity_regularizer=self.activity_regularizer)
         self.key_norm = LayerNorm()
-        self.value_layer = Dense(self.value_depth, use_bias=False,
-                                      kernel_initializer=kernel_initializer,
-                                      kernel_regularizer=self.kernel_regularizer,
-                                      bias_regularizer=self.bias_regularizer,
-                                      activity_regularizer=self.activity_regularizer)
-        self.value_norm = LayerNorm()
+
+        if self.project_value:
+            self.value_layer = Dense(self.value_depth, use_bias=False,
+                                        kernel_initializer=kernel_initializer,
+                                        kernel_regularizer=self.kernel_regularizer,
+                                        bias_regularizer=self.bias_regularizer,
+                                        activity_regularizer=self.activity_regularizer)
+            self.value_norm = LayerNorm()
 
     def call(self, inputs):
         """
@@ -111,7 +115,10 @@ class AttentionQKVProjection(Model):
         query_antecedent, key_antecedent, value_antecedent = inputs
         queries = self.query_norm(self.query_layer(query_antecedent))
         keys = self.key_norm(self.key_layer(key_antecedent))
-        values = self.value_norm(self.value_layer(value_antecedent))
+        if self.project_value:
+            values = self.value_norm(self.value_layer(value_antecedent))
+        else:
+            values = value_antecedent
         return [queries, keys, values]
 
 
@@ -176,8 +183,15 @@ class TrilinearSimilarity(Layer):
         context_weighted = K.dot(context, self.context_weights)
 
         # query_weighted -> Tensor with shape [batch_size, 1, query_length]
-        query_weighted = tf.transpose(
-            K.dot(query, self.query_weights), (0, 2, 1))
+        if len(query.shape) == 3:
+            query_weighted = tf.transpose(
+                K.dot(query, self.query_weights), (0, 2, 1))
+        elif len(query.shape) == 4:
+            # We need to account for the head dimension in multi-headed attention layers
+            query_weighted = tf.transpose(
+                K.dot(query, self.query_weights), (0, 1, 3, 2))
+        else:
+            raise NotImplementedError('Trilinear similairty only supported with 3 or 4 dimensions')
 
         # weighted_context_query -> Tensor with shape [batch_size, context_length, query_length]
         weighted_context_query = tf.matmul(
@@ -273,7 +287,7 @@ class AttentionMap(Model):
         self.apply_mask = ApplyAttentionMask(hadamard=use_hadamard_mask)
         self.dropout = Dropout(0 if dropout is None else dropout)
 
-    def call(self, inputs, mask=None):
+    def call(self, inputs, mask=None, return_attention_weights=True):
         """Fast scaled dot product attention.
 
             :param queries: Tensor with shape [batch_size, heads (optional), n_queries, depth_k]
@@ -294,12 +308,18 @@ class AttentionMap(Model):
         weights = self.dropout(weights)
         tf.add_to_collection('ATTENTION_WEIGHTS', weights)
         output = tf.matmul(weights, values)
-        return output, weights
+        if return_attention_weights:
+            return output, weights
+        return output
 
 
 class MultiHeadAttentionMap(Model):
 
-    def __init__(self, similarity_metric, n_heads: int, dropout: Optional[float] = None) -> None:
+    def __init__(self,
+                 similarity_metric: Callable[[Tuple[tf.Tensor, tf.Tensor]], tf.Tensor],
+                 n_heads: int,
+                 attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
+                 dropout: Optional[float] = None) -> None:
         """Map the multi-headed attention across the map
 
         Arguments:
@@ -311,7 +331,7 @@ class MultiHeadAttentionMap(Model):
         """
 
         super().__init__()
-        self.attention_map = AttentionMap(similarity_metric, dropout=dropout)
+        self.attention_map = AttentionMap(similarity_metric, attention_function=attention_function, dropout=dropout)
         self.n_heads = n_heads
 
     def build(self, input_shape):
@@ -336,8 +356,7 @@ class MultiHeadAttentionMap(Model):
         output = self._combine_heads(attention_output_split)
         if return_attention_weights:
             return output, attention_weights
-        else:
-            return output
+        return output
 
     def _split_heads(self, tensor):
         tensor.shape.assert_has_rank(3)
@@ -372,25 +391,34 @@ class MultiHeadAttention(Model):
                  dropout: Optional[float] = None,
                  key_size: Optional[int] = None,
                  value_size: Optional[int] = None,
+                 attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
+                 project_value: bool = True, 
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None) -> None:
         super().__init__()
-        if similarity_metric != "scaled_dot":
-            raise NotImplementedError(
-                "Haven't got around to implementing other attention types yet!")
 
-        self.similarity_metric = similarity_metric
+        # Setup the similarity map
+        sm_map = {
+            'scaled_dot': ScaledDotProductSimilarity,
+            'trilinear': TrilinearSimilarity,
+        }
+        if similarity_metric in sm_map:
+            self.similarity_metric = sm_map[similarity_metric]()
+        else:
+            raise NotImplementedError('Similarity metric {} is not implemented. Choose one of {}'.format(similarity_metric, sm_map.keys()))
+
         self.key_size = key_size
         self.value_size = value_size
         self.n_heads = n_heads
+        self.project_value = project_value
+        self.attention_function = attention_function
         assert key_size is None or key_size % n_heads == 0, \
             'Key size must be divisible by n_heads if provided'
 
-        self.similarity_metric = ScaledDotProductSimilarity()
         self.attention_layer = MultiHeadAttentionMap(
-            self.similarity_metric, n_heads, dropout)
+            self.similarity_metric, n_heads, self.attention_function, dropout)
 
         self.kernel_initializer = kernel_initializer
         self.kernel_regularizer = kernel_regularizer
@@ -400,17 +428,20 @@ class MultiHeadAttention(Model):
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def build(self, input_shapes):
-        query_antecedent_shape, memory_antecedent_shape = input_shapes
-        key_size = query_antecedent_shape[-1] if self.key_size is None else self.key_size
-        value_size = query_antecedent_shape[-1] if self.value_size is None else self.value_size
-        assert key_size % self.n_heads == 0, 'Feature size must be divisible by n_heads'
+        query_antecedent_shape, key_antecedent_shape, value_antecedent_shape = input_shapes
+        self.query_size = query_antecedent_shape[-1] if self.key_size is None else self.key_size
+        self.key_size = key_antecedent_shape[-1] if self.key_size is None else self.key_size
+        self.value_size = value_antecedent_shape[-1] if self.value_size is None else self.value_size
+
+        assert self.key_size == self.query_size
+        assert self.key_size % self.n_heads == 0, 'Feature size must be divisible by n_heads'
         # assert qa_channels == ma_channels, 'Cannot combine tensors with different shapes'
-        self.compute_qkv = AttentionQKVProjection(key_size, value_size,
+        self.compute_qkv = AttentionQKVProjection(self.key_size, self.value_size, self.project_value,
                                         kernel_initializer=self.kernel_initializer,
                                         kernel_regularizer=self.kernel_regularizer,
                                         bias_regularizer=self.bias_regularizer,
                                         activity_regularizer=self.activity_regularizer)
-        self.output_layer = Dense(value_size, use_bias=False,
+        self.output_layer = Dense(self.value_size, use_bias=False,
                                   kernel_initializer=self.kernel_initializer,
                                   kernel_regularizer=self.kernel_regularizer,
                                   bias_regularizer=self.bias_regularizer,
@@ -419,16 +450,17 @@ class MultiHeadAttention(Model):
     def call(self, inputs, mask=None, return_attention_weights=False):
         """Fast multi-head self attention.
 
-            :param inputs: tuple of (query_antecedent, memory_antecedent)
+            :param inputs: tuple of (query_antecedent, key_antecedent, value_antecedent)
                 query_antecedent -> tensor w/ shape [batch_size, n_queries, channels]
-                memory_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
+                key_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
+                value_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
         """
         assert isinstance(inputs, tuple) or isinstance(inputs, list) and len(inputs) == 2, \
             'Must pass query and memory'
-        qa, ma = inputs
-        q, k, v = self.compute_qkv((qa, ma, ma))
+        qa, ma, va = inputs
+        qkv_projection = self.compute_qkv((qa, ma, va))
         attention_output, attention_weights = self.attention_layer(
-            (q, k, v), mask=mask, return_attention_weights=True)
+            qkv_projection, mask=mask, return_attention_weights=True)
         output = self.output_layer(attention_output)
         output = self.dropout(output)
         if return_attention_weights:
@@ -450,25 +482,25 @@ class SelfAttention(Model):
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
         super().__init__()
-        self.multi_attention = MultiHeadAttention(similarity_metric, n_heads, dropout, **kwargs)
+        self.multi_attention = MultiHeadAttention(similarity_metric=similarity_metric, n_heads=n_heads, dropout=dropout, **kwargs)
 
     def call(self, inputs, mask=None, return_attention_weights=False):
-        return self.multi_attention((inputs, inputs), mask=mask, return_attention_weights=return_attention_weights)
+        return self.multi_attention((inputs, inputs, inputs), mask=mask, return_attention_weights=return_attention_weights)
 
 
 class ContextQueryAttention(Model):
 
     def __init__(self,
-                 attention_type: str = "trilinear",
+                 similarity_metric: str = "trilinear",
                  dropout: Optional[float] = None,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  regularizer=None) -> None:
         super().__init__()
-        if attention_type != "trilinear":
+        if similarity_metric != "trilinear":
             raise NotImplementedError(
                 "Haven't got around to implementing other attention types yet!")
 
-        self.attention_type = attention_type
+        self.similarity_metric = similarity_metric
         self.dropout = Dropout(0 if dropout is None else dropout)
         self.apply_mask = ApplyAttentionMask()
         self.trilinear_similarity = TrilinearSimilarity(
@@ -476,7 +508,7 @@ class ContextQueryAttention(Model):
             kernel_initializer=kernel_initializer,
             regularizer=regularizer)
 
-    def call(self, query, context=None, mask=None):
+    def call(self, inputs, mask=None):
         """
         Args:
             (query, context) ->
@@ -486,7 +518,7 @@ class ContextQueryAttention(Model):
         Returns:
             outputs: a Tensor with shape [batch_size, context_length, 4 * d_model]
         """
-        assert context is not None
+        context, query = inputs
         # similarity -> Tensor with shape [batch_size, context_length, query_length]
         similarity = self.trilinear_similarity((context, query))
         masked_similarity = self.apply_mask(similarity, mask=mask)
