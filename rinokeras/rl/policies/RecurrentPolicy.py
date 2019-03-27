@@ -42,7 +42,6 @@ class RecurrentPolicy(StandardPolicy):
 
         if not isinstance(initial_state, collections.Sequence):
             initial_state = [initial_state]
-
         state = [s * (1 - mask) + init_s * mask for s, init_s in zip(state, initial_state)]
         return state
 
