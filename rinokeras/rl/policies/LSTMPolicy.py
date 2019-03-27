@@ -22,7 +22,7 @@ class LSTMPolicy(RecurrentPolicy):
                  use_rmc: bool = False,
                  **kwargs) -> None:
 
-        recurrent_cell = GRUCell(lstm_cell_size, implementation=2)
+        recurrent_cell = LSTMCell(lstm_cell_size, implementation=2)
         super().__init__(
             obs_space,
             act_space,
