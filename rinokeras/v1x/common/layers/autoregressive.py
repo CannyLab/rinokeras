@@ -63,7 +63,7 @@ class CouplingLayer(Model):
     def call(self, inputs, reverse=False, **kwargs):
         inputs_a, inputs_b = inputs
         transform = self.layer(inputs_a, **kwargs)
-        log_s = self.pred_s(transform)
+        log_s = self.pred_log_s(transform)
         t = self.pred_t(transform)
         if reverse:
             b_transform = (inputs_b - t) / tf.exp(log_s)
