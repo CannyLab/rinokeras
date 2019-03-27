@@ -74,6 +74,8 @@ class BaselinesPolicyWrapper(object):
         self.this_policy = BaselinesPolicyWrapper.policy_num
         if extra_inputs is None:
             extra_inputs = {}
+        print('Building policy with observation space {} and action space {}.'.format(
+            env.observation_space, env.action_space))
         output = policy(observations, **extra_inputs)
 
         self.policy = policy
@@ -83,15 +85,13 @@ class BaselinesPolicyWrapper(object):
 
         # Based on the action space, will select what probability distribution type
         self.pdtype = make_pdtype(env.action_space)
-        self.test = []
 
-        # self.pd, self.pi = self.pdtype.pdfromlatent(latent, init_scale=0.01)
         self.pd = policy.pd
 
         # Calculate the neg log of our probability
         self.sess = sess or tf.get_default_session()
 
-        self.load_from_lrl()
+        # self.load_from_lrl()
 
         if estimate_q:
             assert isinstance(env.action_space, gym.spaces.Discrete)
@@ -232,16 +232,17 @@ class BaselinesPolicyFnWrapper:
 
         if 'lstm' in policy_network:
             policy_type = LSTMPolicy
-            extra_args = {'lstm_cell_size': 512}
+            extra_args = {'lstm_cell_size': 128}
             self.recurrent = True
         elif 'rmc' in policy_network:
             policy_type = RMCPolicy
             extra_args = {
-                'mem_slots': 10,
+                'mem_slots': 49,
                 'mem_size': 64,
-                'n_heads': 1,
+                'n_heads': 4,
                 'treat_input_as_sequence': True,
-                'use_cross_attention': False}
+                'use_cross_attention': True,
+                'layer_norm': False}
             self.recurrent = True
             use_rmc = True
 

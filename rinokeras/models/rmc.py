@@ -7,11 +7,11 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
+from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV, MultiHeadAttention
 from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
-    LayerNorm
+    LayerNorm, Stack
 
-from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward
+from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward, TransformerEncoder
 
 
 class RMCFeedForward(Model):
@@ -179,8 +179,8 @@ class RelationalMemoryCoreCell(Model):
         self.forget_bias = forget_bias
         self.gate_style = gate_style
         self.state_size = [mem_slots * mem_size]
-        if gate_style == 'lstm':
-            self.state_size = [mem_slots * mem_size, mem_slots * mem_size]
+        # if gate_style == 'lstm':
+            # self.state_size = [mem_slots * mem_size, mem_slots * mem_size]
         self.treat_input_as_sequence = treat_input_as_sequence
         self.use_cross_attention = use_cross_attention
         self.return_attention_weights = return_attention_weights
@@ -216,6 +216,7 @@ class RelationalMemoryCoreCell(Model):
 
         # self.posembed = PositionEmbedding()
         self.posembed = LearnedEmbedding()
+
         self.flatten = Flatten()
         num_gates = self._calculate_gate_size() * 2
         self.gate_inputs = Dense(
@@ -256,17 +257,11 @@ class RelationalMemoryCoreCell(Model):
         if dtype is None:
             dtype = tf.float32
         zeros = tf.zeros((batch_size, self.mem_slots, self.mem_size), dtype=dtype)
-        position = tf.stop_gradient(self.posembed(zeros))
+        position = zeros
         if self.gate_style == 'lstm':
             return [self.flatten(position), zeros]
         else:
             return [self.flatten(position)]
-        # init_state = tf.one_hot(tf.range(self.mem_slots),
-                                # self.mem_size, dtype=dtype)
-        # init_state = tf.tile(init_state[None], (batch_size, 1, 1))
-        # init_state = self.flatten(init_state)
-
-        # return init_state
 
     def get_initial_state_numpy(self, batch_size: int):
         if not tf.executing_eagerly():
@@ -345,7 +340,12 @@ class RelationalMemoryCoreCell(Model):
             next_memory: This time step's memory
         """
         memory = states[0]
+        memory.shape.assert_has_rank(2)
+        is_new_state = tf.reduce_all(tf.equal(memory, 0), 1)
+        is_new_state = tf.cast(is_new_state, memory.dtype)[:, None, None]
+
         memory = self.reshape(memory)
+
         if self.gate_style == 'lstm':
             carry = states[1]
             carry = self.reshape(carry)
@@ -359,11 +359,15 @@ class RelationalMemoryCoreCell(Model):
             # expand the first dimension so it will concat across mem slots
             inputs = inputs[:, None]
 
+        # memory = (1 - is_new_state) * memory + is_new_state * self.posembed(memory)
+        memory = (1 - is_new_state) * memory + is_new_state * inputs
+
         if self.use_cross_attention:
             inputs_mask = tf.reduce_any(tf.cast(inputs, tf.bool), -1)
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
                 memory, rmc_inputs=inputs, cross_attention_mask=None, return_cross_attention_weights=True)
+            output = self.flatten(next_memory)  # DEBUG
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
@@ -403,6 +407,151 @@ class RelationalMemoryCoreCell(Model):
         return output, [next_memory]
 
 
+class SpatialRelationalMemoryCoreCell(Model):
+
+    def __init__(self,
+                 mem_slots: int,
+                 mem_size: int,
+                 n_heads: int,
+                 key_size: Optional[int] = None,
+                 forget_bias: float = 1.0,
+                 input_bias: float = 0.0,
+                 dropout: Optional[float] = None,
+                 layer_norm: bool = False,
+                 return_attention_weights: bool = False,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 **kwargs) -> None:
+
+        super().__init__(**kwargs)
+        self.mem_slots = mem_slots
+        self.mem_size = mem_size
+        self.n_heads = n_heads
+        self.input_bias = input_bias
+        self.forget_bias = forget_bias
+        self.state_size = [mem_slots * mem_size] * 2
+        self.return_attention_weights = return_attention_weights
+        self.layer_norm = layer_norm
+
+        if return_attention_weights:
+            raise NotImplementedError("Can't return attention weights yet.")
+
+        self.reshape = Reshape((mem_slots, mem_size))
+        self.initial_embed = Dense(
+            mem_size, activation='relu', use_bias=True,
+            kernel_initializer=kernel_initializer)
+
+        self.attention_update = TransformerEncoder(
+            embedding_layer=None,
+            n_layers=1,
+            n_heads=n_heads,
+            d_model=mem_size,
+            d_filter=4 * mem_size,
+            dropout=None,
+            layer_dropout=None,
+            use_conv=False,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
+
+        self.output_projection = Dense(4 * mem_size, activation='linear')
+
+        self.flatten = Flatten()
+
+        self._initial_state = None
+        if not tf.executing_eagerly():
+            self._batch_size_ph = tf.placeholder(tf.int32, shape=[])
+
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        """Creates the initial memory.
+
+        We should ensure each row of the memory is initialized to be unique,
+        so initialize the matrix to be the identity. We then pad or truncate
+        as necessary so that init_state is of size
+        (batch_size, self._mem_slots, self._mem_size).
+
+        Args:
+            batch_size: The size of the batch.
+
+        Returns:
+            init_state: A truncated or padded matrix of size
+                (batch_size, self._mem_slots, self._mem_size).
+        """
+
+        if batch_size is None:
+            assert inputs is not None, 'Must pass either batch_size or inputs'
+            batch_size = tf.shape(inputs)[0]
+
+        if dtype is None:
+            dtype = tf.float32
+
+        hidden = tf.zeros((batch_size, self.mem_slots * self.mem_size), dtype=dtype)
+        carry = tf.zeros((batch_size, self.mem_slots * self.mem_size), dtype=dtype)
+        return [hidden, carry]
+
+    def get_initial_state_numpy(self, batch_size: int):
+        if not tf.executing_eagerly():
+            if self._initial_state is None:
+                self._initial_state = self.get_initial_state(batch_size=self._batch_size_ph)
+
+            sess = K.get_session()
+            return sess.run(self._initial_state, feed_dict={self._batch_size_ph: batch_size})
+        else:
+            return [arr.numpy() for arr in self.get_initial_state(batch_size=batch_size)]
+
+    def build(self, input_shape):
+        self.built = True
+
+    def call(self, inputs, states):
+        """Runs the relational memory core.
+
+        Args:
+            inputs: Tensor input of shape [batch_size, n_dims]
+            memory: Memory output from previous timestep
+
+        Returns:
+            output: This time step's output
+            next_memory: This time step's memory
+        """
+        hidden, carry = states
+        inputs.shape.assert_has_rank(3)
+        hidden.shape.assert_has_rank(2)
+        carry.shape.assert_has_rank(2)
+
+        hidden = self.reshape(hidden)
+        carry = self.reshape(carry)
+
+        hidden_plus_input = tf.concat((hidden, inputs), -1)
+        hidden_plus_input = self.initial_embed(hidden_plus_input)  # Do we need this?
+
+        attention_update = self.attention_update(hidden_plus_input)
+
+        # Parameters of gates are concatenated into one conv for efficiency.
+        i_j_f_o = self.output_projection(attention_update)
+
+        # i = input_gate, j = new_input, f = forget_gate, o = output_gate
+        input_gate, new_input, forget_gate, output_gate = tf.split(axis=-1, num_or_size_splits=4, value=i_j_f_o)
+
+        new_carry = carry * tf.sigmoid(forget_gate + self.forget_bias) + tf.sigmoid(input_gate) * tf.tanh(new_input)
+        new_hidden = tf.tanh(new_carry) * tf.sigmoid(output_gate)
+
+        new_hidden = self.flatten(new_hidden)
+        new_carry = self.flatten(new_carry)
+        # attention_weights = self.flatten(attention_weights)
+
+        output = new_hidden
+
+        if self.layer_norm:
+            output = self.norm(output)
+
+        # output = output if not self.return_attention_weihts else tf.concat((output, attention_weights), 1)
+
+        return output, [new_hidden, new_carry]
+
+
 class RelationalMemoryCore(RNN):
 
     def __init__(self,
@@ -439,6 +588,62 @@ class RelationalMemoryCore(RNN):
             gate_style=gate_style,
             treat_input_as_sequence=treat_input_as_sequence,
             use_cross_attention=use_cross_attention,
+            return_attention_weights=return_attention_weights,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer)
+        super().__init__(
+            cell, return_sequences=return_sequences, return_state=return_state,
+            go_backwards=go_backwards, stateful=stateful, unroll=unroll, **kwargs)
+
+    def get_initial_state_numpy(self, batch_size: int):
+        return self.cell.get_initial_state_numpy(batch_size)
+
+    @property
+    def mem_slots(self) -> int:
+        return self.cell.mem_slots
+
+    @property
+    def mem_size(self) -> int:
+        return self.cell.mem_size
+
+    @property
+    def n_heads(self) -> int:
+        return self.cell.n_heads
+
+
+class SpatialRelationalMemoryCore(RNN):
+
+    def __init__(self,
+                 mem_slots: int,
+                 mem_size: int,
+                 n_heads: int,
+                 key_size: Optional[int] = None,
+                 forget_bias: float = 1.0,
+                 input_bias: float = 0.0,
+                 dropout: Optional[float] = None,
+                 layer_norm: bool = False,
+                 return_attention_weights: bool = False,
+                 kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
+                 kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 activity_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+                 return_sequences: bool = False,
+                 return_state: bool = False,
+                 go_backwards: bool = False,
+                 stateful: bool = False,
+                 unroll: bool = False,
+                 **kwargs) -> None:
+
+        cell = SpatialRelationalMemoryCoreCell(
+            mem_slots=mem_slots,
+            mem_size=mem_size,
+            n_heads=n_heads,
+            key_size=key_size,
+            forget_bias=forget_bias,
+            input_bias=input_bias,
+            dropout=dropout,
             return_attention_weights=return_attention_weights,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=kernel_regularizer,
