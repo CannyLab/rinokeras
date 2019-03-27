@@ -13,6 +13,8 @@
 - Changed default to tensorflow 2.0
 - Added support for tensorflow 2.0
 - Added TPU support for tensorflow 2.0 libraries
+- Add support for Keras compile/fit
+- Restructure utils folder
 
 ## Minor/All Changes
 
