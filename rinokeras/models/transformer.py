@@ -421,20 +421,7 @@ class TransformerEncoder(Model):
             activity_regularizer=activity_regularizer,
             use_weight_norm=use_weight_norm) for _ in range(n_layers)], name='encoder_stack')
 
-    def call(self, inputs, encoder_mask=None, conv_mask=None):
-        """
-            Args:
-                inputs: Either a float32 or in32 Tensor with shape [batch_size, sequence_length, ndim]
-                encoder_mask: a boolean Tensor with shape [batch_size, sequence_length, sequence_length]
-            Returns:
-                output: a Tensor with shape [batch_size, sequence_length, d_model]
-        """
-
-        if self.embedding_layer is not None:
-            inputs = self.embedding_layer(inputs)
-            if conv_mask is not None:
-                inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
-
+    def check_mask_shapes(self, inputs, encoder_mask, conv_mask):
         inputs.shape.assert_has_rank(3)
         batch_size, seqlen, dims = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
@@ -465,8 +452,23 @@ class TransformerEncoder(Model):
                 seqlen, conv_seq,
                 message='Seqlen mismatch between inputs and conv mask')
             assertions += [conv_batch_assert, conv_seq_assert]
+        return assertions
 
-        with tf.control_dependencies(assertions):
+    def call(self, inputs, encoder_mask=None, conv_mask=None):
+        """
+            Args:
+                inputs: Either a float32 or in32 Tensor with shape [batch_size, sequence_length, ndim]
+                encoder_mask: a boolean Tensor with shape [batch_size, sequence_length, sequence_length]
+            Returns:
+                output: a Tensor with shape [batch_size, sequence_length, d_model]
+        """
+
+        if self.embedding_layer is not None:
+            inputs = self.embedding_layer(inputs)
+            if conv_mask is not None:
+                inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
+
+        with tf.control_dependencies(self.check_mask_shapes(inputs, encoder_mask, conv_mask)):
             output = self.encoding_stack(
                 inputs, self_attention_mask=encoder_mask, conv_mask=conv_mask)
 
