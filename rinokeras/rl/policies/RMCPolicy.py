@@ -4,7 +4,7 @@ from typing import Optional
 import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.initializers import Orthogonal
-from rinokeras.models.rmc import RelationalMemoryCoreCell
+from rinokeras.models.rmc import RelationalMemoryCoreCell, SpatialRelationalMemoryCoreCell
 from rinokeras.common.layers import WeightNormDense as Dense
 from rinokeras.common.layers import LayerNorm, Stack
 
@@ -27,6 +27,7 @@ class RMCPolicy(RecurrentPolicy):
                  n_heads: int = 1,
                  key_size: Optional[int] = None,
                  gate_style: str = 'unit',
+                 layer_norm: bool = False,
                  treat_input_as_sequence: bool = False,
                  use_cross_attention: bool = False,
                  take_greedy_actions: bool = False,
@@ -35,16 +36,14 @@ class RMCPolicy(RecurrentPolicy):
                  use_rmc: bool = False,
                  **kwargs) -> None:
 
-        recurrent_cell = RelationalMemoryCoreCell(
+        recurrent_cell = SpatialRelationalMemoryCoreCell(
             mem_slots=mem_slots,
             mem_size=mem_size,
             n_heads=n_heads,
             key_size=key_size,
             dropout=None,
-            gate_style=gate_style,
-            treat_input_as_sequence=treat_input_as_sequence,
-            use_cross_attention=use_cross_attention,
-            return_attention_weights=True,
+            layer_norm=layer_norm,
+            return_attention_weights=False,
             kernel_initializer=Orthogonal(math.sqrt(2.0)),
             name='relational_memory_core')
         super().__init__(
@@ -60,18 +59,18 @@ class RMCPolicy(RecurrentPolicy):
             normalize_observations=normalize_observations,
             **kwargs)
         self.output_dense = Stack([
-            LayerNorm(), Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))])
+            Dense(512, activation='relu', kernel_initializer=Orthogonal(math.sqrt(2.0)))])
 
     def get_initial_state(self, batch_size):
         return self.cell.get_initial_state_numpy(batch_size)[0]
 
     def unroll_recurrence(self, embedding, mask, initial_state, nenv, nsteps):
         output, state = super().unroll_recurrence(embedding, mask, initial_state, nenv, nsteps)
-        num_out = embedding.shape[1] * self.cell.mem_size
-        output_attention = output[:, num_out:]
-        if not hasattr(self, 'attention'):
-            self.attention = tf.reshape(
-                output_attention, (embedding.shape[0], self.cell.n_heads, self.cell.mem_slots, embedding.shape[1]))
-        output = output[:, :num_out]
+        # num_out = embedding.shape[1] * self.cell.mem_size
+        # output_attention = output[:, num_out:]
+        # if not hasattr(self, 'attention'):
+            # self.attention = tf.reshape(
+                # output_attention, (embedding.shape[0], self.cell.n_heads, self.cell.mem_slots, embedding.shape[1]))
+        # output = output[:, :num_out]
         output = self.output_dense(output)
         return output, state
