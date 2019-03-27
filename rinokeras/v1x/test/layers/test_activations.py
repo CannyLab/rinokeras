@@ -66,4 +66,4 @@ def test_gated_tanh():
 
     # Do regression testing
     check_regression('gated_tanh_expected_output',
-                     output, 'test_activation_outputs.json')
+                     output, 'regression_outputs/test_activation_outputs.json')

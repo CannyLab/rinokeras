@@ -14,10 +14,11 @@ class RandomGaussNoise(tf.keras.layers.Layer):
     Adds gaussian random noise to input with trainable standard deviation.
     """
 
-    def __init__(self, noise_shape: Optional[Tuple[int, ...]] = None, initial_logstd: float = 0) -> None:
+    def __init__(self, noise_shape: Optional[Tuple[int, ...]] = None, initial_logstd: float = 0, dtype=tf.float32) -> None:
         super().__init__()
         self._noise_shape = noise_shape
         self._initial_logstd = initial_logstd
+        self._dtype = dtype
 
     def build(self, input_shape):
         if self._noise_shape is not None:
@@ -28,12 +29,12 @@ class RandomGaussNoise(tf.keras.layers.Layer):
         else:
             shape = input_shape[1:]
         self._logstd = self.add_weight(
-            'logstd', shape, dtype=tf.float32, initializer=tf.constant_initializer(self._initial_logstd))
+            'logstd', shape, dtype=self._dtype, initializer=tf.constant_initializer(self._initial_logstd))
         super().build(input_shape)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
         epsilon = tf.random_normal(tf.shape(inputs))
-        return inputs + epsilon * tf.expand_dims(tf.exp(self._logstd), 0)
+        return inputs + tf.cast(epsilon * tf.expand_dims(tf.exp(self._logstd), 0), inputs.dtype)
 
     @property
     def logstd(self) -> tf.Tensor:

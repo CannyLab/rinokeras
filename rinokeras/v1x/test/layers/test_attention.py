@@ -73,7 +73,7 @@ def test_luongAttention():
 
     # Do regression testing
     check_regression('luong_attention_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_luongAttention_local():
@@ -112,7 +112,7 @@ def test_luongAttention_local():
 
     # Do regression testing
     check_regression('luong_attention_local_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_attentionQKVProjection():
@@ -155,7 +155,7 @@ def test_attentionQKVProjection():
 
     # Do regression testing
     check_regression('attentionqkv_projection_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_trilinearSimilarity():
@@ -190,7 +190,7 @@ def test_trilinearSimilarity():
 
     # Do regression testing
     check_regression('trilinear_similarity_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_scaledDotProductSimilarity():
@@ -225,7 +225,7 @@ def test_scaledDotProductSimilarity():
 
     # Do regression testing
     check_regression('scaled_dot_product_similarity_expected_output',
-                     output, 'test_attention_outputs.json')
+                     output, 'regression_outputs/test_attention_outputs.json')
 
 
 def test_applyAttentionMask():
@@ -268,7 +268,7 @@ def test_applyAttentionMask():
     assert output[1].shape == (16, 4, 10, 10)
 
     check_regression('apply_attention_mask_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_attentionMap():
@@ -313,7 +313,7 @@ def test_attentionMap():
     assert output[1].shape == (16, 8, 20)
 
     check_regression('attention_map_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_multiHeadAttentionMap():
@@ -363,7 +363,7 @@ def test_multiHeadAttentionMap():
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
     check_regression('multihead_attention_map_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_multiHeadAttention():
@@ -410,7 +410,7 @@ def test_multiHeadAttention():
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
     check_regression('multihead_attention_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_multiHeadAttention_trilinear():
@@ -457,7 +457,7 @@ def test_multiHeadAttention_trilinear():
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
     check_regression('multihead_attention_trilinear_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_selfAttention():
@@ -499,7 +499,7 @@ def test_selfAttention():
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
     check_regression('self_attention_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')
 
 
 def test_contextQueryAttention():
@@ -536,4 +536,4 @@ def test_contextQueryAttention():
     assert output.shape == (16, 8, 4*12)
 
     check_regression('context_query_attention_expected_output', output,
-                     'test_attention_outputs.json')
+                     'regression_outputs/test_attention_outputs.json')

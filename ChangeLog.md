@@ -44,4 +44,11 @@
 - Reversed order of "context" and "query" in call to ContextQueryAttention to maintain consistency
 - Changed ContextQueryAttention "attention_method" argument to "similarity_metric" to maintain consistency
 
+### Activation Layers (1.x)
+- No Changes
+
+### Autoregressive Layers (1.x)
+- Fixed breaking bug in CouplingLayer
+
+
 
