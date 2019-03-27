@@ -18,7 +18,7 @@ from rinokeras.utils import get_shape
 
 DecoderResult = namedtuple('DecoderResult', [
                            'seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished'])
-
+DecRes = namedtuple('DecRes', ['seqpos', 'inputs', 'cache', 'output_sequence', 'is_finished', 'seq_length', 'scores'])
 
 class TransformerSelfAttention(Model):
 
@@ -273,15 +273,12 @@ class TransformerDecoderBlock(Model):
              self_attention_mask=None,
              cross_attention_mask=None,
              return_self_attention_weights=False,
-             return_cross_attention_weights=False):
-
+             return_cross_attention_weights=False):        
         if isinstance(decoder_inputs, tuple):
             decoder_inputs, cache = decoder_inputs
-            seqpos = cache['seqpos']
-            cache[self.name] = cache[self.name].write(
-                seqpos, K.squeeze(decoder_inputs, 1))
-            all_inputs = cache[self.name].stack()
-            all_inputs = tf.transpose(all_inputs, (1, 0, 2))
+            start_cdn = tf.equal(cache['seqpos'], tf.constant(0))
+            all_inputs = tf.cond(start_cdn, lambda: decoder_inputs, lambda: tf.concat([cache[self.name], decoder_inputs], axis=1))
+            cache[self.name] = all_inputs
         else:
             all_inputs = decoder_inputs
             cache = None
@@ -302,15 +299,19 @@ class TransformerDecoderBlock(Model):
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
-        encdec_attention, cross_attention_weights = self.multi_attention(
-            target_selfattn,
-            source=encoder_outputs,
-            mask=cross_attention_mask,
-            return_attention_weights=True)
-        encdec_attention = self.layer_drop_2(encdec_attention, target_selfattn)
 
-        output = self.feed_forward(encdec_attention)
-        output = self.layer_drop_3(output, encdec_attention)
+        if encoder_outputs is not None:
+            encdec_attention, cross_attention_weights = self.multi_attention(
+                target_selfattn,
+                source=encoder_outputs,
+                mask=cross_attention_mask,
+                return_attention_weights=True)
+            attn_output = self.layer_drop_2(encdec_attention, target_selfattn)
+        else:
+            attn_output = target_selfattn
+
+        output = self.feed_forward(attn_output)
+        output = self.layer_drop_3(output, attn_output)
 
         output = output if cache is None else (output, cache)
 
@@ -376,9 +377,15 @@ class TSAODBlock(Model):
         else:
             all_inputs = decoder_inputs
             cache = None
-        target_selfattn = self.layer_drop_1(
-            self.self_attention, decoder_inputs, source=all_inputs, mask=self_attention_mask)
-        output = self.layer_drop_2(self.feed_forward, target_selfattn)
+
+        target_selfattn, self_attention_weights = self.self_attention(
+            decoder_inputs,
+            source=all_inputs,
+            mask=self_attention_mask,
+            return_attention_weights=True)
+        target_selfattn = self.layer_drop_1(target_selfattn, decoder_inputs)
+
+        output = self.layer_drop_2(self.feed_forward(target_selfattn), target_selfattn)
         return output if cache is None else (output, cache)
 
 
@@ -496,6 +503,10 @@ class TransformerDecoder(Model):
                  activity_regularizer=None,
                  use_weight_norm=True) -> None:
         super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.d_filter = d_filter
         self.embedding_layer = embedding_layer
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
                                                              kernel_initializer=kernel_initializer,
@@ -539,7 +550,9 @@ class TransformerDecoder(Model):
 
         # Check the input and target dimensions
         target_embedding.shape.assert_has_rank(3)
-        encoder_output.shape.assert_has_rank(3)
+        if encoder_output is not None:
+            encoder_output.shape.assert_has_rank(3)
+
         with tf.control_dependencies(self.check_mask_shapes(encoder_mask, decoder_mask)):
             # Build the future-mask if necessary. This is an upper-triangular mask
             # which is used to prevent the network from attending to later timesteps
@@ -550,8 +563,10 @@ class TransformerDecoder(Model):
                 batch_size, sequence_length, decoder_mask, mask_future)
             # Build the cross-attention mask. This is an upper-left block matrix which takes care of the masking
             # of the output shapes
-            cross_attention_mask = self.get_cross_attention_mask(
-                encoder_output, target_input, encoder_mask, decoder_mask)
+            if encoder_output is not None:
+                cross_attention_mask = self.get_cross_attention_mask(encoder_output, target_input, encoder_mask, decoder_mask)
+            else:
+                cross_attention_mask = None
 
             # Now actually do the decoding which should take us to the right dimension
             decoder_output = self.decoding_stack(
@@ -652,6 +667,150 @@ class TransformerDecoder(Model):
 
         return output
 
+    def tile_for_beams(self, tensor, beam_size):
+        shape = tf.shape(tensor)
+        tensor =  tf.expand_dims(tensor, axis=1)
+        tensor = tf.tile(tensor, [1,beam_size,1,1])
+        tensor = tf.reshape(tensor, [shape[0]*beam_size, shape[1], tensor.shape[-1]])
+        return tensor
+
+    def fast_beam_decode(self, encoder_output, max_seq_len, batch_size, beam_size, output_dtype=tf.int32, initial_input=None, 
+                            preembed_hook=None, stopping_criterion=None, encoder_mask=None):
+        
+        if preembed_hook is not None:
+            raise NotImplementedError("Prembedding hook is not supported in fast_beam_decode")
+
+        def decoding_step(seqpos, inputs, cache, output_sequence, is_finished, seq_length, scores):
+            start_cdn = tf.equal(cache['seqpos'], tf.constant(0))
+
+            output = self(inputs, encoder_output, encoder_mask=encoder_mask,
+                          decoder_mask=None, shift_target_sequence_right=False,
+                          mask_future=False, cache=cache,
+                          seqpos=seqpos + 1)
+
+            last_output_logits = output[:, -1, :]
+
+            logit_shapes = last_output_logits.get_shape()
+            vocab_size = logit_shapes[1]
+
+            last_output_logits_logs = tf.nn.log_softmax(last_output_logits)
+            best_logits_2, best_indices_2 = tf.nn.top_k(last_output_logits_logs, k=beam_size, sorted=True, name=None)
+
+            # When flattened, this should include first beam_size words from beam 1, then beam_size words from beam 2, etc.
+            flattened_best_indices = tf.reshape(best_indices_2, (-1,1))
+            flattened_best_logits = tf.reshape(best_logits_2, (-1,1))
+
+            modified_scores = scores
+
+            expanded_finished = tf.reshape(tf.tile(tf.reshape(is_finished, [-1,1]),[1,beam_size]), [-1])
+            expanded_original_scores = tf.reshape(tf.tile(tf.reshape(scores, [-1,1]),[1,beam_size]), [-1])
+            expanded_modified_scores = tf.reshape(tf.tile(tf.reshape(modified_scores, [-1,1]),[1,beam_size]), [-1])
+
+            score_delta = tf.squeeze(flattened_best_logits, 1) * (1-tf.cast(expanded_finished, tf.float32))
+            expanded_original_scores += score_delta
+            expanded_modified_scores += score_delta
+
+            def start_fn_choose_beams():
+                # Special case, we force to select the first k words for each beam. To allow tie-breaking
+                return tf.range(beam_size*batch_size)
+
+            def normal_fn_choose_beams():
+                # We have to get the top k for each beam. Good luck
+                folded_scores = tf.reshape(expanded_modified_scores, [batch_size, -1])
+                chosen_beam_mscores, chosen_beam_ids = tf.nn.top_k(folded_scores, k=beam_size, sorted=True)
+                beam_added = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*beam_size*beam_size, delta=beam_size*beam_size), [-1,1]), [1,beam_size]), [-1])
+                chosen_beam_indices = beam_added + tf.reshape(chosen_beam_ids, [-1])
+                return chosen_beam_indices
+
+            chosen_beam_indices = tf.cond(start_cdn, start_fn_choose_beams, normal_fn_choose_beams) 
+            chosen_beam_scores = tf.gather(expanded_original_scores, chosen_beam_indices)
+
+            chosen_from_beam_index = tf.cast(tf.math.floor(chosen_beam_indices / beam_size), dtype=tf.int32) # We need this for caching purposes
+
+            # Rewrite the  output
+            last_words_chosen = tf.gather(flattened_best_indices, chosen_beam_indices)
+            shuffled_is_finished = tf.gather(is_finished, chosen_from_beam_index)
+            last_words_chosen = last_words_chosen * tf.reshape(1-tf.cast(is_finished, tf.int32), (beam_size*batch_size, 1))
+
+            def start_output_function():
+                return last_words_chosen
+
+            def normal_output_function():
+                output_seq = tf.gather(output_sequence, chosen_from_beam_index, axis=0)
+                output_seq = tf.concat([output_seq, last_words_chosen], axis=1)
+                return output_seq
+
+            output_s0equence = tf.cond(start_cdn, start_output_function, normal_output_function)
+            scores = chosen_beam_scores
+
+            # Decide which beams are finished or not
+            if stopping_criterion is not None:
+                is_finished_new = tf.reduce_any(stopping_criterion(output_sequence), axis=1)
+                assert is_finished_new.dtype == tf.bool, 'stopping_criterion must return a boolean tensor'
+                is_finished = is_finished | is_finished_new  # Is_finished comes from the previous time step
+
+            seq_length += (1-tf.cast(is_finished, dtype=tf.int32))
+
+            # Rewrite the cache
+            for k in cache.keys():
+                if k != 'seqpos': # This works for input sequences and cross_attn woot
+                    cache[k] = tf.gather(cache[k], chosen_from_beam_index, axis=0)
+
+            cache['seqpos'] = seqpos+1
+            result = DecRes(
+                seqpos=seqpos + 1,
+                inputs=last_words_chosen,
+                cache=cache,
+                output_sequence=output_sequence,
+                is_finished=is_finished,
+                seq_length=seq_length,
+                scores=scores)
+
+            return result
+
+        encoder_output = self.tile_for_beams(encoder_output, beam_size)
+        if encoder_mask is not None:
+            encoder_mask = self.tile_for_beams(encoder_mask, beam_size)
+
+
+        if initial_input is None:
+            initial_input = tf.zeros((batch_size*beam_size, 1), dtype=output_dtype)
+
+        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
+
+        inputs = DecRes(
+            seqpos=tf.constant(0),
+            inputs=initial_input,
+            cache=initial_cache,
+            output_sequence=tf.zeros((1,batch_size*beam_size), dtype=tf.int32),
+            is_finished=tf.zeros((batch_size*beam_size,), dtype=tf.bool),
+            seq_length=tf.zeros((batch_size*beam_size,), dtype=tf.int32),
+            scores=tf.zeros((batch_size*beam_size,),dtype=tf.float32))
+
+        cache_shapes = {}
+        for name, el in inputs.cache.items():
+            if 'seqpos' in name: cache_shapes[name] = tf.TensorShape(None)
+            else: cache_shapes[name] = tf.TensorShape([None, None, self.d_model])
+
+        shapes = DecRes(
+            seqpos=inputs.seqpos.shape,
+            inputs=tf.TensorShape((None, None)),
+            cache=cache_shapes,
+            output_sequence=tf.TensorShape([None,None]),
+            is_finished=inputs.is_finished.shape,
+            seq_length=inputs.seq_length.shape,
+            scores=inputs.scores.shape)
+
+        end_cond = lambda seqpos, inputs, cache, output_sequence, is_finished, seq_length, scores: ~tf.reduce_all(is_finished, 0)
+        result  = tf.while_loop(end_cond, decoding_step, inputs, shapes, maximum_iterations=max_seq_len)
+        output_words = tf.reshape(result.output_sequence, [batch_size, beam_size, -1])
+        scores = tf.reshape(result.scores, [batch_size, -1])
+
+        return output_words, scores
+
+
+
     def shift_target_sequence_right(self, target_sequence: tf.Tensor) -> tf.Tensor:
         constant_values = 0 if target_sequence.dtype in [
             tf.int32, tf.int64] else 1e-10
@@ -667,6 +826,7 @@ class TransformerDecoder(Model):
         assertions = []
 
         if encoder_mask is not None:
+            
             encoder_mask.shape.assert_has_rank(3)
             # Last two dimensions should match
             last_two_encoder_dims_equal = tf.assert_equal(tf.shape(encoder_mask)[-1], tf.shape(encoder_mask)[-2],
@@ -737,11 +897,10 @@ class TransformerDecoder(Model):
         return cross_attention_mask
 
     def get_initial_cache(self, size):
-        cache = {layer.name: tf.TensorArray(tf.float32, 1, dynamic_size=True, clear_after_read=False) for layer in
-                 self.decoding_stack.layers}  # [0]
-        cache['seqpos'] = tf.constant(0, dtype=tf.int32)
-
-        return cache
+        initial_cache = {}
+        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
+        return initial_cache
 
 
 class TSAODecoder(Model):
@@ -981,11 +1140,13 @@ class TransformerInputEmbedding(Model):
                  reproject_position_encoding=False,
                  kernel_regularizer=None,
                  bias_regularizer=None,
-                 activity_regularizer=None,) -> None:
+                 activity_regularizer=None,
+                 use_position_encoding=True,) -> None:
         super().__init__()
         self.embedding_dense = Lambda(lambda x: x)
         self.using_dense_embedding = False
         self.concat_position_encoding = concat_position_encoding
+        self.use_position_encoding = use_position_encoding
 
         if discrete:
             assert n_symbols is not None, 'n_symbols not passed in but model set to discrete'
@@ -1036,8 +1197,8 @@ class TransformerInputEmbedding(Model):
 
         if self.batch_norm:
             embedding = self.batch_norm(embedding)
-
-        embedding = self.position_encoding(embedding, start=start)
+        if self.use_position_encoding:
+            embedding = self.position_encoding(embedding, start=start)
 
         return embedding
 
@@ -1067,6 +1228,7 @@ class Transformer(Model):
                  concat_position_encoding=False,
                  output_layer=None,
                  position_encoding_expands_dims=True,
+                 encoder_use_position_encoding=True,
                  **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -1097,6 +1259,7 @@ class Transformer(Model):
         # Handle the position encoding
         self.concat_position_encoding = concat_position_encoding
         self.position_encoding_expands_dims = position_encoding_expands_dims
+        self.encoder_use_position_encoding = encoder_use_position_encoding
 
         # Discrete model => Embedding Initializer/n-in/n-out
         # It's probably better to use a different word than 'discrete' to handle this
@@ -1113,8 +1276,6 @@ class Transformer(Model):
 
             if not self.preembedded:
                 assert n_symbols_in is not None, 'n_symbols_in not passed in but model set to discrete'
-                assert embedding_initializer is not None, \
-                    'embedding_initializer not passed in but model set to discrete'
 
                 if self.share_source_target_embedding:
                     assert n_symbols_in == n_symbols_out, \
@@ -1131,7 +1292,7 @@ class Transformer(Model):
                 d_model, discrete, n_symbols_in, dropout, embedding_initializer=embedding_initializer,
                 kernel_regularizer=self.kernel_regularizer, bias_regularizer=self.bias_regularizer,
                 activity_regularizer=self.activity_regularizer, concat_position_encoding=self.concat_position_encoding,
-                reproject_position_encoding=not self.position_encoding_expands_dims)
+                reproject_position_encoding=not self.position_encoding_expands_dims, use_position_encoding=self.encoder_use_position_encoding)
 
             if not self.share_source_target_embedding:
                 target_embedding = TransformerInputEmbedding(
@@ -1200,8 +1361,7 @@ class Transformer(Model):
         # Generate the masks for the encoder and decoder. There are a lot of different ways that
         # the attention masks could be passed in, so this method handles a lot of these different
         # mask shapes.
-        encoder_mask = rk.utils.convert_to_attention_mask(
-            source_sequence, encoder_mask)
+        encoder_mask = rk.utils.convert_to_attention_mask(source_sequence, encoder_mask)
         # Compute the encoder output
         encoder_output = self.encoder(
             source_sequence, encoder_mask=encoder_mask)
@@ -1209,6 +1369,14 @@ class Transformer(Model):
         return self.decoder.fast_decode(encoder_output, max_seq_len, output_size=output_size,
                                         output_dtype=target_dtype, encoder_mask=encoder_mask,
                                         initial_input=initial_input, preembed_hook=preembed_hook)
+
+    def beam_decode(self, source_sequence, max_seq_len, encoder_mask=None, initial_input=None, beam_size=4):
+        # Compute the encoder output
+        encoder_mask = rk.utils.convert_to_attention_mask(source_sequence, encoder_mask)
+        encoder_output, _ = self.encoder(source_sequence, encoder_mask=encoder_mask)
+        batch_size = tf.shape(encoder_output)[0]
+
+        return self.decoder.fast_beam_decode(encoder_output, max_seq_len, batch_size, beam_size, initial_input=initial_input)
 
     def call(self, source_sequence, target_sequence, encoder_mask=None,
              decoder_mask=None, shift_target_sequence_right=True, mask_future=True):

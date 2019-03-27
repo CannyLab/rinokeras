@@ -7,9 +7,9 @@ from tensorflow.keras.layers import RNN, Flatten, Reshape
 
 import rinokeras as rk
 from rinokeras.common.layers import WeightNormDense as Dense
-from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV, MultiHeadAttention
-from rinokeras.common.layers import PositionEmbedding, LearnedEmbedding, LayerDropout, \
-    LayerNorm, Stack
+from rinokeras.common.attention import AttentionMap, ScaledDotProductSimilarity, AttentionQKV
+from rinokeras.common.layers import LearnedEmbedding, LayerDropout, \
+    LayerNorm
 
 from .transformer import TransformerEncoderBlock, TransformerMultiAttention, TransformerFeedForward, TransformerEncoder
 
@@ -367,7 +367,7 @@ class RelationalMemoryCoreCell(Model):
             inputs_mask = rk.utils.convert_to_attention_mask(memory, inputs_mask)
             next_memory, attention_weights = self.attend_over_memory(
                 memory, rmc_inputs=inputs, cross_attention_mask=None, return_cross_attention_weights=True)
-            output = self.flatten(next_memory)  # DEBUG
+            output = self.flatten(next_memory)
         else:
             memory_plus_input = K.concatenate((memory, inputs), axis=1)
             inputs_mask = tf.reduce_any(tf.cast(memory_plus_input, tf.bool), -1)
@@ -381,8 +381,7 @@ class RelationalMemoryCoreCell(Model):
 
         if self.gate_style == 'unit' or self.gate_style == 'memory':
             input_gate, forget_gate = self.create_gates(inputs, memory)
-            next_memory = input_gate * tf.tanh(next_memory)
-            next_memory += forget_gate * memory
+            next_memory = input_gate * tf.tanh(next_memory) + forget_gate * memory
         elif self.gate_style == 'attention':
             memory_update = tf.tanh(next_memory)  # This is the input of the memory
 
@@ -586,6 +585,7 @@ class RelationalMemoryCore(RNN):
             input_bias=input_bias,
             dropout=dropout,
             gate_style=gate_style,
+            layer_norm=layer_norm,
             treat_input_as_sequence=treat_input_as_sequence,
             use_cross_attention=use_cross_attention,
             return_attention_weights=return_attention_weights,
