@@ -6,3 +6,4 @@ pytest>=3.7.3
 tqdm>=4.26.0
 h5py
 deprecation
+typing

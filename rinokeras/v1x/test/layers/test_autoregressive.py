@@ -7,7 +7,7 @@ import tempfile
 import pickle
 
 def get_local_file(fpath):
-    return '/'+os.path.join(*__file__.split(os.sep)[:-1], fpath)
+    return '/'+os.path.join(os.path.join(*__file__.split(os.sep)[:-1]), fpath)
 
 def check_regression(regression_key, output, fname, debug=False):
     try:
