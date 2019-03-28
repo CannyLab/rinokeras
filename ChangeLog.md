@@ -2,6 +2,7 @@
 
 ## Major Changes (Completed)
 - Moved tensorflow 1.x rinokeras to rinokeras.python.v1x
+- Updated folder structure for cleaner API changes
 - Added support for tensorflow 1.13
 - Add back-support for tensorflow < 1.13 (<= 1.12)
 
