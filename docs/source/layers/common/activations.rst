@@ -1,7 +1,7 @@
 Activations
 ================
 
-.. automodule:: rinokeras.v1x.common.layers
+.. automodule:: rinokeras.python.v1x.common.layers
 
     .. autoclass:: GatedTanh
         :members:

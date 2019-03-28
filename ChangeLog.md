@@ -1,7 +1,7 @@
 # Rinokeras 0.2 -- Changelog
 
 ## Major Changes (Completed)
-- Moved tensorflow 1.x rinokeras to rinokeras.v1x
+- Moved tensorflow 1.x rinokeras to rinokeras.python.v1x
 - Added support for tensorflow 1.13
 - Add back-support for tensorflow < 1.13 (<= 1.12)
 
