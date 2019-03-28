@@ -10,6 +10,9 @@ python:
 install:
   - pip install -r requirements.txt
   - pip install -e .
+env:
+  - CODECOV_TOKEN="1384d50e-aaea-4dc0-857c-23a0287ec68b"
 # command to run tests
 script:
-  - pytest
+  - pytest --cov=./
+  - codecov
