@@ -3,11 +3,11 @@
 ## Major Changes (Completed)
 - Moved tensorflow 1.x rinokeras to rinokeras.v1x
 - Added support for tensorflow 1.13
+- Add back-support for tensorflow < 1.13 (<= 1.12)
 
 ## Major Changes (In Progress):
 - Added additional testing (regression + unit testing) for 1.x code
 - API changed to conform to Keras standards
-- Add back-support for tensorflow < 1.13 (<= 1.12)
 
 ## Major Changes (Planned)
 - Changed default to tensorflow 2.0

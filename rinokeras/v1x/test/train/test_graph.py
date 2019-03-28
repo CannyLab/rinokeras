@@ -12,7 +12,7 @@ def gpu_setup(req_gpus):
 
 
 def get_test_data():
-    x = np.random.sample((1000,50))
+    x = np.random.sample((1000,50)).astype(np.float32)
     dataset = tf.data.Dataset.from_tensor_slices(x)
     return dataset.batch(16)
 

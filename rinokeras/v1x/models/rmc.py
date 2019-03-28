@@ -310,7 +310,7 @@ class RelationalMemoryCoreCell(Model):
 
             # [batch_size, mem_cells, input_size]
             input_weights = tf.nn.softmax(self.similarity(memory_proj, input_proj), -1)
-            gate_inputs = input_weights @ gate_inputs
+            gate_inputs = tf.matmul(input_weights, gate_inputs)
 
         gate_memory = self.gate_memory(memory)
         input_gate, forget_gate = tf.split(
