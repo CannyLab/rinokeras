@@ -1,8 +1,6 @@
-import importlib
-import rinokeras
-from rinokeras import RK_USE_TF_VERSION
+from rinokeras import RK_USE_TF_VERSION as _RK_USE_TF_VERSION
 
-if RK_USE_TF_VERSION == 1:
+if _RK_USE_TF_VERSION == 1:
     # Activations
     from rinokeras.v1x.common import GatedTanh
 
@@ -59,5 +57,5 @@ if RK_USE_TF_VERSION == 1:
 
     # GCN
     from rinokeras.v1x.common import GraphConvolutionalLayer
-elif RK_USE_TF_VERSION == 2:
+elif _RK_USE_TF_VERSION == 2:
     raise NotImplementedError('Layers not yet supported in RK2.0')

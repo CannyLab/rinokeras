@@ -8,8 +8,6 @@ import tensorflow.keras.backend as K  # pylint: disable=E0611
 from .layers import WeightNormDense as Dense
 from .layers import LayerNorm
 
-
-
 class LuongAttention(Layer):
 
     def __init__(self, local=False, stddev=1.0, regularizer=None):
@@ -56,7 +54,6 @@ class LuongAttention(Layer):
         return output
 
 # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/common_attention.py
-
 
 class AttentionQKVProjection(Model):
     """Computes query, key, and value from antecedents
@@ -120,7 +117,6 @@ class AttentionQKVProjection(Model):
         else:
             values = value_antecedent
         return [queries, keys, values]
-
 
 class TrilinearSimilarity(Layer):
     """
@@ -200,7 +196,6 @@ class TrilinearSimilarity(Layer):
         similarity = weighted_context_query + context_weighted + query_weighted
         return similarity
 
-
 class ScaledDotProductSimilarity(Layer):
     """
     Fast scaled dot product attention.
@@ -223,7 +218,6 @@ class ScaledDotProductSimilarity(Layer):
         queries, keys = inputs
         key_dim = tf.cast(tf.shape(keys)[-1], queries.dtype)
         return tf.matmul(queries / tf.sqrt(key_dim), keys, transpose_b=True)
-
 
 class ApplyAttentionMask(Layer):
     """
@@ -269,7 +263,6 @@ class ApplyAttentionMask(Layer):
             masked_similarity = similarity + bias
             return masked_similarity
 
-
 class AttentionMap(Model):
     """
     Computes attention based on provided similarity metric.
@@ -311,7 +304,6 @@ class AttentionMap(Model):
         if return_attention_weights:
             return output, weights
         return output
-
 
 class MultiHeadAttentionMap(Model):
 
@@ -376,7 +368,6 @@ class MultiHeadAttentionMap(Model):
         new_feature_size = self.n_heads * feature_size
         tensor = tf.reshape(tensor, (batch_size, tensorlen, new_feature_size))
         return tensor
-
 
 class MultiHeadAttention(Model):
     """
@@ -468,7 +459,6 @@ class MultiHeadAttention(Model):
         else:
             return output
 
-
 class SelfAttention(Model):
     """
     Fast multi-head self attention. Based on the Attention is All You Need paper.
@@ -486,7 +476,6 @@ class SelfAttention(Model):
 
     def call(self, inputs, mask=None, return_attention_weights=False):
         return self.multi_attention((inputs, inputs, inputs), mask=mask, return_attention_weights=return_attention_weights)
-
 
 class ContextQueryAttention(Model):
 
@@ -536,7 +525,3 @@ class ContextQueryAttention(Model):
         outputs = tf.concat(outputs, axis=-1)
         outputs = self.dropout(outputs)
         return outputs
-
-
-__all__ = ['LuongAttention', 'AttentionQKVProjection', 'TrilinearSimilarity', 'ScaledDotProductSimilarity', 'ApplyAttentionMask',
-           'AttentionMap', 'MultiHeadAttentionMap', 'MultiHeadAttention', 'SelfAttention', 'ContextQueryAttention']

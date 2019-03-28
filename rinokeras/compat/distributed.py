@@ -38,7 +38,7 @@ class _reduce_op_113:
     def SUM(self,):
         return tf.distribute.ReduceOp.SUM
 
-RK_USE_TF_VERSION = None
+
 if version.parse(tf.__version__) < version.parse("1.13"):
     call_for_each_device = _call_for_each_device_v112
     reduce = _reduce_v112
