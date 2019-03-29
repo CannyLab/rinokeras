@@ -36,4 +36,4 @@ def check_regression(regression_key, output, file__, fname, debug=False):
     if not isinstance(output, (list, tuple)):
         output = [output]
     for x, y in zip(output, expected_output):
-        assert np.isclose(x, y).all()
+        assert np.isclose(x, y, rtol=1e-3, atol=1e-5).all()
