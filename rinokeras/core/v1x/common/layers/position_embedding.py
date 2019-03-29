@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Dense  # pylint: disable=F0401
 
-from rinokeras.python.v1x.utils import get_shape
+from rinokeras.core.v1x.utils import get_shape
 
 
 class PositionEmbedding(Model):

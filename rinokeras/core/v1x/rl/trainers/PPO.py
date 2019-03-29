@@ -6,7 +6,7 @@ from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrateg
 
 from .PolicyGradient import PolicyGradient
 
-import rinokeras.python.v1x as rk
+import rinokeras.core.v1x as rk
 
 
 class PPO(PolicyGradient):

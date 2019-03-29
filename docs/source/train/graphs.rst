@@ -1,7 +1,7 @@
 Graphs 
 ================
 
-.. automodule:: rinokeras.python.v1x.train.RinokerasGraph
+.. automodule:: rinokeras.core.v1x.train.RinokerasGraph
     :members:
     :undoc-members:
     :show-inheritance:

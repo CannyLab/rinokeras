@@ -7,7 +7,7 @@ from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrateg
 
 from .TestGraph import TestGraph
 from .train_utils import Inputs, Outputs, Losses
-from rinokeras.python.v1x.train import Experiment
+from rinokeras.core.v1x.train import Experiment
 import rinokeras.compat.distributed as distlib
 
 

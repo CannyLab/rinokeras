@@ -5,7 +5,7 @@ from tensorflow.keras import Model
 import tensorflow.keras.backend as K
 from tensorflow.contrib.distribute import DistributionStrategy, OneDeviceStrategy
 
-from rinokeras.python.v1x.train import Experiment
+from rinokeras.core.v1x.train import Experiment
 import rinokeras.compat.distributed as distlib
 
 from .RinokerasGraph import RinokerasGraph

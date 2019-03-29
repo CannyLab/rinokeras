@@ -2,8 +2,8 @@ import tensorflow as tf
 from tensorflow.keras import Model
 import math
 
-from rinokeras.python.v1x.common.layers import Stack, Conv2DStack, PositionEmbedding2D
-from rinokeras.python.v1x.common.layers import WeightNormDense as Dense
+from rinokeras.core.v1x.common.layers import Stack, Conv2DStack, PositionEmbedding2D
+from rinokeras.core.v1x.common.layers import WeightNormDense as Dense
 
 
 class NatureCNN(Model):

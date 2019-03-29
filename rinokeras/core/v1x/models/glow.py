@@ -6,12 +6,12 @@ import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dropout
 
-import rinokeras.python.v1x as rk
-from rinokeras.python.v1x.common.layers import InvertibleDense, CouplingLayer
-from rinokeras.python.v1x.common.layers import WeightNormDense as Dense
+import rinokeras.core.v1x as rk
+from rinokeras.core.v1x.common.layers import InvertibleDense, CouplingLayer
+from rinokeras.core.v1x.common.layers import WeightNormDense as Dense
 
 from rinokeras.models.transformer import TransformerInputEmbedding, TransformerEncoder, TransformerDecoderBlock
-from rinokeras.python.v1x.train import Experiment
+from rinokeras.core.v1x.train import Experiment
 
 
 class EvenOddInvertibleDense(Model):

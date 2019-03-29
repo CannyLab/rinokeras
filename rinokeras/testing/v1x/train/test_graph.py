@@ -32,7 +32,7 @@ def do_setup():
     return model, build_model, loss_function, data
 
 def test_test_graph_one_device_construction():
-    from rinokeras.python.v1x.train.TestGraph import TestGraph
+    from rinokeras.core.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     # Sample setup variables
     model, build_model, loss_function, data = do_setup()
@@ -46,7 +46,7 @@ def test_test_graph_one_device_construction():
     assert graph is not None
 
 def test_test_graph_multi_device_construction():
-    from rinokeras.python.v1x.train.TestGraph import TestGraph
+    from rinokeras.core.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     # Sample setup variables
     model, build_model, loss_function, data = do_setup()
@@ -61,7 +61,7 @@ def test_test_graph_multi_device_construction():
 
 def test_test_graph_one_device_run_step():
     gpu_setup(1)
-    from rinokeras.python.v1x.train.TestGraph import TestGraph
+    from rinokeras.core.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -91,7 +91,7 @@ def test_test_graph_one_device_run_step():
 
 def test_test_graph_multi_device_run_step():
     gpu_setup(2)
-    from rinokeras.python.v1x.train.TestGraph import TestGraph
+    from rinokeras.core.v1x.train.TestGraph import TestGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -120,7 +120,7 @@ def test_test_graph_multi_device_run_step():
         assert total_losses > 0
 
 def test_train_graph_one_device_construction():
-    from rinokeras.python.v1x.train.TrainGraph import TrainGraph
+    from rinokeras.core.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
 
     # Sample setup variables
@@ -137,7 +137,7 @@ def test_train_graph_one_device_construction():
 
 def test_train_graph_multi_device_construction():
     gpu_setup(2)
-    from rinokeras.python.v1x.train.TrainGraph import TrainGraph
+    from rinokeras.core.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     # Sample setup variables
     model, build_model, loss_function, data = do_setup()
@@ -153,7 +153,7 @@ def test_train_graph_multi_device_construction():
 
 def test_train_graph_one_device_run_step():
     gpu_setup(1)
-    from rinokeras.python.v1x.train.TrainGraph import TrainGraph
+    from rinokeras.core.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -184,7 +184,7 @@ def test_train_graph_one_device_run_step():
 
 def test_train_graph_multi_device_run_step():
     gpu_setup(2)
-    from rinokeras.python.v1x.train.TrainGraph import TrainGraph
+    from rinokeras.core.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -215,7 +215,7 @@ def test_train_graph_multi_device_run_step():
 
 def test_train_graph_multi_device_run_multi_step():
     gpu_setup(2)
-    from rinokeras.python.v1x.train.TrainGraph import TrainGraph
+    from rinokeras.core.v1x.train.TrainGraph import TrainGraph
     tf.reset_default_graph()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True

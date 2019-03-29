@@ -45,7 +45,7 @@ def test_luongAttention():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import LuongAttention
+    from rinokeras.core.v1x.common.attention import LuongAttention
     luong_attention_layer = LuongAttention(local=False, stddev=1.0,
                                            regularizer=None)
     assert luong_attention_layer is not None
@@ -81,7 +81,7 @@ def test_luongAttention_local():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import LuongAttention
+    from rinokeras.core.v1x.common.attention import LuongAttention
     luong_attention_layer = LuongAttention(local=True, stddev=1.0,
                                            regularizer=None)
     assert luong_attention_layer is not None
@@ -120,7 +120,7 @@ def test_attentionQKVProjection():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import AttentionQKVProjection
+    from rinokeras.core.v1x.common.attention import AttentionQKVProjection
     attention_qkv_projection = AttentionQKVProjection(key_depth=8,
                                                       value_depth=12)
     assert attention_qkv_projection is not None
@@ -163,7 +163,7 @@ def test_trilinearSimilarity():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import TrilinearSimilarity
+    from rinokeras.core.v1x.common.attention import TrilinearSimilarity
     trilinear_similarity_layer = TrilinearSimilarity()
     assert trilinear_similarity_layer is not None
 
@@ -198,7 +198,7 @@ def test_scaledDotProductSimilarity():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import ScaledDotProductSimilarity
+    from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
     sdp_layer = ScaledDotProductSimilarity()
     assert sdp_layer is not None
 
@@ -233,7 +233,7 @@ def test_applyAttentionMask():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import ApplyAttentionMask
+    from rinokeras.core.v1x.common.attention import ApplyAttentionMask
     aam_layer = ApplyAttentionMask()
     assert aam_layer is not None
 
@@ -276,8 +276,8 @@ def test_attentionMap():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import AttentionMap
-    from rinokeras.python.v1x.common.attention import ScaledDotProductSimilarity
+    from rinokeras.core.v1x.common.attention import AttentionMap
+    from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
     sdp = ScaledDotProductSimilarity()
     attention_map = AttentionMap(similarity_metric=sdp,
                                  attention_function=tf.nn.softmax)
@@ -321,8 +321,8 @@ def test_multiHeadAttentionMap():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import MultiHeadAttentionMap
-    from rinokeras.python.v1x.common.attention import ScaledDotProductSimilarity
+    from rinokeras.core.v1x.common.attention import MultiHeadAttentionMap
+    from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
     sdp = ScaledDotProductSimilarity()
     attention_map = MultiHeadAttentionMap(similarity_metric=sdp,
                                           n_heads=4,
@@ -371,7 +371,7 @@ def test_multiHeadAttention():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import MultiHeadAttention
+    from rinokeras.core.v1x.common.attention import MultiHeadAttention
     attention_map = MultiHeadAttention(similarity_metric='scaled_dot',
                                        n_heads=4)
     assert attention_map is not None
@@ -418,7 +418,7 @@ def test_multiHeadAttention_trilinear():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import MultiHeadAttention
+    from rinokeras.core.v1x.common.attention import MultiHeadAttention
     attention_map = MultiHeadAttention(similarity_metric='trilinear',
                                        n_heads=4)
     assert attention_map is not None
@@ -465,7 +465,7 @@ def test_selfAttention():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import SelfAttention
+    from rinokeras.core.v1x.common.attention import SelfAttention
     attention_map = SelfAttention(similarity_metric='scaled_dot', n_heads=4)
     assert attention_map is not None
 
@@ -507,7 +507,7 @@ def test_contextQueryAttention():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.attention import ContextQueryAttention
+    from rinokeras.core.v1x.common.attention import ContextQueryAttention
     attention_map = ContextQueryAttention(similarity_metric='trilinear')
     assert attention_map is not None
 

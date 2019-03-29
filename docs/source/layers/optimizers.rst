@@ -8,7 +8,7 @@ Rinokeras includes support for several optimizers which are not yet a part of th
 ADAMax
 #########
 
-.. autoclass:: rinokeras.python.v1x.common.optimizers.AdaMaxOptimizer
+.. autoclass:: rinokeras.core.v1x.common.optimizers.AdaMaxOptimizer
     :members:
     :undoc-members:
     :show-inheritance:

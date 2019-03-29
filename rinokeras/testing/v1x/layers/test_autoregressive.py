@@ -44,7 +44,7 @@ def test_random_gauss_noise():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.layers.autoregressive import RandomGaussNoise
+    from rinokeras.core.v1x.common.layers.autoregressive import RandomGaussNoise
     gaussian_noise_layer = RandomGaussNoise()
     assert gaussian_noise_layer is not None
 
@@ -102,7 +102,7 @@ def test_coupling_layer():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.layers.autoregressive import CouplingLayer
+    from rinokeras.core.v1x.common.layers.autoregressive import CouplingLayer
     coupling_layer = CouplingLayer(n_units=128, layer=tf.keras.layers.Dense(128))
     assert coupling_layer is not None
 

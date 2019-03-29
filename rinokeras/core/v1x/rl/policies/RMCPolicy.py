@@ -4,7 +4,7 @@ from typing import Optional
 from tensorflow.keras import Model
 from tensorflow.keras.initializers import Orthogonal
 from rinokeras.models.rmc import RelationalMemoryCoreCell
-from rinokeras.python.v1x.common.layers import WeightNormDense as Dense
+from rinokeras.core.v1x.common.layers import WeightNormDense as Dense
 
 import gym
 

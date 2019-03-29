@@ -42,7 +42,7 @@ def test_gated_tanh():
     np.random.seed(256)
     tf.random.set_random_seed(256)
     # Construct the layer
-    from rinokeras.python.v1x.common.layers.activations import GatedTanh
+    from rinokeras.core.v1x.common.layers.activations import GatedTanh
     gth_layer = GatedTanh(n_units=128)
     assert gth_layer is not None
 
