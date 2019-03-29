@@ -3,10 +3,12 @@ Session utils for testing
 """
 import tensorflow as tf
 import numpy as np
+import random as rn
 import pickle
 
 def run_simple_session_save_weights(inputs, feed, weights, weights_file):
-    config = tf.ConfigProto()
+    config = tf.ConfigProto(intra_op_parallelism_threads=1,
+                              inter_op_parallelism_threads=1)
     config.gpu_options.allow_growth = True
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -21,7 +23,8 @@ def run_simple_session_save_weights(inputs, feed, weights, weights_file):
     return output
 
 def run_simple_session(inputs, feed):
-    config = tf.ConfigProto()
+    config = tf.ConfigProto(intra_op_parallelism_threads=1,
+                              inter_op_parallelism_threads=1)
     config.gpu_options.allow_growth = True
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -32,5 +35,6 @@ def run_simple_session(inputs, feed):
 def reset_session():
     tf.reset_default_graph()
     np.random.seed(256)
+    rn.seed(256)
     tf.random.set_random_seed(256)
     
