@@ -19,6 +19,28 @@
 
 ## Minor/All Changes
 
+### Continuous Integration
+- Added support for code coverage
+- Increased supported testing from Python 3.6 -> Python 3.4, 3.5, 3.6 and 3.7
+- Bumped testing VM to Ubuntu 16.04 (From 14.04)
+
+### Library
+- Removed outdated examples
+- Simplified API
+    - rinokeras.common.layers moved to rinokeras.layers
+    - rinokeras.common.distributions moved to rinokeras.layers.distributions
+    - rinokeras.common.gcn moved to rinokeras.layers.gcn
+    - rinokeras.common.losses moved to rinokeras.losses
+    - rinokeras.common.attention moved to rinokeras.layers.attention
+    - rinokeras.common.optimizers moved to rinokeras.train.optimizers
+    - rinokeras.common.rnn moved to rinokeras.models.rnn
+- Removed non-functioning code
+    - Updated GLOW model to be functional
+    - Updated DenseTranspose to be functional
+    - Removed Adamax
+- Deprecated EagerGraph v1x API in favor of Rinokeras v2x
+- Moved GroupedConvolution and ResidualBlock from rinokeras.models.resnet to rinokeras.layers.conv and rinokeras.layers.residual respectively
+
 ### Graphs (1.x)
 - Changed batch_reduce calls to batch_all_reduce calls
 - Changed call_for_each_tower calls to call_for_each_replica calls
@@ -53,12 +75,16 @@
 
 ### Conv Layers (1.x)
 - Renamed NormedConv to NormedConvStack to maintain naming consistency
+- Added GroupedConv from rinokeras.models.resnet
 
 ### Distribution Layers (1.x)
 - Fixed bug in entropy of CategoricalPd
 
 ### Dropout Layers (1.x)
 - Fixed bug in LayerDropout where layer was never dropped (even during training)
+
+### (NEW) Embedding Layers (1.x)
+- Moved VQAImageEmbedding to ImageEmbedding layer
 
 ### GCN (1.x)
 - Fixed shape bugs in GCN
@@ -82,16 +108,17 @@
 
 ### Residual Layers (1.x)
 - Changed Highway layer to take a layer as input (expanded functionality)
-
-### RNN Layers (1.x)
-
+- Added ResidualBlock from rinokeras.models.resnet
 
 ### Stacks (1.x)
+- No Changes
+
+### Recurrent Models (1.x)
 
 
 # Known Errors/Bugs/Questions
 
-## Distribution Layers (1.x)
+### Distribution Layers (1.x)
 - Odd shape for entropy of DiagGaussPd () vs (BS,)
 
 
