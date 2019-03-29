@@ -38,14 +38,14 @@ class GraphConvolutionalLayer(Layer):
 
     def build(self, input_shape):
         input_shape = tensor_shape.TensorShape(input_shape)  # The input should be [batch_size x units x N]
-        if input_shape[-1].value is None or input_shape[-2].value is None:
-            raise ValueError('The last two dimensions of the GCN are wrong: {}. Input should be [BS x Units x N]'.format(input_shape))
+        if len(input_shape) != 3 or input_shape[-1].value is None or input_shape[-2].value is None:
+            raise ValueError('The last two dimensions of the GCN are wrong: {}. Input should be [BS x N x units]'.format(input_shape))
         self.input_spec = InputSpec(min_ndim=3,
                                     axes={-1: input_shape[-1].value, -2: input_shape[-2].value})
 
         self.kernel = self.add_weight(
             'kernel',
-            shape=[self.units, self.units],
+            shape=[input_shape[-1].value, self.units],
             initializer=self.kernel_initializer,
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
@@ -63,18 +63,11 @@ class GraphConvolutionalLayer(Layer):
                 trainable=True)
 
     def call(self, inputs, adj_matrix):
-
-        # Inputs is n x d_model, so we need to change it
-        inputs = tf.transpose(inputs, [0, 2, 1])
-
-        kernel_mat = tf.ones([tf.shape(inputs)[0], 1, 1], dtype=self.dtype) * self.kernel
-        outputs = tf.matmul(kernel_mat, inputs)
-        degree_mat = tf.linalg.diag(1.0 / tf.reduce_sum(adj_matrix, axis=1))
-        outputs = tf.matmul(outputs, adj_matrix + tf.eye(tf.shape(adj_matrix)[-1], dtype=self.dtype))
-        outputs = tf.matmul(outputs,degree_mat)
-
-        outputs = tf.transpose(outputs, [0, 2, 1])
-
+        adj_matrix = adj_matrix + tf.eye(tf.shape(adj_matrix)[-1], dtype=adj_matrix.dtype)
+        degree_mat =  tf.linalg.inv(tf.linalg.diag(1.0 / tf.reduce_sum(adj_matrix, axis=1)))
+        adj_matrix = tf.matmul(degree_mat, adj_matrix)
+        outputs = tf.matmul(adj_matrix, inputs)
+        outputs = tf.tensordot(outputs,self.kernel,1)
         if self.use_bias:
             outputs = outputs + self.bias
         if self.activation is not None:

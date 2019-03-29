@@ -2,6 +2,7 @@
 Dropout-style layers.
 """
 
+import tensorflow as tf
 from typing import Dict
 from tensorflow.keras import Model # pylint: disable=F0401
 import tensorflow.keras.backend as K  # pylint: disable=F0401
@@ -24,9 +25,15 @@ class LayerDropout(Model):
         super().__init__(*args, **kwargs)
         self.rate = rate
 
-    def call(self, layer_outputs, layer_inputs):
-        output = K.in_train_phase(
-            K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs), layer_outputs)
+    def call(self, layer_outputs, layer_inputs, training=None):
+        if training is None:
+            training = K.learning_phase()
+
+        with tf.control_dependencies([tf.print(training)]):
+            output = K.switch(
+                training,
+                K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs),
+                layer_outputs)
         return output
 
     def get_config(self) -> Dict:

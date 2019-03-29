@@ -51,5 +51,18 @@
 ### Autoregressive Layers (1.x)
 - Fixed breaking bug in CouplingLayer
 
+### Conv Layers (1.x)
+- Renamed NormedConv to NormedConvStack to maintain naming consistency
+
+### Distribution Layers (1.x)
+- Fixed bug in entropy of CategoricalPd
+
+### Dropout Layers (1.x)
+- Fixed bug in LayerDropout where layer was never dropped (even during training)
+
+# Known Errors/Bugs/Questions
+
+## Distribution Layers (1.x)
+- Odd shape for entropy of DiagGaussPd () vs (BS,)
 
 

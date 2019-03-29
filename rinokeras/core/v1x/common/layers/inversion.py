@@ -27,7 +27,7 @@ class DenseTranspose(Layer):
         self.other_layer = other_layer
 
     def call(self, x):
-        return K.dot(x - K.stop_gradient(self.other_layer.b), K.transpose(K.stop_gradient(self.other_layer.W)))
+        return K.dot(x - K.stop_gradient(self.other_layer.bias), K.transpose(K.stop_gradient(self.other_layer.kernel)))
 
 
 class EmbeddingTranspose(Model):

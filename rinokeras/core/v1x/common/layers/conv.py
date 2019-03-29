@@ -1,12 +1,12 @@
 from typing import Optional
 from tensorflow.keras.layers import Activation, Conv1D, Conv2D, Conv3D, Dropout
 
-from .stack import Stack
-from .normalization import LayerNorm
-from .residual import Residual
+from rinokeras.core.v1x.common.layers.stack import Stack
+from rinokeras.core.v1x.common.layers.normalization import LayerNorm
+from rinokeras.core.v1x.common.layers.residual import Residual
 
 
-class NormedConv(Stack):
+class NormedConvStack(Stack):
 
     def __init__(self,
                  dimension: int,
@@ -31,11 +31,12 @@ class ResidualBlock(Residual):
                  dimension: int,
                  filters: int,
                  kernel_size: int,
+                 n_layers: int = 2,
                  layer_norm: bool = False,
                  activation: str = 'relu',
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
-        layer = [NormedConv(dimension, filters, kernel_size, layer_norm, activation) for _ in range(2)]
+        layer = [NormedConvStack(dimension, filters, kernel_size, layer_norm, activation) for _ in range(n_layers)]
         if dropout is not None:
             layer.append(Dropout(dropout))
         super().__init__(Stack(layer), **kwargs)

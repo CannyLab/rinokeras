@@ -9,7 +9,7 @@ if _RK_USE_TF_VERSION == 1:
     from rinokeras.core.v1x.common import CouplingLayer
 
     # Conv
-    from rinokeras.core.v1x.common import NormedConv
+    from rinokeras.core.v1x.common import NormedConvStack
     from rinokeras.core.v1x.common import ResidualBlock
 
     # Dropout

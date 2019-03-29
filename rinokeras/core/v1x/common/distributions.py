@@ -63,12 +63,16 @@ class CategoricalPd(Pd):
 
     def entropy(self):
         # Have to calculate these manually b/c logp_action provides probabilities
-        # for a specific action.
+        # for a specific action
+        with tf.control_dependencies([tf.print(tf.shape(self._logits))]):
+            self._logits = tf.identity(self._logits)
         a0 = self._logits - tf.reduce_max(self._logits, axis=-1, keepdims=True)
         ea0 = tf.exp(a0)
         z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)
         p0 = ea0 / z0
-        return tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=-1)
+        x0 = p0 * (tf.log(z0) - a0)
+        x1 = tf.reduce_sum(x0, axis=-1)
+        return x1
 
 
 class DiagGaussianPd(Pd):
@@ -98,7 +102,8 @@ class DiagGaussianPd(Pd):
         return -0.5 * (tf.reduce_sum(sqdiff / self.std, reduction_axes) + divconst)
 
     def entropy(self):
-        return tf.reduce_sum(self._add_noise.logstd + 0.5 * np.log(2.0 * np.pi * np.e))
+        x0 = self._add_noise.logstd + 0.5 * np.log(2.0 * np.pi * np.e)
+        return tf.reduce_sum(x0)
 
     @property
     def std(self):
