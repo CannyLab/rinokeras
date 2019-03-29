@@ -8,7 +8,7 @@ Dropout
         :undoc-members:
         :show-inheritance:
 
-    .. autoclass:: MaskInput
+    .. autoclass:: BERTRandomReplaceMask
         :members:
         :undoc-members:
         :show-inheritance:

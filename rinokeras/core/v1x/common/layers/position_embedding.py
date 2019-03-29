@@ -109,6 +109,9 @@ class PositionEmbedding2D(PositionEmbedding):
         self.divisor = divisor
         self.hidden_size = hidden_size
 
+        if self.reproject_embedding:
+            self.projection_layer = Dense(input_shape[-1])
+
     def call(self, inputs, start=None):
         """
             Args:
@@ -147,7 +150,10 @@ class PositionEmbedding2D(PositionEmbedding):
         if self.concat:
             position_embedding = tf.tile(
                 position_embedding, (batch_size, 1, 1, 1))
-            return tf.concat((inputs, position_embedding), -1)
+            output = tf.concat((inputs, position_embedding), -1)
+            if self.reproject_embedding:
+                output = self.projection_layer(output)
+            return output
         else:
             return inputs + position_embedding
 
@@ -171,6 +177,9 @@ class PositionEmbedding3D(PositionEmbedding2D):
         divisor = 1000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
+
+        if self.reproject_embedding:
+            self.projection_layer = Dense(input_shape[-1])
 
     def call(self, inputs, start=None):
         """
@@ -214,7 +223,10 @@ class PositionEmbedding3D(PositionEmbedding2D):
             position_embedding, (1, time, width, height, self.hidden_size))
         if self.concat:
             position_embedding = tf.tile(position_embedding, (batch_size, 1, 1, 1, 1))
-            return tf.concat((inputs, position_embedding), -1)
+            output = tf.concat((inputs, position_embedding), -1)
+            if self.reproject_embedding:
+                return self.projection_layer(output)
+            return output
         else:
             return inputs + position_embedding
 

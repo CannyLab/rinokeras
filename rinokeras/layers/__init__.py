@@ -21,7 +21,7 @@ if _RK_USE_TF_VERSION == 1:
     from rinokeras.core.v1x.common import InvertibleDense
 
     # Masking
-    from rinokeras.core.v1x.common import MaskInput
+    from rinokeras.core.v1x.common import BERTRandomReplaceMask
 
     # Normalization
     from rinokeras.core.v1x.common import LayerNorm

@@ -38,6 +38,7 @@ class Highway(Model):
     From the paper: https://arxiv.org/abs/1607.06450
     """
     def __init__(self,
+                 layer,
                  activation: str = 'relu',
                  gate_bias: float = -3.0,
                  dropout: Optional[float] = None,
@@ -54,6 +55,7 @@ class Highway(Model):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
+        self.layer = layer
 
     def build(self, input_shape):
         units = input_shape[-1]
@@ -64,11 +66,6 @@ class Highway(Model):
                           kernel_regularizer=self.kernel_regularizer,
                           bias_regularizer=self.bias_regularizer,
                           activity_regularizer=self.activity_regularizer)
-        self.layer = Dense(units=units,
-                           activation=self.activation,
-                           kernel_regularizer=self.kernel_regularizer,
-                           bias_regularizer=self.bias_regularizer,
-                           activity_regularizer=self.activity_regularizer)
 
     def call(self, inputs):
         gated = self.gate(inputs)
@@ -79,6 +76,7 @@ class Highway(Model):
 
     def get_config(self) -> Dict:
         config = {
+            'layer': self.layer.__class__.from_config(self.layer.get_config()),
             'activation': self.activation,
             'gate_bias': self.gate_bias,
             'dropout': self.dropout,

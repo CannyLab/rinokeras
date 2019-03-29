@@ -60,6 +60,35 @@
 ### Dropout Layers (1.x)
 - Fixed bug in LayerDropout where layer was never dropped (even during training)
 
+### GCN (1.x)
+- Fixed shape bugs in GCN
+- Changed GCN so that inputs are [BS x N x units] instead of [BS x units x N]
+
+### Inversion Layers (1.x)
+- Fixed name bug in DenseTranspose
+
+### Losses (1.x)
+- No Changes
+
+### Masking Layers (1.x)
+- Renamed MaskInput to BERTRandomReplaceMask
+
+### Normalization Layers (1.x)
+- No Changes
+
+### Position Embedding Layers (1.x)
+- Fixed bug with reproject_embedding in 2D and 3D cases
+- Fixed bug with concatenation in 3D case
+
+### Residual Layers (1.x)
+- Changed Highway layer to take a layer as input (expanded functionality)
+
+### RNN Layers (1.x)
+
+
+### Stacks (1.x)
+
+
 # Known Errors/Bugs/Questions
 
 ## Distribution Layers (1.x)
