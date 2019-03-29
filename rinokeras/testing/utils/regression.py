@@ -9,7 +9,7 @@ import numpy as np
 def get_local_file(fpath, file__):
    return '/'+os.path.join(os.path.join(*file__.split(os.sep)[:-1]), fpath)
 
-def check_regression(regression_key, output, file__, fname, debug=False):
+def check_regression(regression_key, output, file__, fname, debug=False, tol=1e-3):
     try:
         with open(get_local_file(fname, file__), 'r') as json_file:
             jf = json.loads(json_file.read())
@@ -36,4 +36,4 @@ def check_regression(regression_key, output, file__, fname, debug=False):
     if not isinstance(output, (list, tuple)):
         output = [output]
     for x, y in zip(output, expected_output):
-        assert np.isclose(x, y, rtol=1e-3, atol=1e-3).all()
+        assert np.isclose(x, y, rtol=tol, atol=tol).all()

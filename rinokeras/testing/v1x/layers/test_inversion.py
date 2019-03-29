@@ -103,13 +103,13 @@ def test_invertible_dense():
     # Construct the layer
     from rinokeras.core.v1x.common.layers.inversion import InvertibleDense
 
-    layer = InvertibleDense(128)
+    layer = InvertibleDense(8)
 
     # Make sure that the layer is not None
     assert layer is not None
 
     # Encoded values
-    input_tensor, input_values = random_tensor((16, 8, 128))
+    input_tensor, input_values = random_tensor((16, 8, 8))
 
     # Get the output of the layer
     value, log_det_w = layer(input_tensor)
@@ -130,9 +130,9 @@ def test_invertible_dense():
         assert output[2] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 128)
+        assert output[0].shape == (16, 8, 8)
         assert output[1].shape == ()
-        assert output[2].shape == (16, 8, 128)
+        assert output[2].shape == (16, 8, 8)
         
         # Make sure the output values are correct (If Possible)
         assert np.isclose(output[2], input_values, rtol=.01, atol=.01).all()
@@ -146,4 +146,4 @@ def test_invertible_dense():
 
     # Do regression testing
     check_regression('invertible_dense_layer_expected_output',
-                     output, __file__, 'regression_outputs/test_inversion_outputs.json')
+                     output, __file__, 'regression_outputs/test_inversion_outputs.json', tol=1e-1)
