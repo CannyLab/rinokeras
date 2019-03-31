@@ -81,7 +81,8 @@ class MaskedRelationalMemoryCoreCell(Model):
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
         else:
             self.attend_over_memory = TransformerEncoderBlock(
-                n_heads, mem_size * 4, mem_size, dropout,
+                n_heads, mem_size * 4, mem_size, 
+                dropout=dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer)
 

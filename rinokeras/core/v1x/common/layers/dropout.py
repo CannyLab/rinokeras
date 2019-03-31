@@ -28,12 +28,10 @@ class LayerDropout(Model):
     def call(self, layer_outputs, layer_inputs, training=None):
         if training is None:
             training = K.learning_phase()
-
-        with tf.control_dependencies([tf.print(training)]):
-            output = K.switch(
-                training,
-                K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs),
-                layer_outputs)
+        output = K.switch(
+            training,
+            K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs),
+            layer_outputs)
         return output
 
     def get_config(self) -> Dict:

@@ -385,9 +385,9 @@ class MultiHeadAttention(Model):
                  attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
                  project_value: bool = True, 
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
-                 kernel_regularizer=None,
-                 bias_regularizer=None,
-                 activity_regularizer=None) -> None:
+                 kernel_regularizer: Optional[tf.keras.regularizers.Regularizer]=None,
+                 bias_regularizer: Optional[tf.keras.regularizers.Regularizer]=None,
+                 activity_regularizer: Optional[tf.keras.regularizers.Regularizer]=None) -> None:
         super().__init__()
 
         # Setup the similarity map
@@ -396,6 +396,7 @@ class MultiHeadAttention(Model):
             'trilinear': TrilinearSimilarity,
         }
         if similarity_metric in sm_map:
+            self.similarity_metric_str = similarity_metric
             self.similarity_metric = sm_map[similarity_metric]()
         else:
             raise NotImplementedError('Similarity metric {} is not implemented. Choose one of {}'.format(similarity_metric, sm_map.keys()))
@@ -411,11 +412,12 @@ class MultiHeadAttention(Model):
         self.attention_layer = MultiHeadAttentionMap(
             self.similarity_metric, n_heads, self.attention_function, dropout)
 
-        self.kernel_initializer = kernel_initializer
-        self.kernel_regularizer = kernel_regularizer
-        self.bias_regularizer = bias_regularizer
-        self.activity_regularizer = activity_regularizer
+        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
+        self.activity_regularizer = tf.keras.regularizers.get(activity_regularizer)
 
+        self.dropout_pct = dropout
         self.dropout = Dropout(0 if dropout is None else dropout)
 
     def build(self, input_shapes):
@@ -456,8 +458,37 @@ class MultiHeadAttention(Model):
         output = self.dropout(output)
         if return_attention_weights:
             return output, attention_weights
-        else:
-            return output
+        return output
+
+    def get_base_config(self):
+        config = {
+            'similarity_metric': self.similarity_metric_str,
+            'n_heads': self.n_heads,
+            'dropout': self.dropout_pct,
+            'key_size': self.key_size,
+            'value_size': self.value_size,
+            'attention_function': tf.keras.utils.serialize_keras_object(self.attention_function),
+            'project_value': self.project_value,
+            'kernel_initializer':
+            tf.keras.initializers.serialize(self.kernel_initializer),
+            'kernel_regularizer':
+            tf.keras.regularizers.serialize(self.kernel_regularizer),
+            'bias_regularizer':
+            tf.keras.regularizers.serialize(self.bias_regularizer),
+            'activity_regularizer':
+            tf.keras.regularizers.serialize(self.activity_regularizer),
+        }
+        return config
+    
+    def get_config(self):
+        config = self.get_base_config()
+        return config
+        # base_config = super(MultiHeadAttention, self).get_config()
+        # return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 class SelfAttention(Model):
     """
@@ -476,6 +507,16 @@ class SelfAttention(Model):
 
     def call(self, inputs, mask=None, return_attention_weights=False):
         return self.multi_attention((inputs, inputs, inputs), mask=mask, return_attention_weights=return_attention_weights)
+
+    def get_config(self):
+        config = self.multi_attention.get_base_config()
+        return config
+        # base_config = super(SelfAttention, self).get_config()
+        # return dict(list(base_config.items()) + list(config.items()))
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 class ContextQueryAttention(Model):
 

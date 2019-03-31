@@ -64,8 +64,6 @@ class CategoricalPd(Pd):
     def entropy(self):
         # Have to calculate these manually b/c logp_action provides probabilities
         # for a specific action
-        with tf.control_dependencies([tf.print(tf.shape(self._logits))]):
-            self._logits = tf.identity(self._logits)
         a0 = self._logits - tf.reduce_max(self._logits, axis=-1, keepdims=True)
         ea0 = tf.exp(a0)
         z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)

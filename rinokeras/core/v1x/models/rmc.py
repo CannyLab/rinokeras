@@ -99,7 +99,8 @@ class RMCBlock(Model):
                                            # kernel_regularizer=kernel_regularizer,
                                            # bias_regularizer=bias_regularizer,
                                            # activity_regularizer=activity_regularizer)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, dropout,
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, 
+                                                   dropout=dropout,
                                                    kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
                                                    bias_regularizer=bias_regularizer,
@@ -121,8 +122,7 @@ class RMCBlock(Model):
         # a multi-headed attention across them, giving an output of [batch_size x target_len x d_model]
         # using the encoder as the keys and values and the target as the queries
         memory_cells_cross, cross_attention_weights = self.multi_attention(
-            memory_cells,
-            source=rmc_inputs,
+            (rmc_inputs, memory_cells),
             mask=cross_attention_mask,
             return_attention_weights=True)
         memory_cells_cross = self.layer_drop_1(memory_cells_cross, memory_cells)
@@ -200,7 +200,8 @@ class RelationalMemoryCoreCell(Model):
                 kernel_initializer=kernel_initializer)
         else:
             self.attend_over_memory = TransformerEncoderBlock(
-                n_heads, mem_size * 4, mem_size, dropout,
+                n_heads, mem_size * 4, mem_size, 
+                dropout=dropout,
                 layer_dropout=None, kernel_regularizer=kernel_regularizer,
                 bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer,
                 kernel_initializer=kernel_initializer)

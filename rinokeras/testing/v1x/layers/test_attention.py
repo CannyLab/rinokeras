@@ -39,6 +39,9 @@ def check_regression(regression_key, output, fname, debug=False):
     for x, y in zip(output, expected_output):
         assert np.isclose(x, y).all()
 
+def check_from_config(__class, __obj):
+    assert __class.from_config(__obj.get_config()) is not None
+
 
 def test_luongAttention():
     tf.reset_default_graph()
@@ -412,6 +415,8 @@ def test_multiHeadAttention():
     check_regression('multihead_attention_expected_output', output,
                      'regression_outputs/test_attention_outputs.json')
 
+    check_from_config(MultiHeadAttention, attention_map)
+
 
 def test_multiHeadAttention_trilinear():
     tf.reset_default_graph()
@@ -500,6 +505,9 @@ def test_selfAttention():
 
     check_regression('self_attention_expected_output', output,
                      'regression_outputs/test_attention_outputs.json')
+
+    # Check that you can instantiate a layer from the config
+    check_from_config(SelfAttention, attention_map)
 
 
 def test_contextQueryAttention():

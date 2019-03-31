@@ -66,6 +66,7 @@
 - Changed ContextQueryAttention layer to take tuple of (context, query) as "inputs"
 - Reversed order of "context" and "query" in call to ContextQueryAttention to maintain consistency
 - Changed ContextQueryAttention "attention_method" argument to "similarity_metric" to maintain consistency
+- Added get_config/from_config to SelfAttention, MultiHeadAttention
 
 ### Activation Layers (1.x)
 - No Changes
@@ -113,7 +114,26 @@
 ### Stacks (1.x)
 - No Changes
 
-### Recurrent Models (1.x)
+### Transformer (1.x)
+- Moved TransformerSelfAttention and TransformerMultiAttention into transformer_attention.py
+- Moved TransformerFeedForward into transformer_ff.py
+- Moved TransformerEncoderBlock and TransformerEncoder into transformer_encoder.py
+- Moved TransformerDecoderBlock and TransformerDecoder into transformer_decoder.py
+- Moved TransformerInputEmbedding into transformer_embedding.py
+- Simplified TransformerSelfAttentionOnlyDecoder (TASODecoder) into transformer_decoder (just pass None for the source)
+- Changed TransformerMultiAttention to conform to keras inputs, now takes input tuple inputs=(source, target)
+- Updated parameter ordering of TransformerFeedForward layer
+- Updated parameter ordering of TransformerEncoderBlock layer
+- Changed TransformerEncoder to take tuple mask=(encoder_mask, conv_mask)
+- Changed TransformerDecoderBlock API to conform to keras inputs, now takes inputs tuple=(encoder_inputs, decoder_inputs) and mask tuple=(self_attention_mask, cross_attention_mask)
+- Updated parameter ordering of TransformerDecoderBlock layer
+- Updated parameter odering of TransformerDeocder layer
+- Changed TransformerDecoder API to conform to keras inputs, now takes inputs tuple=(encoder_inputs, decoder_inputs) and mask tuple=(self_attention_mask, cross_attention_mask)
+- Changed fast_beam_decode to take n_beams instead of beam_size
+- Fixed bugs in fast_decode for non-discrete outputs
+- Added get_config/from_config to TransformerSelfAttention, TransformerMultiAttention, TransformerFeedForward, TransformerEncoderBlock, TransformerEncoder, TransformerDecoderBlock, TransformerDecoder and Transformer
+- Refactored some utilities from transformer_decoder into transformer_utils
+- Updated transformer to conform to Keras API
 
 
 # Known Errors/Bugs/Questions

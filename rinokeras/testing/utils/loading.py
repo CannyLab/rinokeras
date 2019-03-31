@@ -3,6 +3,8 @@ Utilities for testing load/restore of a layer
 """
 import tensorflow as tf
 import pickle
+import json
+import copy
 
 def load_restore_test(output, inputs, feed, weights, weights_file):
     config = tf.ConfigProto()
@@ -21,4 +23,15 @@ def load_restore_test(output, inputs, feed, weights, weights_file):
 
         output = sess.run(inputs,feed_dict=feed)
     return output
+
+
+def from_config_test(__cls, __obj):
+    config = __obj.get_config()
+    if config is None:
+        raise AssertionError('Cannot properly serialize the layer/model')
+    new_obj = __cls.from_config(config)
+    if new_obj is None:
+        raise AssertionError('Cannot properly deserialize the layer/model')
+    if json.dumps(new_obj.get_config()) != json.dumps(__obj.get_config()):
+        raise AssertionError('Construction from configutation failed')
 
