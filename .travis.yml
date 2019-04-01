@@ -12,6 +12,10 @@ env:
     - RK_TF_VERSION=tensorflow==1.12 
     - RK_TF_VERSION=tensorflow==1.13.1
     - RK_TF_VERSION=tensorflow==2.0.0a0
+matrix:
+  exclude:
+    - python: 3.7-dev
+      env: RK_TF_VERSION=tensorflow==1.12
 # command to install dependencies
 install:
   - pip install $RK_TF_VERSION
