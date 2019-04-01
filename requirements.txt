@@ -1,5 +1,4 @@
 # Core requirements
-Keras>=2.1.6
 numpy>=1.14.3
 scipy>=1.1.0
 tensorflow>=1.13.0
