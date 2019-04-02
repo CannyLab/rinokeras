@@ -454,6 +454,7 @@ class MultiHeadAttention(Model):
         qkv_projection = self.compute_qkv((qa, ma, va))
         attention_output, attention_weights = self.attention_layer(
             qkv_projection, mask=mask, return_attention_weights=True)
+        
         output = self.output_layer(attention_output)
         output = self.dropout(output)
         if return_attention_weights:

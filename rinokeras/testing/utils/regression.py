@@ -5,11 +5,13 @@ import json
 import os
 import warnings
 import numpy as np
+import tensorflow as tf
 
 def get_local_file(fpath, file__):
    return '/'+os.path.join(os.path.join(*file__.split(os.sep)[:-1]), fpath)
 
 def check_regression(regression_key, output, file__, fname, debug=False, tol=1e-3):
+    regression_key = str(tf.__version__) + '_' + regression_key
     try:
         with open(get_local_file(fname, file__), 'r') as json_file:
             jf = json.loads(json_file.read())

@@ -6,38 +6,7 @@ import os
 import warnings
 
 from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
-
-def get_local_file(fpath):
-    return '/'+os.path.join(os.path.join(*__file__.split(os.sep)[:-1]), fpath)
-
-def check_regression(regression_key, output, fname, debug=False):
-    try:
-        with open(get_local_file(fname), 'r') as json_file:
-            jf = json.loads(json_file.read())
-    except FileNotFoundError:
-        warnings.warn('{} not found. Creating it.'.format(fname))
-        jf = {}
-    if not debug and regression_key in jf:
-        with open(get_local_file(fname), 'r') as json_file:
-            jf = json.loads(json_file.read())
-            expected_output = [np.array(v) for v in jf[regression_key]]
-    else:
-        if isinstance(output, (list, tuple)):
-            jf[regression_key] = [i.tolist() for i in output]
-            expected_output = output
-        else:
-            jf[regression_key] = [output.tolist()]
-            expected_output = [output]
-        with open(get_local_file(fname), 'w') as json_file:
-            json.dump(jf, json_file)
-        warnings.warn('Regression test not found for {} in {}: Building this\
-            now.'.format(regression_key, fname))
-
-    # Now do assertions
-    if not isinstance(output, (list, tuple)):
-        output = [output]
-    for x, y in zip(output, expected_output):
-        assert np.isclose(x, y).all()
+from rinokeras.testing.utils import check_regression
 
 def check_from_config(__class, __obj):
     assert __class.from_config(__obj.get_config()) is not None
@@ -75,7 +44,7 @@ def test_luongAttention():
     assert output.shape == (16, 128)  # Make sure the output shape is correct
 
     # Do regression testing
-    check_regression('luong_attention_expected_output', output,
+    check_regression('luong_attention_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -114,7 +83,7 @@ def test_luongAttention_local():
     assert output.shape == (16, 128)  # Make sure the output shape is correct
 
     # Do regression testing
-    check_regression('luong_attention_local_expected_output', output,
+    check_regression('luong_attention_local_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -157,7 +126,7 @@ def test_attentionQKVProjection():
     assert output[2].shape == (16, 5, 12)
 
     # Do regression testing
-    check_regression('attentionqkv_projection_expected_output', output,
+    check_regression('attentionqkv_projection_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -192,7 +161,7 @@ def test_trilinearSimilarity():
     assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
 
     # Do regression testing
-    check_regression('trilinear_similarity_expected_output', output,
+    check_regression('trilinear_similarity_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -227,8 +196,8 @@ def test_scaledDotProductSimilarity():
     assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
 
     # Do regression testing
-    check_regression('scaled_dot_product_similarity_expected_output',
-                     output, 'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
+    check_regression('scaled_dot_product_similarity_expected_output', 
+                     output, __file__, 'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_applyAttentionMask():
@@ -270,7 +239,7 @@ def test_applyAttentionMask():
     # Make sure the value is not none
     assert output[1].shape == (16, 4, 10, 10)
 
-    check_regression('apply_attention_mask_expected_output', output,
+    check_regression('apply_attention_mask_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -315,7 +284,7 @@ def test_attentionMap():
     assert output[0].shape == (16, 8, 12)
     assert output[1].shape == (16, 8, 20)
 
-    check_regression('attention_map_expected_output', output,
+    check_regression('attention_map_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -365,7 +334,7 @@ def test_multiHeadAttentionMap():
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
-    check_regression('multihead_attention_map_expected_output', output,
+    check_regression('multihead_attention_map_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -412,7 +381,7 @@ def test_multiHeadAttention():
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
-    check_regression('multihead_attention_expected_output', output,
+    check_regression('multihead_attention_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     check_from_config(MultiHeadAttention, attention_map)
@@ -461,7 +430,7 @@ def test_multiHeadAttention_trilinear():
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
-    check_regression('multihead_attention_trilinear_expected_output', output,
+    check_regression('multihead_attention_trilinear_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
@@ -503,7 +472,7 @@ def test_selfAttention():
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
 
-    check_regression('self_attention_expected_output', output,
+    check_regression('self_attention_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Check that you can instantiate a layer from the config
@@ -543,5 +512,5 @@ def test_contextQueryAttention():
     assert output is not None  # Make sure the value is not none
     assert output.shape == (16, 8, 4*12)
 
-    check_regression('context_query_attention_expected_output', output,
+    check_regression('context_query_attention_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
