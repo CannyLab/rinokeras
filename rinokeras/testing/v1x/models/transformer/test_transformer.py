@@ -5,6 +5,7 @@ import tensorflow as tf
 import tempfile
 
 from rinokeras.core.v1x.utils import convert_to_attention_mask
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import reset_session, random_tensor, run_simple_session_save_weights,\
         assert_not_none, assert_expected_shapes, load_restore_test, check_regression, \
         from_config_test, random_mask_tensor, random_sequence_tensor
@@ -55,7 +56,7 @@ def test_transformer_base():
 
     # Do regression testing
     check_regression('transformer_base',
-                     output, __file__, 'regression_outputs/test_transformer_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(Transformer, layer)

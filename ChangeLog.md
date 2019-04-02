@@ -112,7 +112,7 @@
 - Added ResidualBlock from rinokeras.models.resnet
 
 ### Stacks (1.x)
-- No Changes
+- Added LayerDropoutStack which adds layer-dropout between each layer of the stack
 
 ### Transformer (1.x)
 - Moved TransformerSelfAttention and TransformerMultiAttention into transformer_attention.py
@@ -135,10 +135,23 @@
 - Refactored some utilities from transformer_decoder into transformer_utils
 - Updated transformer to conform to Keras API
 
+### QANet (1.x)
+- Refactored QANet into multiple files
+- Fixed bug in QANet self attention
+- Reordered arguments in QANet/QANetEncoder
+- Added get_config/from_config to all QANet layers
+- Added support for random (learned) embedding matrices
 
 # Known Errors/Bugs/Questions
 
 ### Distribution Layers (1.x)
 - Odd shape for entropy of DiagGaussPd () vs (BS,)
+
+### Transformer (1)
+- Using a custom output layer may cause problems when reconstructing from config (untested)
+
+### QANet (1.x)
+- QANet layers don't handle extra kwargs in get/from config
+
 
 

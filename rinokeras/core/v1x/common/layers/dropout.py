@@ -25,7 +25,7 @@ class LayerDropout(Model):
         super().__init__(*args, **kwargs)
         self.rate = rate
 
-    def call(self, layer_outputs, layer_inputs, training=None):
+    def call(self, layer_outputs, layer_inputs, training=None, **kwargs):
         if training is None:
             training = K.learning_phase()
         output = K.switch(

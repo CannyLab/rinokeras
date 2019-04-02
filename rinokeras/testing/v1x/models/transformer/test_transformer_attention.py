@@ -3,6 +3,7 @@ Testing for Transformer Attention layers
 """
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import reset_session, random_tensor, run_simple_session_save_weights,\
         assert_not_none, assert_expected_shapes, load_restore_test, check_regression, \
         from_config_test
@@ -43,7 +44,7 @@ def test_transformer_self_attention():
 
     # Do regression testing
     check_regression('transformer_self_attention_expected_output',
-                     output, __file__, 'regression_outputs/test_transformer_attention_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerSelfAttention, layer)
@@ -85,7 +86,7 @@ def test_transformer_multi_attention():
 
     # Do regression testing
     check_regression('transformer_multi_attention_expected_output',
-                     output, __file__, 'regression_outputs/test_transformer_attention_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerMultiAttention, layer)

@@ -6,6 +6,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_bert_random_replace_mask_discrete():
@@ -53,7 +54,7 @@ def test_bert_random_replace_mask_discrete():
 
     # Do regression testing
     check_regression('random_replace_mask_discrete_expected_output',
-                     output, __file__, 'regression_outputs/test_masking_outputs.json')
+                     output, __file__, 'regression_outputs/test_masking_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_bert_random_replace_mask_floating():
     reset_session()
@@ -100,4 +101,4 @@ def test_bert_random_replace_mask_floating():
 
     # Do regression testing
     check_regression('random_replace_mask_float_expected_output',
-                     output, __file__, 'regression_outputs/test_masking_outputs.json')
+                     output, __file__, 'regression_outputs/test_masking_outputs.json', debug=_RK_REBUILD_REGRESSION)

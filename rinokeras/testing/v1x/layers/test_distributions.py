@@ -4,6 +4,7 @@ import warnings
 import tempfile
 
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import check_regression, load_restore_test, \
     random_tensor, reset_session, run_simple_session_save_weights
 
@@ -55,7 +56,7 @@ def test_CategoricalPd():
 
     # Do regression testing
     check_regression('CategoricalPd_expected_output',
-                     output, __file__, 'regression_outputs/test_distribution_outputs.json')
+                     output, __file__, 'regression_outputs/test_distribution_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_DiagGaussianPd():
     reset_session()
@@ -106,4 +107,4 @@ def test_DiagGaussianPd():
 
     # Do regression testing
     check_regression('DiagGaussianPd_expected_output',
-                     output, __file__, 'regression_outputs/test_distribution_outputs.json')
+                     output, __file__, 'regression_outputs/test_distribution_outputs.json', debug=_RK_REBUILD_REGRESSION)

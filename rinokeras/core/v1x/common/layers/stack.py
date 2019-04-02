@@ -12,6 +12,7 @@ from tensorflow.keras.layers import Conv2D, Conv2DTranspose, \
     BatchNormalization, Flatten, Activation, Dense, Layer  # pylint: disable=F0401
 
 from .normalization import WeightNormDense
+from .dropout import LayerDropout
 
 
 class Stack(Model):
@@ -36,6 +37,40 @@ class Stack(Model):
 
     def get_config(self) -> Dict:
         config = {
+            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layers],
+        }
+        return config
+
+    @classmethod
+    def from_config(cls, cfg):
+        return cls(**cfg)
+
+
+class LayerDropoutStack(Stack):
+    def __init__(self, layers: Optional[Sequence[Any]] = None, layer_dropout: Optional[float] = 0, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._layer_list = []  # type: List[Layer]
+        self._layer_dropout_list = []
+        self.layer_dropout = layer_dropout
+        if layers is not None:
+            for layer in layers:
+                self.add(layer)
+
+
+    def add(self, layer):
+        self._layer_list.append(layer)
+        self._layer_dropout_list.append(LayerDropout(self.layer_dropout))
+
+    def call(self, inputs, **kwargs):
+        output = inputs
+        for idx, layer in enumerate(self._layer_list):
+            output_ld = layer(output, **kwargs)
+            output = self._layer_dropout_list[idx](output_ld,output)
+        return output
+
+    def get_config(self) -> Dict:
+        config = {
+            'layer_dropout': self.layer_dropout,
             'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layers],
         }
         return config

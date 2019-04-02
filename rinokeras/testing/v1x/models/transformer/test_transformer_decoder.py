@@ -6,6 +6,7 @@ import tensorflow as tf
 import tempfile
 
 from rinokeras.core.v1x.utils import convert_to_attention_mask
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import reset_session, random_tensor, run_simple_session_save_weights,\
         assert_not_none, assert_expected_shapes, load_restore_test, check_regression, \
         from_config_test, random_mask_tensor
@@ -48,7 +49,7 @@ def test_transformer_decoder_block_no_mask():
 
     # Do regression testing
     check_regression('transformer_decoder_block_no_mask_output',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoderBlock, layer)
@@ -96,7 +97,7 @@ def test_transformer_decoder_block():
 
     # Do regression testing
     check_regression('transformer_decoder_block_output',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoderBlock, layer)
@@ -150,7 +151,7 @@ def test_transformer_decoder_no_mask():
 
     # Do regression testing
     check_regression('transformer_decoder_no_mask_output',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoder, layer)
@@ -204,7 +205,7 @@ def test_transformer_decoder():
 
     # Do regression testing
     check_regression('transformer_decoder_output',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoder, layer)
@@ -251,7 +252,7 @@ def test_transformer_decoder_fast_decode():
 
     # Do regression testing
     check_regression('transformer_decoder_fast_decode',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoder, layer)
@@ -298,7 +299,7 @@ def test_transformer_decoder_fast_decode_discrete():
 
     # Do regression testing
     check_regression('transformer_decoder_fast_decode_discrete',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoder, layer)
@@ -345,7 +346,7 @@ def test_transformer_decoder_fast_beam_decode_discrete():
 
     # Do regression testing
     check_regression('transformer_decoder_fast_beam_decode',
-                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_decoder_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerDecoder, layer)

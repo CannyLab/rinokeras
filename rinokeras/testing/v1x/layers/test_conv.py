@@ -2,6 +2,7 @@ import numpy as np
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import check_regression, load_restore_test, \
     random_tensor, reset_session, run_simple_session_save_weights
 
@@ -47,7 +48,7 @@ def test_normed_conv_stack_1d():
 
     # Do regression testing
     check_regression('normed_conv_stack_1d_expected_output',
-                     output, __file__, 'regression_outputs/test_conv_outputs.json')
+                     output, __file__, 'regression_outputs/test_conv_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_normed_conv_stack_2d():
     reset_session()
@@ -91,7 +92,7 @@ def test_normed_conv_stack_2d():
 
     # Do regression testing
     check_regression('normed_conv_stack_2d_expected_output',
-                     output, __file__, 'regression_outputs/test_conv_outputs.json')
+                     output, __file__, 'regression_outputs/test_conv_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_normed_conv_stack_3d():
     reset_session()
@@ -135,7 +136,7 @@ def test_normed_conv_stack_3d():
 
     # Do regression testing
     check_regression('normed_conv_stack_3d_expected_output',
-                     output, __file__, 'regression_outputs/test_conv_outputs.json')
+                     output, __file__, 'regression_outputs/test_conv_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_residual_block():
     reset_session()
@@ -179,4 +180,4 @@ def test_residual_block():
 
     # Do regression testing
     check_regression('residual_block_2d_expected_output',
-                     output, __file__, 'regression_outputs/test_conv_outputs.json')
+                     output, __file__, 'regression_outputs/test_conv_outputs.json', debug=_RK_REBUILD_REGRESSION)

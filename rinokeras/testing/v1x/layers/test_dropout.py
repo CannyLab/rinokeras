@@ -3,6 +3,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_layer_dropout():
@@ -56,6 +57,6 @@ def test_layer_dropout():
 
     # Do regression testing
     check_regression('layer_dropout_nd_expected_output',
-                     output_no_drop, __file__, 'regression_outputs/test_dropout_outputs.json')
+                     output_no_drop, __file__, 'regression_outputs/test_dropout_outputs.json', debug=_RK_REBUILD_REGRESSION)
     check_regression('layer_dropout_expected_output',
-                     output_drop, __file__, 'regression_outputs/test_dropout_outputs.json')
+                     output_drop, __file__, 'regression_outputs/test_dropout_outputs.json', debug=_RK_REBUILD_REGRESSION)

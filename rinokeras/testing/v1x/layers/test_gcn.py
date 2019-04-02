@@ -3,6 +3,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_gcn():
@@ -48,4 +49,4 @@ def test_gcn():
 
     # Do regression testing
     check_regression('gcn_layer_expected_output',
-                     output, __file__, 'regression_outputs/test_gcn_outputs.json')
+                     output, __file__, 'regression_outputs/test_gcn_outputs.json', debug=_RK_REBUILD_REGRESSION)

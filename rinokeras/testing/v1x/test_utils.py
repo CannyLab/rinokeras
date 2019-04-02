@@ -5,6 +5,7 @@ import tensorflow as tf
 import tempfile
 
 from rinokeras.core.v1x.utils import convert_to_attention_mask
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import reset_session, random_tensor, run_simple_session,\
         assert_not_none, assert_expected_shapes, check_regression, \
         random_mask_tensor, random_sequence_tensor
@@ -26,7 +27,7 @@ def test_convert_sequence_mask_to_attention_mask():
     assert_expected_shapes(output,[(2,5,5)])
     # Do regression testing
     check_regression('convert_sequence_mask_to_attention_mask',
-                     output, __file__, 'regression_outputs/test_utils_outputs.json')
+                     output, __file__, 'regression_outputs/test_utils_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_convert_sequence_length_to_sequence_mask():
@@ -45,7 +46,7 @@ def test_convert_sequence_length_to_sequence_mask():
     assert_expected_shapes(output,[(2,32)])
     # Do regression testing
     check_regression('convert_sequence_length_to_sequence_mask',
-                     output, __file__, 'regression_outputs/test_utils_outputs.json')
+                     output, __file__, 'regression_outputs/test_utils_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_convert_to_attention_mask_1():
@@ -64,7 +65,7 @@ def test_convert_to_attention_mask_1():
     assert_expected_shapes(output,[(2,32,32)])
     # Do regression testing
     check_regression('convert_to_attention_mask_1',
-                     output, __file__, 'regression_outputs/test_utils_outputs.json')
+                     output, __file__, 'regression_outputs/test_utils_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_convert_to_attention_mask_2():
@@ -83,4 +84,4 @@ def test_convert_to_attention_mask_2():
     assert_expected_shapes(output,[(2,32,32)])
     # Do regression testing
     check_regression('convert_to_attention_mask_2',
-                     output, __file__, 'regression_outputs/test_utils_outputs.json')
+                     output, __file__, 'regression_outputs/test_utils_outputs.json', debug=_RK_REBUILD_REGRESSION)

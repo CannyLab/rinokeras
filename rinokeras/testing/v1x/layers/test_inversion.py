@@ -3,6 +3,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_dense_transpose():
@@ -49,7 +50,7 @@ def test_dense_transpose():
 
     # Do regression testing
     check_regression('dense_transpose_layer_expected_output',
-                     output, __file__, 'regression_outputs/test_inversion_outputs.json')
+                     output, __file__, 'regression_outputs/test_inversion_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_embedding_transpose():
 
@@ -96,7 +97,7 @@ def test_embedding_transpose():
 
     # Do regression testing
     check_regression('embedding_transpose_layer_expected_output',
-                     output, __file__, 'regression_outputs/test_inversion_outputs.json')
+                     output, __file__, 'regression_outputs/test_inversion_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_invertible_dense():
     reset_session()

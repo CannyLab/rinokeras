@@ -3,6 +3,7 @@ Testing for Transformer FF layers
 """
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import reset_session, random_tensor, run_simple_session_save_weights,\
         assert_not_none, assert_expected_shapes, load_restore_test, check_regression, \
         from_config_test
@@ -43,7 +44,7 @@ def test_transformer_input_embedding_non_discrete():
 
     # Do regression testing
     check_regression('transformer_input_embedding_non_discrete_expected_output',
-                     output, __file__, 'regression_outputs/test_transformer_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_transformer_embedding_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
     from_config_test(TransformerInputEmbedding, layer)

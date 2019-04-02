@@ -43,7 +43,7 @@ def convert_padding_mask_to_attention_mask(sequence, padding_mask):
     """
     warn("convert_padding_mask_to_attention_mask is deprecated, \
           please use convert_sequence_mask_to_attention_mask intead", DeprecationWarning)
-    convert_sequence_mask_to_attention_mask(sequence, padding_mask)
+    return convert_sequence_mask_to_attention_mask(sequence, padding_mask)
 
 
 def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):

@@ -4,38 +4,8 @@ import json
 import os
 import warnings
 
-def get_local_file(fpath):
-    return '/'+os.path.join(os.path.join(*__file__.split(os.sep)[:-1]), fpath)
-
-def check_regression(regression_key, output, fname, debug=False):
-    try:
-        with open(get_local_file(fname), 'r') as json_file:
-            jf = json.loads(json_file.read())
-    except FileNotFoundError:
-        warnings.warn('{} not found. Creating it.'.format(fname))
-        jf = {}
-    if not debug and regression_key in jf:
-        with open(get_local_file(fname), 'r') as json_file:
-            jf = json.loads(json_file.read())
-            expected_output = [np.array(v) for v in jf[regression_key]]
-    else:
-        if isinstance(output, (list, tuple)):
-            jf[regression_key] = [i.tolist() for i in output]
-            expected_output = output
-        else:
-            jf[regression_key] = [output.tolist()]
-            expected_output = [output]
-        with open(get_local_file(fname), 'w') as json_file:
-            json.dump(jf, json_file)
-        warnings.warn('Regression test not found for {} in {}: Building this\
-             now.'.format(regression_key, fname))
-
-    # Now do assertions
-    if not isinstance(output, (list, tuple)):
-        output = [output]
-    for x, y in zip(output, expected_output):
-        assert np.isclose(x, y).all()
-
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
+from rinokeras.testing.utils import check_regression
 
 def test_gated_tanh():
     tf.reset_default_graph()
@@ -66,4 +36,4 @@ def test_gated_tanh():
 
     # Do regression testing
     check_regression('gated_tanh_expected_output',
-                     output, 'regression_outputs/test_activation_outputs.json')
+                     output, __file__, 'regression_outputs/test_activation_outputs.json', debug=_RK_REBUILD_REGRESSION)

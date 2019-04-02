@@ -6,6 +6,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_residual():
@@ -51,7 +52,7 @@ def test_residual():
 
     # Do regression testing
     check_regression('residual_expected_output',
-                     output, __file__, 'regression_outputs/test_residual_outputs.json')
+                     output, __file__, 'regression_outputs/test_residual_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_highway():
     reset_session()
@@ -96,4 +97,4 @@ def test_highway():
 
     # Do regression testing
     check_regression('highway_expected_output',
-                     output, __file__, 'regression_outputs/test_residual_outputs.json')
+                     output, __file__, 'regression_outputs/test_residual_outputs.json', debug=_RK_REBUILD_REGRESSION)

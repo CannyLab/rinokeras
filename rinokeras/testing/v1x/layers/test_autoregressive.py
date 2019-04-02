@@ -6,6 +6,8 @@ import warnings
 import tempfile
 import pickle
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
+
 def get_local_file(fpath):
     return '/'+os.path.join(os.path.join(*__file__.split(os.sep)[:-1]), fpath)
 
@@ -95,7 +97,7 @@ def test_random_gauss_noise():
 
     # Do regression testing
     check_regression('random_gauss_noise_expected_output',
-                     output, 'regression_outputs/test_autoregressive_outputs.json')
+                     output, 'regression_outputs/test_autoregressive_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 def test_coupling_layer():
     tf.reset_default_graph()
@@ -153,4 +155,4 @@ def test_coupling_layer():
 
     # Do regression testing
     check_regression('coupling_layer_expected_output',
-                     output, 'regression_outputs/test_autoregressive_outputs.json')
+                     output, 'regression_outputs/test_autoregressive_outputs.json', debug=_RK_REBUILD_REGRESSION)

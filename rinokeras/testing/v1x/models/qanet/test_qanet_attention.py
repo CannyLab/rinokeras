@@ -1,5 +1,5 @@
 """
-Testing for Transformer FF layers
+Testing for QANet Attention layers
 """
 import tempfile
 
@@ -8,11 +8,11 @@ from rinokeras.testing.utils import reset_session, random_tensor, run_simple_ses
         assert_not_none, assert_expected_shapes, load_restore_test, check_regression, \
         from_config_test
 
-def test_transformer_feed_forward():
+def test_qanet_self_attention():
     reset_session()
     # Construct the layer
-    from rinokeras.core.v1x.models.transformer import TransformerFeedForward
-    layer = TransformerFeedForward(filter_size=128, hidden_size=64)
+    from rinokeras.core.v1x.models.qanet import QANetSelfAttention
+    layer = QANetSelfAttention(n_heads=4)
 
     # Make sure that the layer is not None
     assert layer is not None
@@ -43,8 +43,8 @@ def test_transformer_feed_forward():
                           weights_file=weights_file)
 
     # Do regression testing
-    check_regression('transformer_feed_forward_expected_output',
-                     output, __file__, 'regression_outputs/test_transformer_ff_outputs.json', debug=_RK_REBUILD_REGRESSION)
+    check_regression('qanet_self_attention_expected_output',
+                     output, __file__, 'regression_outputs/test_qanet_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
     # Do a config test
-    from_config_test(TransformerFeedForward, layer)
+    from_config_test(QANetSelfAttention, layer)
