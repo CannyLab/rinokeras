@@ -3,4 +3,4 @@ from rinokeras import RK_USE_TF_VERSION as _RK_USE_TF_VERSION
 if _RK_USE_TF_VERSION == 1:
     from rinokeras.core.v1x.models.transformer import *
 elif _RK_USE_TF_VERSION == 2:
-    raise NotImplementedError('Layers not yet supported in RK2.0')
+    raise NotImplementedError('Transformer not yet supported in RK2.0')
