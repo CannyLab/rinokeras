@@ -5,12 +5,13 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Dropout
+import warnings
 
 import rinokeras.core.v1x as rk
 from rinokeras.core.v1x.common.layers import InvertibleDense, CouplingLayer
 from rinokeras.core.v1x.common.layers import WeightNormDense as Dense
 
-from rinokeras.models.transformer import TransformerInputEmbedding, TransformerEncoder, TransformerDecoderBlock
+from rinokeras.core.v1x.models.transformer import TransformerInputEmbedding, TransformerEncoder, TransformerDecoderBlock
 from rinokeras.core.v1x.train import Experiment
 
 
@@ -18,10 +19,10 @@ class EvenOddInvertibleDense(Model):
 
     def __init__(self, out_size):
         super().__init__()
+        warnings.warn('GLOW code is untested -- USE AT YOUR OWN RISK.', FutureWarning)
         self.invertible_dense = InvertibleDense(2 * out_size)
 
     def call(self, inputs, reverse=False):
-
         batch_size = tf.shape(inputs)[0]
         sequence_length = inputs.shape[1] if inputs.shape[1].value is not None \
             else tf.shape(inputs)[1]
@@ -49,6 +50,7 @@ class EvenOddCouplingLayer(Model):
                  layer_dropout: Optional[float] = None,
                  kernel_regularizer=None) -> None:
         super().__init__()
+        warnings.warn('GLOW code is untested -- USE AT YOUR OWN RISK.', FutureWarning)
         self.out_size = out_size
         self.project = Dense(hidden_size, activation='relu')
         self.decoder_block = TransformerDecoderBlock(
@@ -139,6 +141,7 @@ class TransformerGlowModel(Model):
                  activity_regularizer=None) -> None:
         assert out_size > 0
         super().__init__()
+        warnings.warn('GLOW code is untested -- USE AT YOUR OWN RISK.', FutureWarning)
         self.discrete = discrete
         self.n_symbols = n_symbols
         self.out_size = out_size
@@ -245,6 +248,7 @@ class TransformerGlowExperiment(Experiment):
     def __init__(self, sigma, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.sigma = sigma
+        warnings.warn('GLOW code is untested -- USE AT YOUR OWN RISK.', FutureWarning)
 
     def loss_function(self, inputs, outputs):
         z, log_s_list, log_det_W_list = outputs

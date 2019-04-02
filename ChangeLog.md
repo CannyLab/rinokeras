@@ -4,18 +4,20 @@
 - Moved tensorflow 1.x rinokeras to rinokeras.core.v1x
 - Updated folder structure for cleaner API changes
 - Added support for tensorflow 1.13
-- Add back-support for tensorflow < 1.13 (<= 1.12)
+- Confirmed support for tensorflow 1.12
+- Confirmed support in Python 3.4,3.5,3.6,3.7
 
 ## Major Changes (In Progress):
 - Added additional testing (regression + unit testing) for 1.x code
 - API changed to conform to Keras standards
+- Added support for tensorflow 2.0
+- Restructure utils folder
 
 ## Major Changes (Planned)
 - Changed default to tensorflow 2.0
-- Added support for tensorflow 2.0
 - Added TPU support for tensorflow 2.0 libraries
 - Add support for Keras compile/fit
-- Restructure utils folder
+
 
 ## Minor/All Changes
 
@@ -141,6 +143,12 @@
 - Reordered arguments in QANet/QANetEncoder
 - Added get_config/from_config to all QANet layers
 - Added support for random (learned) embedding matrices
+
+### ResNet (1.x)
+- Moved GroupedConv to Conv layers
+
+### GLOW (1.x)
+- Added warnings to GLOW code about functionality
 
 # Known Errors/Bugs/Questions
 
