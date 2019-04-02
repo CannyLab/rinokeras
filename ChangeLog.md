@@ -6,18 +6,17 @@
 - Added support for tensorflow 1.13
 - Confirmed support for tensorflow 1.12
 - Confirmed support in Python 3.4,3.5,3.6,3.7
+- Restructure utils folder
 
 ## Major Changes (In Progress):
 - Added additional testing (regression + unit testing) for 1.x code
 - API changed to conform to Keras standards
 - Added support for tensorflow 2.0
-- Restructure utils folder
 
 ## Major Changes (Planned)
 - Changed default to tensorflow 2.0
 - Added TPU support for tensorflow 2.0 libraries
 - Add support for Keras compile/fit
-
 
 ## Minor/All Changes
 
@@ -39,7 +38,7 @@
 - Removed non-functioning code
     - Updated GLOW model to be functional
     - Updated DenseTranspose to be functional
-    - Removed Adamax
+    - Removed Adamax (Re-Added in TF1.13 support)
 - Deprecated EagerGraph v1x API in favor of Rinokeras v2x
 - Moved GroupedConvolution and ResidualBlock from rinokeras.models.resnet to rinokeras.layers.conv and rinokeras.layers.residual respectively
 
@@ -149,6 +148,16 @@
 
 ### GLOW (1.x)
 - Added warnings to GLOW code about functionality
+
+### Uitils (1.x)
+- Created unique utilities files for utils:
+    - Keras
+    - metrics
+    - masking
+    - optim
+    - schedules
+    - tensors
+- Added BLEU1, BLEU2, BLEU3, BLEU4 and ROUGE-L metrics as tensorflow ops
 
 # Known Errors/Bugs/Questions
 
