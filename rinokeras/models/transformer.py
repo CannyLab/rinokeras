@@ -635,19 +635,24 @@ class TransformerDecoder(Model):
             return result
 
         output_shape = (None, None) if discrete else (None, None, output_size)
-
+        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
         inputs = DecoderResult(
             seqpos=tf.constant(0),
             inputs=initial_input,
-            cache=self.get_initial_cache(max_seq_len),
+            cache=initial_cache,
             output_sequence=output_sequence,
             is_finished=tf.zeros((batch_size,), dtype=tf.bool))
+
+        cache_shapes = {}
+        for name, el in inputs.cache.items():
+            if 'seqpos' in name: cache_shapes[name] = tf.TensorShape(None)
+            else: cache_shapes[name] = tf.TensorShape([None, None, self.d_model])
 
         shapes = DecoderResult(
             seqpos=inputs.seqpos.shape,
             inputs=tf.TensorShape(output_shape),
-            cache={name: getattr(el, 'shape', tf.TensorShape(None))
-                   for name, el in inputs.cache.items()},
+            cache=cache_shapes,
             output_sequence=tf.TensorShape(None),
             is_finished=inputs.is_finished.shape)
 
@@ -787,7 +792,7 @@ class TransformerDecoder(Model):
         else:
             initial_input = tf.tile(initial_input, [beam_size,1])
 
-        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers[0]} # [0]
+        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
         initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
 
         inputs = DecRes(
@@ -909,7 +914,8 @@ class TransformerDecoder(Model):
 
     def get_initial_cache(self, size):
         initial_cache = {}
-        initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        initial_cache = {layer.name: tf.zeros((size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
+        #initial_cache = {layer.name: tf.TensorArray(tf.float32, 1, dynamic_size=True, clear_after_read=False) for layer in self.decoding_stack.layers}
         initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
         return initial_cache
 
