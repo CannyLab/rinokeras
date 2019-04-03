@@ -6,6 +6,9 @@ tqdm>=4.26.0
 h5py
 packaging
 
+# Metrics
+nltk
+
 # Compatability
 deprecation
 typing
