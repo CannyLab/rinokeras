@@ -5,22 +5,10 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-# warnings.simplefilter('error', tf.errors.OutOfRangeError)
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+warnings.simplefilter('error', tf.errors.OutOfRangeError)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
 from rinokeras.core.v2x.train import Experiment
-
-class TestExperiment(Experiment):
-    def __init__(self, model):
-        super().__init__(model=model, optimizer=tf.optimizers.Adam(), distribution_strategy=tf.distribute.MirroredStrategy())
-        self.loss = tf.losses.SparseCategoricalCrossentropy()
-
-    def forward(self, inputs):
-        return self.model(inputs[0])
-
-    def loss_function(self, model_outputs, inputs):
-        return self.loss(y_pred=model_outputs, y_true=inputs[1]), None
-
 
 class TestExperiment(Experiment):
 
@@ -72,7 +60,7 @@ def test_ExperimentRunner_sequential():
     exp = TestExperiment()
     runner = exp.runner()
     # Train the model
-    runner.train(train_dataset, eval_dataset, 10, n_iterations_per_epoch_train=450, n_iterations_per_epoch_eval=100)
+    runner.train(train_dataset, eval_dataset, 1, n_iterations_per_epoch_train=30, n_iterations_per_epoch_eval=30)
         
 if __name__ == '__main__':
     test_ExperimentRunner_sequential()
