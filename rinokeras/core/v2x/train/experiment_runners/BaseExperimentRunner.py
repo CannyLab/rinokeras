@@ -49,7 +49,6 @@ class BaseExperimentRunner:
 
             def run_eval_iteration(inputs):
                 loss, metrics = self._built_forward_pass(inputs)
-                # self._metrics_accumulator.update_metrics(metrics)
                 return loss, metrics
             self._built_run_eval_iteration = run_eval_iteration
 
@@ -124,10 +123,10 @@ class BaseExperimentRunner:
             print('[Epoch {}] Train Metrics: {}'.format(epoch, train_metrics))
             print('[Epoch {}] Eval Metrics: {}'.format(epoch, eval_metrics))
         
+    # Run a forward pass on the network with a set of inputs
+    def forward(self, inputs):
+        return self._built_forward_pass(inputs, return_outputs=True)
 
-    @property
-    def forward(self,):
-        return self._built_forward_pass
     @property
     def model(self,):
         return self._built_model
@@ -136,4 +135,4 @@ class BaseExperimentRunner:
         return self._built_loss
     @property
     def optimizer(self,):
-        return self._built_loss
+        return self._built_optimizer
