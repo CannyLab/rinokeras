@@ -20,3 +20,4 @@ pytest-cov
 
 # TENSORFLOW
 tensorflow
+tensorflow_datasets

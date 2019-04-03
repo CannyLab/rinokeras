@@ -5,10 +5,10 @@ import tensorflow as tf
 import numpy as np
 import os
 import warnings
-warnings.simplefilter('error', tf.errors.OutOfRangeError)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+# warnings.simplefilter('error', tf.errors.OutOfRangeError)
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
-from rinokeras.core.v2x.train.experiment import Experiment
+from rinokeras.core.v2x.train import Experiment
 
 class TestExperiment(Experiment):
     def __init__(self, model):
@@ -40,7 +40,8 @@ class TestExperiment(Experiment):
     def get_loss_function(self, ):
         loss = tf.losses.SparseCategoricalCrossentropy()
         def loss_function(model_outputs, inputs):
-            return loss(y_true=inputs[1], y_pred=model_outputs), None
+            c_loss = loss(y_true=inputs[1], y_pred=model_outputs)
+            return c_loss, {'loss': c_loss}
         return loss_function
 
     def get_optimizer(self,):
