@@ -462,9 +462,9 @@ class TransformerDecoder(Model):
             last_words_chosen = last_words_chosen * tf.reshape(1-tf.cast(is_finished, tf.int32), (n_beams*batch_size, 1))
 
 
-            def copy_mech(): return tf.slice(initial_input,[0,seqpos], [-1,1])
+            def copy_mech(): return initial_input[:, seqpos+1]
             def choose_mech(): return  last_words_chosen
-            copy_cdn = tf.less(seqpos, tf.shape(initial_input)[-1])
+            copy_cdn = tf.less(seqpos, tf.shape(initial_input)[-1]-1)
             last_words_chosen = tf.cond(copy_cdn, copy_mech, choose_mech)
 
             def start_output_function():
@@ -492,7 +492,7 @@ class TransformerDecoder(Model):
                 if k != 'seqpos': # This works for input sequences and cross_attn woot
                     cache[k] = tf.gather(cache[k], chosen_from_beam_index, axis=0)
 
-            cache['seqpos'] = seqpos+1
+            cache['seqpos'] = seqpos + 1
             result = DecRes(seqpos=seqpos + 1, inputs=last_words_chosen, cache=cache, output_sequence=output_sequence, is_finished=is_finished, seq_length=seq_length, scores=scores)
 
             return result
