@@ -696,12 +696,11 @@ class TransformerDecoder(Model):
             vocab_size = logit_shapes[1]
 
             last_output_logits_logs = tf.nn.log_softmax(last_output_logits)
-
+            #last_output_logits_logs = last_output_logits
             if not sample:
                 best_logits_2, best_indices_2 = tf.nn.top_k(last_output_logits_logs, k=beam_size, sorted=True, name=None)
             else:
                 best_indices_2 = tf.cast(tf.multinomial(last_output_logits, num_samples=beam_size), dtype=tf.int32)
-                
                 flat_logits_logs = tf.reshape(last_output_logits_logs, [-1]) # Flatten the last_output_logits
                 to_add_to_indeces = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*vocab_size*beam_size, delta=vocab_size), [-1,1]), [1,beam_size]), [-1])
                 flat_indices = to_add_to_indeces + tf.reshape(best_indices_2, [-1])
@@ -716,16 +715,29 @@ class TransformerDecoder(Model):
             modified_scores = scores
 
             expanded_finished = tf.reshape(tf.tile(tf.reshape(is_finished, [-1,1]),[1,beam_size]), [-1])
+            '''mask_size = batch_size * beam_size * beam_size
+            indices = tf.reshape(tf.range(mask_size, delta=beam_size, dtype=tf.int32), [mask_size,1])
+            updates = tf.zeros([batch_size * beam_size])
+            mask = tf.scatter_nd(indices, updates, [mask_size])
+            mask = tf.reshape(mask, [-1])
+            modified_finished = tf.cast(expanded_finished, dtype=tf.float32) * mask'''
+
             expanded_original_scores = tf.reshape(tf.tile(tf.reshape(scores, [-1,1]),[1,beam_size]), [-1])
             expanded_modified_scores = tf.reshape(tf.tile(tf.reshape(modified_scores, [-1,1]),[1,beam_size]), [-1])
 
             score_delta = tf.squeeze(flattened_best_logits, 1) * (1-tf.cast(expanded_finished, tf.float32))
+            #modified_delta = -100000.0 * modified_finished
             expanded_original_scores += score_delta
             expanded_modified_scores += score_delta
+            #modified_delta = -10000.0 * modified_finished
+            #expanded_modified_scores += modified_delta
 
             def start_fn_choose_beams():
                 # Special case, we force to select the first k words for each beam. To allow tie-breaking
                 return tf.range(beam_size*batch_size)
+                #beam_added = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*beam_size*beam_size, delta=beam_size*beam_size), [-1,1]), [1,beam_size]), [-1])
+                #beam_range = tf.reshape(tf.tile(tf.reshape(tf.range(beam_size), [-1,1]), [batch_size,1]), [-1])
+                #return beam_added + beam_range
 
             def normal_fn_choose_beams():
                 # We have to get the top k for each beam. Good luck
@@ -735,7 +747,7 @@ class TransformerDecoder(Model):
                 chosen_beam_indices = beam_added + tf.reshape(chosen_beam_ids, [-1])
                 return chosen_beam_indices
 
-            chosen_beam_indices = tf.cond(start_cdn, start_fn_choose_beams, normal_fn_choose_beams) 
+            chosen_beam_indices = tf.cond(start_cdn, start_fn_choose_beams, normal_fn_choose_beams)
             chosen_beam_scores = tf.gather(expanded_original_scores, chosen_beam_indices)
 
             chosen_from_beam_index = tf.cast(tf.math.floor(chosen_beam_indices / beam_size), dtype=tf.int32) # We need this for caching purposes
@@ -749,7 +761,7 @@ class TransformerDecoder(Model):
             def copy_mech(): return tf.slice(initial_input,[0,seqpos], [-1,1])
             def choose_mech(): return  last_words_chosen
             copy_cdn = tf.less(seqpos, tf.shape(initial_input)[-1])
-            last_words_chosen = tf.cond(copy_cdn, copy_mech, choose_mech)
+            #last_words_chosen = tf.cond(copy_cdn, copy_mech, choose_mech)
 
             def start_output_function():
                 return last_words_chosen
