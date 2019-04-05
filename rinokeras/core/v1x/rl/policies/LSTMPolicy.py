@@ -1,7 +1,6 @@
-from tensorflow.keras import Model
-from tensorflow.keras.layers import LSTMCell
+from typing import Sequence, Optional
 
-import gym
+from tensorflow.keras.layers import LSTM
 
 from .RecurrentPolicy import RecurrentPolicy
 
@@ -9,29 +8,15 @@ from .RecurrentPolicy import RecurrentPolicy
 class LSTMPolicy(RecurrentPolicy):
 
     def __init__(self,
-                 obs_space: gym.Space,
-                 act_space: gym.Space,
-                 embedding_model: Model,
-                 model_dim: int = 64,
-                 n_layers_logits: int = 1,
-                 n_layers_value: int = 1,
+                 num_outputs: int,
+                 fcnet_hiddens: Sequence[int],
+                 fcnet_activation: str,
+                 conv_filters: Optional[Sequence[int]] = None,
+                 conv_activation: str = 'relu',
                  lstm_cell_size: int = 256,
-                 take_greedy_actions: bool = False,
-                 initial_logstd: float = 0,
-                 normalize_observations: bool = False,
-                 use_rmc: bool = False,
-                 **kwargs) -> None:
-
-        recurrent_cell = LSTMCell(lstm_cell_size, implementation=2)
+                 lstm_use_prev_action_reward: bool = False,
+                 **options):
         super().__init__(
-            obs_space,
-            act_space,
-            embedding_model,
-            recurrent_cell,
-            model_dim=model_dim,
-            n_layers_logits=n_layers_logits,
-            n_layers_value=n_layers_value,
-            take_greedy_actions=take_greedy_actions,
-            initial_logstd=initial_logstd,
-            normalize_observations=normalize_observations,
-            **kwargs)
+            LSTM, num_outputs, fcnet_hiddens, fcnet_activation,
+            conv_filters, conv_activation, lstm_cell_size,
+            lstm_use_prev_action_reward, **options)
