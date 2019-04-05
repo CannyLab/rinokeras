@@ -1,10 +1,13 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple, Union
 
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.initializers import VarianceScaling
 
-from rinokeras.common.layers import DenseStack, Conv2DStack
+from rinokeras.layers import DenseStack, Conv2DStack
+
+
+ConvLayerSpec = Tuple[int, Union[int, Tuple[int, int]], int]
 
 
 class StandardPolicy(tf.keras.Model):
@@ -13,7 +16,7 @@ class StandardPolicy(tf.keras.Model):
                  num_outputs: int,
                  fcnet_hiddens: Sequence[int],
                  fcnet_activation: str,
-                 conv_filters: Optional[Sequence[int]] = None,
+                 conv_filters: Optional[Sequence[ConvLayerSpec]] = None,
                  conv_activation: str = 'relu',
                  **options):
         super().__init__()
@@ -28,8 +31,9 @@ class StandardPolicy(tf.keras.Model):
         self._options = options
 
         if conv_filters is not None:
+            filters, kernel_size, strides = list(zip(*conv_filters))
             self.conv_layer = Conv2DStack(
-                conv_filters, options['conv_kernel_size'], options['conv_strides'],
+                filters, kernel_size, strides,
                 activation=conv_activation, flatten_output=True)
 
         self.dense_layer = DenseStack(
