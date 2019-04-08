@@ -28,10 +28,11 @@ class LayerDropout(Model):
     def call(self, layer_outputs, layer_inputs, training=None, **kwargs):
         if training is None:
             training = K.learning_phase()
-        output = K.switch(
-            training,
+
+        output = K.in_train_phase(
             K.switch(K.random_uniform([]) > self.rate, layer_outputs, layer_inputs),
-            layer_outputs)
+            layer_outputs,
+            training=training)
         return output
 
     def get_config(self) -> Dict:
