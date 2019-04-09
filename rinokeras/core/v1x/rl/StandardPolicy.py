@@ -2,7 +2,7 @@ from typing import Optional, Sequence, Tuple, Union
 
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-from tensorflow.keras.initializers import VarianceScaling
+from ray.rllib.models.misc import normc_initializer
 
 from rinokeras.layers import DenseStack, Conv2DStack
 
@@ -34,32 +34,34 @@ class StandardPolicy(tf.keras.Model):
             filters, kernel_size, strides = list(zip(*conv_filters))
             self.conv_layer = Conv2DStack(
                 filters, kernel_size, strides,
-                activation=conv_activation, flatten_output=True)
+                padding='valid',
+                activation=conv_activation,
+                flatten_output=True)
 
         self.dense_layer = DenseStack(
             fcnet_hiddens,
-            kernel_initializer=VarianceScaling(1.0),
+            kernel_initializer=normc_initializer(1.0),
             activation=fcnet_activation,
             output_activation=fcnet_activation)
+
+        # WARNING: DO NOT CHANGE KERNEL INITIALIZER!!!
+        # PPO/Gradient based methods are extremely senstive to this and will break
+        # Don't alter this unless you're sure you know what you're doing.
         self.output_layer = Dense(
             num_outputs,
-            kernel_initializer=VarianceScaling(0.01))
+            kernel_initializer=normc_initializer(0.01))
 
-    def embed_features(self, inputs, seqlens, initial_state):
+    def call(self, inputs, seqlens=None, initial_state=None):
         features = inputs['obs']
 
         if self._use_conv:
             features = self.conv_layer(features)
 
         latent = self.dense_layer(features)
+        logits = self.output_layer(latent)
 
-        outputs = {'latent': latent}
-        return outputs
+        output = {'latent': latent, 'logits': logits}
 
-    def call(self, inputs, seqlens=None, initial_state=None):
-        output = self.embed_features(inputs, seqlens, initial_state)
-        logits = self.output_layer(output['latent'])
-        output['logits'] = logits
         return output
 
     @property

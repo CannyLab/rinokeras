@@ -3,6 +3,7 @@ from typing import Sequence, Optional
 from tensorflow.keras.layers import LSTM
 
 from .RecurrentPolicy import RecurrentPolicy
+from .StandardPolicy import ConvLayerSpec
 
 
 class LSTMPolicy(RecurrentPolicy):
@@ -11,7 +12,7 @@ class LSTMPolicy(RecurrentPolicy):
                  num_outputs: int,
                  fcnet_hiddens: Sequence[int],
                  fcnet_activation: str,
-                 conv_filters: Optional[Sequence[int]] = None,
+                 conv_filters: Optional[Sequence[ConvLayerSpec]] = None,
                  conv_activation: str = 'relu',
                  lstm_cell_size: int = 256,
                  lstm_use_prev_action_reward: bool = False,
@@ -19,4 +20,4 @@ class LSTMPolicy(RecurrentPolicy):
         super().__init__(
             LSTM, num_outputs, fcnet_hiddens, fcnet_activation,
             conv_filters, conv_activation, lstm_cell_size,
-            lstm_use_prev_action_reward, **options)
+            lstm_use_prev_action_reward, recurrent_args={'use_bias': True}, **options)
