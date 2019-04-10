@@ -251,8 +251,6 @@ class TransformerDecoder(Model):
         else:
             target_embedding = target_input
 
-        print(target_embedding)
-
         if cache is not None and mask_future:
             warnings.warn("Future masking should be unnecessary when using caching and will probably cause an error. \
                            If you think it's necessary, feel free to suppress this warning.")
@@ -397,7 +395,7 @@ class TransformerDecoder(Model):
             raise NotImplementedError("Prembedding hook is not supported in fast_beam_decode")
 
         def decoding_step(seqpos, inputs, cache, output_sequence, is_finished, seq_length, scores):
-            start_cdn = tf.equal(cache['seqpos'], tf.constant(0))
+            first_iteration_cdn = tf.equal(cache['seqpos'], tf.constant(0))
 
             output = self(inputs=(encoder_output, inputs),
                           mask=(encoder_mask, None),
@@ -423,7 +421,6 @@ class TransformerDecoder(Model):
                 flat_indices = to_add_to_indeces + tf.reshape(best_indices_2, [-1])
                 gathered_scores = tf.gather(flat_logits_logs, flat_indices)
                 best_logits_2 = tf.reshape(gathered_scores, [n_beams*batch_size, n_beams])
-                print("here")
 
             # When flattened, this should include first n_beams words from beam 1, then n_beams words from beam 2, etc.
             flattened_best_indices = tf.reshape(best_indices_2, (-1,1))
@@ -439,43 +436,48 @@ class TransformerDecoder(Model):
             expanded_original_scores += score_delta
             expanded_modified_scores += score_delta
 
-            def start_fn_choose_beams():
-                # Special case, we force to select the first k words for each beam. To allow tie-breaking
-                return tf.range(n_beams*batch_size)
-
-            def normal_fn_choose_beams():
+            def choose_beams():
                 # We have to get the top k for each beam. Good luck
                 folded_scores = tf.reshape(expanded_modified_scores, [batch_size, -1])
-                chosen_beam_mscores, chosen_beam_ids = tf.nn.top_k(folded_scores, k=n_beams, sorted=True)
+                _, chosen_beam_ids = tf.nn.top_k(folded_scores, k=n_beams, sorted=True)
                 beam_added = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*n_beams*n_beams, delta=n_beams*n_beams), [-1,1]), [1,n_beams]), [-1])
                 chosen_beam_indices = beam_added + tf.reshape(chosen_beam_ids, [-1])
                 return chosen_beam_indices
 
-            chosen_beam_indices = tf.cond(start_cdn, start_fn_choose_beams, normal_fn_choose_beams) 
-            chosen_beam_scores = tf.gather(expanded_original_scores, chosen_beam_indices)
+            # Initialize the beam indices
+            chosen_beam_indices = tf.cond(
+                first_iteration_cdn,
+                lambda: tf.range(n_beams*batch_size),
+                choose_beams,
+            )
 
+            chosen_beam_scores = tf.gather(expanded_original_scores, chosen_beam_indices)
             chosen_from_beam_index = tf.cast(tf.math.floor(chosen_beam_indices / n_beams), dtype=tf.int32) # We need this for caching purposes
 
             # Rewrite the  output
             last_words_chosen = tf.gather(flattened_best_indices, chosen_beam_indices)
-            shuffled_is_finished = tf.gather(is_finished, chosen_from_beam_index)
+            # shuffled_is_finished = tf.gather(is_finished, chosen_from_beam_index)
             last_words_chosen = last_words_chosen * tf.reshape(1-tf.cast(is_finished, tf.int32), (n_beams*batch_size, 1))
 
+            # The output word is eithe the chosen word, or we are copying from the
+            # initial input, depending on the point in the sequence position.
+            output_word = tf.cond(
+                tf.less(seqpos, tf.shape(initial_input)[-1]-1),
+                lambda: tf.reshape(initial_input[:, seqpos+1], [n_beams*batch_size, 1]),
+                lambda: last_words_chosen,
+            )
+ 
+            # Build the output sequence for the the inputs
+            output_sequence = tf.cond(
+                tf.less(seqpos, tf.shape(initial_input)[-1]),
+                lambda: tf.cond(
+                    first_iteration_cdn,
+                    lambda: output_word,
+                    lambda: tf.concat([output_sequence, output_word], axis=1),
+                ),
+                lambda: tf.concat([tf.gather(output_sequence, chosen_from_beam_index, axis=0), output_word], axis=1),
 
-            def copy_mech(): return initial_input[:, seqpos+1]
-            def choose_mech(): return  last_words_chosen
-            copy_cdn = tf.less(seqpos, tf.shape(initial_input)[-1]-1)
-            last_words_chosen = tf.cond(copy_cdn, copy_mech, choose_mech)
-
-            def start_output_function():
-                return last_words_chosen
-
-            def normal_output_function():
-                output_seq = tf.gather(output_sequence, chosen_from_beam_index, axis=0)
-                output_seq = tf.concat([output_seq, last_words_chosen], axis=1)
-                return output_seq
-
-            output_sequence = tf.cond(start_cdn, start_output_function, normal_output_function)
+            )
 
             scores = chosen_beam_scores
 
@@ -493,7 +495,13 @@ class TransformerDecoder(Model):
                     cache[k] = tf.gather(cache[k], chosen_from_beam_index, axis=0)
 
             cache['seqpos'] = seqpos + 1
-            result = DecRes(seqpos=seqpos + 1, inputs=last_words_chosen, cache=cache, output_sequence=output_sequence, is_finished=is_finished, seq_length=seq_length, scores=scores)
+            result = DecRes(seqpos=seqpos + 1,
+                            inputs=output_word,
+                            cache=cache,
+                            output_sequence=output_sequence,
+                            is_finished=is_finished,
+                            seq_length=seq_length,
+                            scores=scores)
 
             return result
 

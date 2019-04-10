@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 from setuptools import setup, find_packages
 
-with open('README.md') as f:
-    readme = f.read()
+with open('README.md', 'r') as rf:
+    README = rf.read()
 
-with open('LICENSE') as f:
-    license = f.read()
+with open('LICENSE', 'r') as lf:
+    LICENSE = lf.read()
 
 setup(
     name='rinokeras',
     version='1.0.0',
     description='CannyLab Algorithms Repository',
-    long_description=readme,
+    long_description=README,
     author='Roshan Rao, David Chan',
     author_email='roshan_rao@berkeley.edu, davidchan@berkeley.edu',
-    url='https://github.com/CannyLab/rionkeras',
-    license=license,
+    url='https://github.com/CannyLab/rinokeras',
+    license=LICENSE,
     install_requires=[
         'numpy',
         'scipy',
