@@ -1,4 +1,4 @@
-# Rinokeras [MAJOR VERSION REFACTOR]
+# Rinokeras
 
 ### WARNING
 
@@ -17,15 +17,31 @@ Read our docs: https://rinokeras.readthedocs.io/en/latest/index.html
 
 You can install in development mode using `pip install -e .`
 
-**Requirements**
--Keras>=2.1.6
--numpy>=1.14.3
--scipy>=1.1.0
--tensorflow>=1.13.0
--pytest>=3.7.3
--tqdm>=4.26.0
--h5py
--deprecation
+#### Requirements
+
+##### Core Requirements
+numpy>=1.14.3
+scipy>=1.1.0
+pytest>=3.7.3
+tqdm>=4.26.0
+h5py
+packaging
+
+##### Metrics
+nltk [optional]
+
+##### Compatability
+deprecation
+typing
+
+##### Coverage
+coverage
+codecov
+pytest-cov
+
+###### Tensorflow
+tensorflow
+tensorflow_datasets [optional]
 
 ### About the Name
 
