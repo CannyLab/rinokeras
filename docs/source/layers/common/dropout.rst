@@ -1,14 +1,14 @@
 Dropout
 =======
 
-.. automodule:: rinokeras.core.v1x.common.layers
+.. automodule:: rinokeras.common.layers
 
     .. autoclass:: LayerDropout
         :members:
         :undoc-members:
         :show-inheritance:
 
-    .. autoclass:: BERTRandomReplaceMask
+    .. autoclass:: MaskInput
         :members:
         :undoc-members:
         :show-inheritance:

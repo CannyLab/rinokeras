@@ -20,5 +20,5 @@ setup(
         'pytest >= 3.7.0',
         'numpy >= 1.14.1',
     ],
-    packages=find_packages(exclude=['example','research'])  # exclude=('tests', 'docs')
+    packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )

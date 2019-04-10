@@ -1,19 +1,7 @@
-# Core requirements
-numpy
-scipy
-pytest
-tqdm
+Keras>=2.1.6
+numpy>=1.14.3
+scipy>=1.1.0
+tensorflow>=1.10.0
+pytest>=3.7.3
+tqdm>=4.26.0
 h5py
-packaging
-
-# Compatability
-deprecation
-typing
-
-# Coverage
-coverage
-codecov
-pytest-cov
-
-# Tensorflow
-tensorflow

@@ -1,7 +1,7 @@
 Experiments
 ==============
 
-.. automodule:: rinokeras.core.v1x.train.Experiment
+.. automodule:: rinokeras.train.Experiment
     :members:
     :undoc-members:
     :show-inheritance:

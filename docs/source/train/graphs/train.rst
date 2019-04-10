@@ -1,7 +1,7 @@
 Train
 ============
 
-.. automodule:: rinokeras.core.v1x.train.TrainGraph
+.. automodule:: rinokeras.train.TrainGraph
     :members:
     :undoc-members:
     :show-inheritance:

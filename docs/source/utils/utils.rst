@@ -1,7 +1,7 @@
 Utilities
 ============
 
-.. automodule:: rinokeras.core.v1x.utils
+.. automodule:: rinokeras.utils
     :members:
     :undoc-members:
     :show-inheritance:

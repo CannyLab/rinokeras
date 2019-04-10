@@ -1,7 +1,7 @@
 Distributions
 =====================================
 
-.. automodule:: rinokeras.core.v1x.common.distributions
+.. automodule:: rinokeras.common.distributions
     :members:
     :undoc-members:
     :show-inheritance:

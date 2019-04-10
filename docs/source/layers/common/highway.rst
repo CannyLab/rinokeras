@@ -1,7 +1,7 @@
 Highway
 ============
 
-.. automodule:: rinokeras.core.v1x.common.layers
+.. automodule:: rinokeras.common.layers
 
     .. autoclass:: Highway
         :members:

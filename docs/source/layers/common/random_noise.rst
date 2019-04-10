@@ -1,7 +1,7 @@
 Random Noise
 ================
 
-.. automodule:: rinokeras.core.v1x.common.layers
+.. automodule:: rinokeras.common.layers
 
     .. autoclass:: RandomNoise
         :members:
