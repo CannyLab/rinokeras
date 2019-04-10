@@ -1,4 +1,4 @@
-# Rinokeras 0.2 -- Changelog
+# Rinokeras 1.0.0 -- Changelog
 
 ## Major Changes (Completed)
 - Moved tensorflow 1.x rinokeras to rinokeras.core.v1x

@@ -6,9 +6,6 @@ tqdm>=4.26.0
 h5py
 packaging
 
-# Metrics
-nltk
-
 # Compatability
 deprecation
 typing
@@ -18,6 +15,5 @@ coverage
 codecov
 pytest-cov
 
-# TENSORFLOW
+# Tensorflow
 tensorflow
-tensorflow_datasets

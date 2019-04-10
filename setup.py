@@ -12,13 +12,22 @@ setup(
     version='1.0.0',
     description='CannyLab Algorithms Repository',
     long_description=readme,
-    author='Roshan Rao',
-    author_email='roshan_rao@berkeley.edu',
-    url='https://github.com/CannyLab/rl-algs',
+    author='Roshan Rao, David Chan',
+    author_email='roshan_rao@berkeley.edu, davidchan@berkeley.edu',
+    url='https://github.com/CannyLab/rionkeras',
     license=license,
     install_requires=[
-        'pytest >= 3.7.0',
-        'numpy >= 1.14.1',
+        'numpy',
+        'scipy',
+        'pytest',
+        'tqdm',
+        'h5py',
+        'packaging',
+        'typing',
+        'deprecation',
+        'coverage',
+        'codecov',
+        'pytest-cov',
     ],
-    packages=find_packages(exclude=['example','research'])  # exclude=('tests', 'docs')
+    packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )
