@@ -1,13 +1,10 @@
 # Core requirements
-numpy>=1.14.3
-scipy>=1.1.0
-pytest>=3.7.3
-tqdm>=4.26.0
+numpy
+scipy
+pytest
+tqdm
 h5py
 packaging
-
-# Metrics
-nltk
 
 # Compatability
 deprecation
@@ -18,6 +15,5 @@ coverage
 codecov
 pytest-cov
 
-# TENSORFLOW
+# Tensorflow
 tensorflow
-tensorflow_datasets

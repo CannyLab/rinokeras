@@ -1,10 +1,17 @@
 
 
-import tensorflow_datasets as tfds
+
+
 import tensorflow as tf
 import numpy as np
 import os
 import warnings
+
+try:
+    import tensorflow_datasets as tfds
+except ModuleNotFoundError:
+    warnings.warn('Tensorflow Datasets not found. You may not be able to run some tests.')
+
 warnings.simplefilter('error', tf.errors.OutOfRangeError)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
