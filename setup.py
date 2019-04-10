@@ -7,7 +7,7 @@ with open('README.md', 'r') as rf:
 with open('LICENSE', 'r') as lf:
     LICENSE = lf.read()
 
-with open('VERSION', 'r') as vf:
+with open('VERSION.txt', 'r') as vf:
     VERSION = vf.read()
 
 setup(
