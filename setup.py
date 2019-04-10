@@ -7,9 +7,12 @@ with open('README.md', 'r') as rf:
 with open('LICENSE', 'r') as lf:
     LICENSE = lf.read()
 
+with open('VERSION', 'r') as vf:
+    VERSION = vf.read()
+
 setup(
-    name='rinokeras',
-    version='1.0.0',
+    name='rinokeras-nightly',
+    version=VERSION,
     description='CannyLab Algorithms Repository',
     long_description=README,
     author='Roshan Rao, David Chan',
