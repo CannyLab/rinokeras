@@ -74,7 +74,7 @@ class TransformerDecoderBlock(Model):
             activity_regularizer=activity_regularizer)
         self.layer_drop_2 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, 
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size,
                                                    dropout=dropout,
                                                    kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
@@ -206,7 +206,7 @@ class TransformerDecoder(Model):
         self.embedding_layer = embedding_layer
         if not isinstance(self.embedding_layer, TransformerInputEmbedding):
             raise AssertionError('Must have TransformerInputEmbedding layer as embedding layer')
-        
+
 
         self.decoding_stack = Stack([TransformerDecoderBlock(n_heads, d_filter, d_model, dropout, layer_dropout,
                                                              kernel_initializer=kernel_initializer,
@@ -388,9 +388,9 @@ class TransformerDecoder(Model):
         tensor = tf.reshape(tensor, [shape[0]*n_beams, shape[1], tensor.shape[-1]])
         return tensor
 
-    def fast_beam_decode(self, encoder_output, max_seq_len, batch_size, n_beams, output_dtype=tf.int32, initial_input=None, 
+    def fast_beam_decode(self, encoder_output, max_seq_len, batch_size, n_beams, output_dtype=tf.int32, initial_input=None,
                             preembed_hook=None, stopping_criterion=None, encoder_mask=None, sample=False):
-        
+
         if preembed_hook is not None:
             raise NotImplementedError("Prembedding hook is not supported in fast_beam_decode")
 
@@ -415,7 +415,7 @@ class TransformerDecoder(Model):
                 best_logits_2, best_indices_2 = tf.nn.top_k(last_output_logits_logs, k=n_beams, sorted=True, name=None)
             else:
                 best_indices_2 = tf.cast(tf.multinomial(last_output_logits, num_samples=n_beams), dtype=tf.int32)
-                
+
                 flat_logits_logs = tf.reshape(last_output_logits_logs, [-1]) # Flatten the last_output_logits
                 to_add_to_indeces = tf.reshape(tf.tile(tf.reshape(tf.range(batch_size*vocab_size*n_beams, delta=vocab_size), [-1,1]), [1,n_beams]), [-1])
                 flat_indices = to_add_to_indeces + tf.reshape(best_indices_2, [-1])
@@ -466,7 +466,7 @@ class TransformerDecoder(Model):
                 lambda: tf.reshape(initial_input[:, seqpos+1], [n_beams*batch_size, 1]),
                 lambda: last_words_chosen,
             )
- 
+
             # Build the output sequence for the the inputs
             output_sequence = tf.cond(
                 tf.less(seqpos, tf.shape(initial_input)[-1]),
@@ -586,5 +586,5 @@ class TransformerDecoder(Model):
         embedding_layer = layer_module.deserialize(config.pop('embedding_layer_config'), custom_objects=globals())
         output_layer = layer_module.deserialize(config.pop('output_layer_config'), custom_objects=globals())
         return cls(embedding_layer=embedding_layer, output_layer=output_layer, **config)
-        
-        
+
+
