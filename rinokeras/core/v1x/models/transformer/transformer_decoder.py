@@ -279,8 +279,7 @@ class TransformerDecoder(Model):
             _, decoder_output = self.decoding_stack(
                 (encoder_output, target_embedding if cache is None else (
                     target_embedding, cache)),
-                self_attention_mask=self_attention_mask,
-                cross_attention_mask=cross_attention_mask)
+                mask=(self_attention_mask, cross_attention_mask))
 
             if cache is not None:
                 decoder_output, _ = decoder_output
