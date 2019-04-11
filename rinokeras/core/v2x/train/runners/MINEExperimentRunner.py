@@ -1,7 +1,7 @@
 
 import tensorflow as tf
 import warnings
-from rinokeras.core.v2x.train import BaseExperimentRunner
+from .BaseExperimentRunner import BaseExperimentRunner
 
 class MINEEstimator(tf.keras.Model):
     def __init__(self, ):

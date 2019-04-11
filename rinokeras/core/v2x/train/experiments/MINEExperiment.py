@@ -1,5 +1,6 @@
 
-from rinokeras.core.v2x.train import Experiment, MINEExperimentRunner
+from .Experiment import Experiment
+from rinokeras.core.v2x.train import MINEExperimentRunner
 
 class MINEExperiment(Experiment):
     """
