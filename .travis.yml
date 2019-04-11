@@ -30,6 +30,7 @@ deploy:
   provider: pypi
   user: davidchan
   distributions: "sdist bdist_wheel"
+  branch: develop
   before_deploy:
     - echo "1.0.0a$(git rev-list --all --count)" > VERSION.txt
   pip_password:
