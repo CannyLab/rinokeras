@@ -24,7 +24,8 @@ class MetricsAccumulator:
 
     def get_average(self):
         assert self.nupdates > 0
-        return {metric: value / self.nupdates for metric, value in self._totalmetrics.items()}
+        return {metric: value / self._totalmetric.get('batch_size', self.nupdates)
+                for metric, value in self._totalmetrics.items() if metric != 'batch_size'}
 
     def __iter__(self):
         return iter(self.get_average())
