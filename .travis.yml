@@ -31,8 +31,9 @@ jobs:
     - stage: deploy
       python: 3.6
       script: skip
+      env: ""
       before_deploy:
-      - echo "1.0.$(git rev-list --all --count)a$R" > VERSION.txt
+      - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
       deploy:
       - provider: pypi
         user: davidchan
