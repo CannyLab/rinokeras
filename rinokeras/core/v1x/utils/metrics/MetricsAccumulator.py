@@ -1,7 +1,8 @@
-
+import warnings
 from timeit import default_timer as timer
 from typing import Dict
 from collections import defaultdict
+
 
 class MetricsAccumulator:
 
@@ -31,10 +32,12 @@ class MetricsAccumulator:
     def items(self):
         return self.get_average().items()
 
-    def __getitem__(self, value: str) -> float:
-        if value not in self._totalmetrics:
-            raise KeyError(value)
-        return self._totalmetrics[value] / self.nupdates
+    def __getitem__(self, key: str) -> float:
+        if key not in self._totalmetrics:
+            raise KeyError(key)
+        if key == 'batch_size':
+            warnings.warn('Getting the batch size from this is pretty weird')
+        return self._totalmetrics[key] / self._totalmetrics.get('batch_size', self.nupdates)
 
     def __str__(self) -> str:
         return str(self.get_average())
