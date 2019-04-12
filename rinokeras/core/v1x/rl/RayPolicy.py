@@ -44,7 +44,7 @@ def ray_policy(model: Type[tf.keras.Model]):
                 self.state_out = output['state_out']
             else:
                 output = self.model(input_dict)
-
+            
             return output['logits'], output['latent']
 
         def custom_loss(self, policy_loss, loss_inputs):
@@ -52,6 +52,12 @@ def ray_policy(model: Type[tf.keras.Model]):
                 return self.model.custom_loss(policy_loss, loss_inputs)
             else:
                 return policy_loss
+
+        def custom_stats(self,):
+            if hasattr(self.model, 'custom_stats'):
+                return self.model.custom_stats()
+            else:
+                return {}
 
     WrappedRayPolicy.__name__ = model.__name__
     WrappedRayPolicy.__doc__ = model.__doc__

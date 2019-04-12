@@ -31,10 +31,11 @@ jobs:
     - stage: deploy
       python: 3.6
       script: skip
-      env: ""
+      env: RK_TF_VERSION=tensorflow==1.13.1
       before_deploy:
       - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
       deploy:
+      skip_cleanup: true
       - provider: pypi
         user: davidchan
         distributions: "sdist bdist_wheel"
