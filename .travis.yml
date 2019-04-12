@@ -26,15 +26,21 @@ install:
 script:
   - pytest --cov=./
   - codecov
-before_deploy:
-  - echo "1.0.0a$(git rev-list --all --count)" > VERSION.txt
-deploy:
-  - provider: pypi
-    user: davidchan
-    distributions: "sdist bdist_wheel"
-    on:
-      branch: develop
-    password:
-      secure: vI7eOaibtI9prJhHVsZCcMMPQtTYuC7S+Uy5V4ZX4DStgxxqKWztsHGF/DEu/0bBWa7Yew4o9y9xub/+O0D0WKdTlJCeGTwvaImPWZ9Byx8bcnY++G/+y6sX1F+UuCjqQQ9lnaCRqrIZHbiZpKAhhQGf3FDgwS/bL3PjNG0abzO2SNFDXLlvVajciAp3dIBxUJmZsZjOMDFRVTlA1ybSfGpfWwAptczgfzVP9x8q9a2cXxlm+Q7uPP6AtALUk3eSuAn9ohx/gBFwo7yJPr+pSK7Lvcv/u+ZiRPFivycnq1TUtyxQY1WbMfis8l31dKeSWbnGRc7QSvktyCYzCmMzBzuc1Im1r6wiZ/134fe62BJMi25piTCUvQFf7/ZQ/WMJzLOCnGqrCemeTJXPqqXe7qIlEDnon4FuD43sn2ZKeb87sFPHbLj31NMw1IdeAVm7NP5kSd6fhO3FcTpxF91al9LHWVamzVkOQKerffbt+zjsGQVfP5+p+MOsPHNelGuz6QE7gZiQx6MoY2yyYg72gro3RbcOSpTznVoR/SJEltXoJeXWtsf0Vm6uPvj1/7HFAn2Us50lNL21IWJx8l5qPvWTqK2r8yvJL/Q2KCB2ofr626Nildp7QJ9LRFEG084OlSW7iwbn74rAZQJEZ76QS1rsSq52VzlE04Nj0Euik90=
-    pip_password:
-      secure: vI7eOaibtI9prJhHVsZCcMMPQtTYuC7S+Uy5V4ZX4DStgxxqKWztsHGF/DEu/0bBWa7Yew4o9y9xub/+O0D0WKdTlJCeGTwvaImPWZ9Byx8bcnY++G/+y6sX1F+UuCjqQQ9lnaCRqrIZHbiZpKAhhQGf3FDgwS/bL3PjNG0abzO2SNFDXLlvVajciAp3dIBxUJmZsZjOMDFRVTlA1ybSfGpfWwAptczgfzVP9x8q9a2cXxlm+Q7uPP6AtALUk3eSuAn9ohx/gBFwo7yJPr+pSK7Lvcv/u+ZiRPFivycnq1TUtyxQY1WbMfis8l31dKeSWbnGRc7QSvktyCYzCmMzBzuc1Im1r6wiZ/134fe62BJMi25piTCUvQFf7/ZQ/WMJzLOCnGqrCemeTJXPqqXe7qIlEDnon4FuD43sn2ZKeb87sFPHbLj31NMw1IdeAVm7NP5kSd6fhO3FcTpxF91al9LHWVamzVkOQKerffbt+zjsGQVfP5+p+MOsPHNelGuz6QE7gZiQx6MoY2yyYg72gro3RbcOSpTznVoR/SJEltXoJeXWtsf0Vm6uPvj1/7HFAn2Us50lNL21IWJx8l5qPvWTqK2r8yvJL/Q2KCB2ofr626Nildp7QJ9LRFEG084OlSW7iwbn74rAZQJEZ76QS1rsSq52VzlE04Nj0Euik90=
+jobs:
+  include:     
+    - stage: deploy
+      python: 3.6
+      script: skip
+      env: ""
+      before_deploy:
+      - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
+      deploy:
+      - provider: pypi
+        user: davidchan
+        distributions: "sdist bdist_wheel"
+        on:
+          branch: develop
+        password:
+          secure: vI7eOaibtI9prJhHVsZCcMMPQtTYuC7S+Uy5V4ZX4DStgxxqKWztsHGF/DEu/0bBWa7Yew4o9y9xub/+O0D0WKdTlJCeGTwvaImPWZ9Byx8bcnY++G/+y6sX1F+UuCjqQQ9lnaCRqrIZHbiZpKAhhQGf3FDgwS/bL3PjNG0abzO2SNFDXLlvVajciAp3dIBxUJmZsZjOMDFRVTlA1ybSfGpfWwAptczgfzVP9x8q9a2cXxlm+Q7uPP6AtALUk3eSuAn9ohx/gBFwo7yJPr+pSK7Lvcv/u+ZiRPFivycnq1TUtyxQY1WbMfis8l31dKeSWbnGRc7QSvktyCYzCmMzBzuc1Im1r6wiZ/134fe62BJMi25piTCUvQFf7/ZQ/WMJzLOCnGqrCemeTJXPqqXe7qIlEDnon4FuD43sn2ZKeb87sFPHbLj31NMw1IdeAVm7NP5kSd6fhO3FcTpxF91al9LHWVamzVkOQKerffbt+zjsGQVfP5+p+MOsPHNelGuz6QE7gZiQx6MoY2yyYg72gro3RbcOSpTznVoR/SJEltXoJeXWtsf0Vm6uPvj1/7HFAn2Us50lNL21IWJx8l5qPvWTqK2r8yvJL/Q2KCB2ofr626Nildp7QJ9LRFEG084OlSW7iwbn74rAZQJEZ76QS1rsSq52VzlE04Nj0Euik90=
+        pip_password:
+          secure: vI7eOaibtI9prJhHVsZCcMMPQtTYuC7S+Uy5V4ZX4DStgxxqKWztsHGF/DEu/0bBWa7Yew4o9y9xub/+O0D0WKdTlJCeGTwvaImPWZ9Byx8bcnY++G/+y6sX1F+UuCjqQQ9lnaCRqrIZHbiZpKAhhQGf3FDgwS/bL3PjNG0abzO2SNFDXLlvVajciAp3dIBxUJmZsZjOMDFRVTlA1ybSfGpfWwAptczgfzVP9x8q9a2cXxlm+Q7uPP6AtALUk3eSuAn9ohx/gBFwo7yJPr+pSK7Lvcv/u+ZiRPFivycnq1TUtyxQY1WbMfis8l31dKeSWbnGRc7QSvktyCYzCmMzBzuc1Im1r6wiZ/134fe62BJMi25piTCUvQFf7/ZQ/WMJzLOCnGqrCemeTJXPqqXe7qIlEDnon4FuD43sn2ZKeb87sFPHbLj31NMw1IdeAVm7NP5kSd6fhO3FcTpxF91al9LHWVamzVkOQKerffbt+zjsGQVfP5+p+MOsPHNelGuz6QE7gZiQx6MoY2yyYg72gro3RbcOSpTznVoR/SJEltXoJeXWtsf0Vm6uPvj1/7HFAn2Us50lNL21IWJx8l5qPvWTqK2r8yvJL/Q2KCB2ofr626Nildp7QJ9LRFEG084OlSW7iwbn74rAZQJEZ76QS1rsSq52VzlE04Nj0Euik90=
