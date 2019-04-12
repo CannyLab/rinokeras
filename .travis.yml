@@ -1,34 +1,33 @@
 dist: xenial
 language: python
+python:
+  - '3.4'
+  - '3.5'
+  - '3.6'
+  - 3.7-dev
+env:
+  global:
+  - CODECOV_TOKEN="1384d50e-aaea-4dc0-857c-23a0287ec68b"
+  matrix:
+  - RK_TF_VERSION=tensorflow==1.12
+  - RK_TF_VERSION=tensorflow==1.13.1
+  - RK_TF_VERSION=tensorflow==2.0.0a0
+matrix:
+  exclude:
+  - python: 3.7-dev
+    env: RK_TF_VERSION=tensorflow==1.12
+install:
+  - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
+  - pip install $RK_TF_VERSION
+  - pip install -r requirements.txt
+  - pip install tensorflow_datasets
+  - pip install nltk
+  - pip install -e .
+script:
+  - pytest --cov=./
+  - codecov
 jobs:
-  include:
-    - stage: testing
-      python:
-        - '3.4'
-        - '3.5'
-        - '3.6'
-        - 3.7-dev
-      env:
-        global:
-        - CODECOV_TOKEN="1384d50e-aaea-4dc0-857c-23a0287ec68b"
-        matrix:
-        - RK_TF_VERSION=tensorflow==1.12
-        - RK_TF_VERSION=tensorflow==1.13.1
-        - RK_TF_VERSION=tensorflow==2.0.0a0
-      matrix:
-        exclude:
-        - python: 3.7-dev
-          env: RK_TF_VERSION=tensorflow==1.12
-      install:
-        - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
-        - pip install $RK_TF_VERSION
-        - pip install -r requirements.txt
-        - pip install tensorflow_datasets
-        - pip install nltk
-        - pip install -e .
-      script:
-        - pytest --cov=./
-        - codecov
+  include:     
     - stage: deploy
       python: 3.6
       script: skip
