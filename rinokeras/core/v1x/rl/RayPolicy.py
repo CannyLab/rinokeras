@@ -6,6 +6,7 @@ import tensorflow as tf
 import ray
 from ray.rllib.models import ModelCatalog
 from ray.rllib.utils.annotations import override
+from ray.rllib.models.misc import linear, normc_initializer
 
 
 def ray_policy(model: Type[tf.keras.Model]):
@@ -44,20 +45,20 @@ def ray_policy(model: Type[tf.keras.Model]):
                 self.state_out = output['state_out']
             else:
                 output = self.model(input_dict)
-            
+
             return output['logits'], output['latent']
 
+        @override(ray.rllib.models.Model)
         def custom_loss(self, policy_loss, loss_inputs):
             if hasattr(self.model, 'custom_loss'):
                 return self.model.custom_loss(policy_loss, loss_inputs)
-            else:
-                return policy_loss
+            return policy_loss
 
+        @override(ray.rllib.models.Model)
         def custom_stats(self,):
             if hasattr(self.model, 'custom_stats'):
                 return self.model.custom_stats()
-            else:
-                return {}
+            return {}
 
     WrappedRayPolicy.__name__ = model.__name__
     WrappedRayPolicy.__doc__ = model.__doc__
