@@ -35,8 +35,8 @@ jobs:
       before_deploy:
       - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
       deploy:
-      skip_cleanup: true
       - provider: pypi
+        skip_cleanup: true
         user: davidchan
         distributions: "sdist bdist_wheel"
         on:
