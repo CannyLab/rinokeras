@@ -50,6 +50,8 @@ class RecurrentPolicy(StandardPolicy):
 
         output = {'latent': latent, 'logits': logits, 'state_out': state_out}
 
+        self.output_tensors = output
+
         return output
 
     def get_initial_state(self, inputs):

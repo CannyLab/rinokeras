@@ -62,7 +62,28 @@ class StandardPolicy(tf.keras.Model):
 
         output = {'latent': latent, 'logits': logits}
 
+        self.output_tensors = output
+
         return output
+
+    def custom_loss(self, policy_loss, loss_inputs):
+        """Override to customize the loss function used to optimize this model.
+
+        This can be used to incorporate self-supervised losses (by defining
+        a loss over existing input and output tensors of this model), and
+        supervised losses (by defining losses over a variable-sharing copy of
+        this model's layers).
+
+        You can find an runnable example in the ray repository in examples/custom_loss.py.
+
+        Arguments:
+            policy_loss (Tensor): scalar policy loss from the policy graph.
+            loss_inputs (dict): map of input placeholders for rollout data.
+
+        Returns:
+            Scalar tensor for the customized loss for this model.
+        """
+        return policy_loss
 
     @property
     def recurrent(self) -> bool:

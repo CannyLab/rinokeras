@@ -50,6 +50,9 @@ def ray_policy(model: Type[tf.keras.Model]):
     WrappedRayPolicy.__name__ = model.__name__
     WrappedRayPolicy.__doc__ = model.__doc__
 
+    if hasattr(model, 'custom_loss'):
+        WrappedRayPolicy.custom_loss = model.custom_loss
+
     ModelCatalog.register_custom_model(model.__name__, WrappedRayPolicy)
 
     return WrappedRayPolicy
