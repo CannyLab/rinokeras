@@ -17,3 +17,6 @@ pytest-cov
 
 # Tensorflow
 tensorflow
+
+# Text metrics
+nltk
