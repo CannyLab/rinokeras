@@ -16,19 +16,19 @@ def test_transformer_base():
     from rinokeras.core.v1x.models.transformer import Transformer
     layer = Transformer(
         discrete=True,
-        n_symbols_in=128,
-        n_symbols_out=128,
+        n_symbols_in=16,
+        n_symbols_out=16,
         n_layers=6,
-        n_heads=8,
+        n_heads=4,
         d_model=32,
-        d_filter=128)
+        d_filter=16)
 
     # Make sure that the layer is not None
     assert layer is not None
 
     # Encoded values
-    source_tensor, _ = random_sequence_tensor(2, 32, 128)
-    target_tensor, _ = random_sequence_tensor(2, 32, 128)
+    source_tensor, _ = random_sequence_tensor(2, 32, 16)
+    target_tensor, _ = random_sequence_tensor(2, 32, 16)
     source_mask, _ = random_mask_tensor(2,32)
     target_mask, _ = random_mask_tensor(2,32)
 
@@ -45,7 +45,7 @@ def test_transformer_base():
                                                  weights_file=weights_file)
 
         assert_not_none(output)
-        assert_expected_shapes(output,[(2,32, 128)])
+        assert_expected_shapes(output,[(2,32, 16)])
 
         # Check loading and restoring
         load_restore_test(output=output,

@@ -6,6 +6,7 @@ import tensorflow as tf
 import warnings
 import tempfile
 
+from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
 from rinokeras.testing.utils import *
 
 def test_position_embedding_vanilla():
@@ -18,7 +19,7 @@ def test_position_embedding_vanilla():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,32))
+    input_tensor, _ = random_tensor((2,8,32))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -36,7 +37,7 @@ def test_position_embedding_vanilla():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 32)
+        assert output[0].shape == (2, 8, 32)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -50,7 +51,8 @@ def test_position_embedding_vanilla():
 
     # Do regression testing
     check_regression('position_embedding_vanilla_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_concat():
     reset_session()
@@ -62,7 +64,7 @@ def test_position_embedding_concat():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,32))
+    input_tensor, _ = random_tensor((2,8,32))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -80,7 +82,7 @@ def test_position_embedding_concat():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 64)
+        assert output[0].shape == (2, 8, 64)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -94,7 +96,8 @@ def test_position_embedding_concat():
 
     # Do regression testing
     check_regression('position_embedding_concat_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_concat_reproject():
     reset_session()
@@ -106,7 +109,7 @@ def test_position_embedding_concat_reproject():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,32))
+    input_tensor, _ = random_tensor((2,8,32))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -124,7 +127,7 @@ def test_position_embedding_concat_reproject():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 32)
+        assert output[0].shape == (2, 8, 32)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -138,7 +141,8 @@ def test_position_embedding_concat_reproject():
 
     # Do regression testing
     check_regression('position_embedding_concat_reproject_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_2d_vanilla():
     reset_session()
@@ -150,7 +154,7 @@ def test_position_embedding_2d_vanilla():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,8,32))
+    input_tensor, _ = random_tensor((2,8,8,32))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -168,7 +172,7 @@ def test_position_embedding_2d_vanilla():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 8,32)
+        assert output[0].shape == (2, 8, 8,32)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -182,7 +186,8 @@ def test_position_embedding_2d_vanilla():
 
     # Do regression testing
     check_regression('position_embedding_2d_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_2d_concat():
     reset_session()
@@ -194,7 +199,7 @@ def test_position_embedding_2d_concat():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,32,32,8))
+    input_tensor, _ = random_tensor((2,32,32,8))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -212,7 +217,7 @@ def test_position_embedding_2d_concat():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 32, 32, 16)
+        assert output[0].shape == (2, 32, 32, 16)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -226,7 +231,8 @@ def test_position_embedding_2d_concat():
 
     # Do regression testing
     check_regression('position_embedding_2d_concat_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_2d_reproject():
     reset_session()
@@ -238,7 +244,7 @@ def test_position_embedding_2d_reproject():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,32,32,8))
+    input_tensor, _ = random_tensor((2,32,32,8))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -256,7 +262,7 @@ def test_position_embedding_2d_reproject():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 32, 32, 8)
+        assert output[0].shape == (2, 32, 32, 8)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -270,7 +276,8 @@ def test_position_embedding_2d_reproject():
 
     # Do regression testing
     check_regression('position_embedding_2d_concat_reproject_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_3d_vanilla():
     reset_session()
@@ -282,7 +289,7 @@ def test_position_embedding_3d_vanilla():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,8,8,24))
+    input_tensor, _ = random_tensor((2,8,8,8,24))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -300,7 +307,7 @@ def test_position_embedding_3d_vanilla():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16,8,8,8,24)
+        assert output[0].shape == (2,8,8,8,24)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -314,7 +321,8 @@ def test_position_embedding_3d_vanilla():
 
     # Do regression testing
     check_regression('position_embedding_3d_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_3d_concat():
     reset_session()
@@ -326,7 +334,7 @@ def test_position_embedding_3d_concat():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,6,6,6,24))
+    input_tensor, _ = random_tensor((2,6,6,6,24))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -344,7 +352,7 @@ def test_position_embedding_3d_concat():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 6, 6, 6, 48)
+        assert output[0].shape == (2, 6, 6, 6, 48)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -358,7 +366,8 @@ def test_position_embedding_3d_concat():
 
     # Do regression testing
     check_regression('position_embedding_3d_concat_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_position_embedding_3d_reproject():
     reset_session()
@@ -370,7 +379,7 @@ def test_position_embedding_3d_reproject():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,6,6,6,24))
+    input_tensor, _ = random_tensor((2,6,6,6,24))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -388,7 +397,7 @@ def test_position_embedding_3d_reproject():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 6, 6, 6, 24)
+        assert output[0].shape == (2, 6, 6, 6, 24)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -402,7 +411,8 @@ def test_position_embedding_3d_reproject():
 
     # Do regression testing
     check_regression('position_embedding_3d_concat_reproject_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_learned_embedding_vanilla():
     reset_session()
@@ -414,7 +424,7 @@ def test_learned_embedding_vanilla():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,24))
+    input_tensor, _ = random_tensor((2,8,24))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -432,7 +442,7 @@ def test_learned_embedding_vanilla():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 24)
+        assert output[0].shape == (2, 8, 24)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -446,7 +456,8 @@ def test_learned_embedding_vanilla():
 
     # Do regression testing
     check_regression('learned_embedding_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)
 
 def test_learned_embedding_concat():
     reset_session()
@@ -458,7 +469,7 @@ def test_learned_embedding_concat():
     assert layer is not None
 
     # Encoded values
-    input_tensor, _ = random_tensor((16,8,24))
+    input_tensor, _ = random_tensor((2,8,24))
 
     # Get the output of the layer
     value = layer(input_tensor)
@@ -476,7 +487,7 @@ def test_learned_embedding_concat():
         assert output[0] is not None
 
         # Make sure the output shape is correct
-        assert output[0].shape == (16, 8, 48)
+        assert output[0].shape == (2, 8, 48)
 
         # Make sure the output values are correct (If Possible)
         pass
@@ -490,4 +501,5 @@ def test_learned_embedding_concat():
 
     # Do regression testing
     check_regression('learned_embedding_concat_expected_output',
-                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json')
+                     output, __file__, 'regression_outputs/test_position_embedding_outputs.json',
+                     debug=_RK_REBUILD_REGRESSION)

@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import random as rn
 import pickle
+import os
 
 def run_simple_session_save_weights(inputs, feed, weights, weights_file):
     config = tf.ConfigProto(intra_op_parallelism_threads=1,
@@ -34,10 +35,18 @@ def run_simple_session(inputs, feed):
     return output
 
 def reset_session():
+    seed_value = 12887
+
+    os.environ['PYTHONHASHSEED']=str(seed_value)
+    rn.seed(seed_value)
+    np.random.seed(seed_value)
+    tf.set_random_seed(seed_value)
+
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
-    np.random.seed(256)
-    rn.seed(256)
-    tf.set_random_seed(256)
+
+    
+    
+    
     
     
