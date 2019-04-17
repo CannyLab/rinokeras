@@ -1,7 +1,14 @@
 import tensorflow as tf
 import numpy as np
 import numpy.ma as ma
-from nltk.translate.bleu_score import corpus_bleu
+
+try:
+    from nltk.translate.bleu_score import corpus_bleu
+except ModuleNotFoundError:
+    import warnings
+    warnings.warn('Warning: NLTK doesn\'t seem to be installed. You won\'t be able to use the BLEU metrics until installing.')
+    def corpus_bleu(*args, **kwargs):
+        raise ValueError('NLTK Not installed! You can\'t call this function!')    
 
 ## Simple tf.pyfunc for computing the bleu score using NLTK's tools
 def _masked_bleu_fn_gen(weights=(0.25, 0.25, 0.25, 0.25), smoothing_function=None, auto_reweigh=False):
