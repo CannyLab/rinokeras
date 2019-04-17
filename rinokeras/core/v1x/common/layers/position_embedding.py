@@ -5,6 +5,7 @@ Positional embedding layers
 from typing import Dict
 
 import tensorflow as tf
+import tensorflow.keras.backend as K
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer, Dense  # pylint: disable=F0401
 
@@ -29,8 +30,9 @@ class PositionEmbedding(Model):
         else:
             if hidden_size % 2 != 0:
                 hidden_size += 1
-        power = tf.range(0, hidden_size.value, 2,
-                         dtype=tf.float32) / hidden_size.value
+
+        power = K.arange(0, hidden_size.value, 2,
+                         dtype=K.floatx()) / hidden_size.value
         divisor = 10000 ** power
         self.divisor = divisor
         self.hidden_size = hidden_size
@@ -51,8 +53,7 @@ class PositionEmbedding(Model):
             assert inputs.shape[-1] == self.hidden_size, 'Input final dim must match model hidden size'
         batch_size = get_shape(inputs, 0)
         sequence_length = get_shape(inputs, 1)
-        seq_pos = tf.cast(tf.range(start, sequence_length + start)
-                          [None, :], tf.float32)  # 1-index positions
+        seq_pos = K.arange(start, sequence_length + start, dtype=K.floatx())[None, :]  # 1-index positions
 
         index = seq_pos[:, :, None] / self.divisor
 
