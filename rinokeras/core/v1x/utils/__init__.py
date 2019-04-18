@@ -7,3 +7,4 @@ from .metrics import (MetricsAccumulator, accuracy, bleu1, bleu2, bleu3, bleu4,
                       rouge_l)
 from .optim import Gradients, clip_gradients, get_optimizer
 from .tensors import gather_from_last, get_shape
+from .schedules import PiecewiseSchedule, LinearSchedule

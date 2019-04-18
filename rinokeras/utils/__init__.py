@@ -18,5 +18,7 @@ if _RK_USE_TF_VERSION == 1:
     from rinokeras.core.v1x.utils import get_optimizer
     from rinokeras.core.v1x.utils import gather_from_last
     from rinokeras.core.v1x.utils import get_shape
+    from rinokeras.core.v1x.utils import LinearSchedule
+    from rinokeras.core.v1x.utils import PiecewiseSchedule
 elif _RK_USE_TF_VERSION == 2:
     pass
