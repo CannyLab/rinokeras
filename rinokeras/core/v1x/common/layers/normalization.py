@@ -20,11 +20,12 @@ class LayerNorm(Layer):
     Does layer normalization from https://arxiv.org/abs/1607.06450.
     """
 
-    def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, axis: Union[Sequence[int], int] = -1, eps: float = 1e-6, trainable=True, **kwargs) -> None:
+        super().__init__(trainable=trainable, **kwargs)
         #TODO: Proper type hints here. (Sequence[int]) ?
         self.axis = axis if isinstance(axis, collections.Sequence) else (axis,)
         self.eps = eps
+        self.trainable = trainable
 
     def build(self, input_shape):
         # shape = [input_shape[axis] for axis in self.axis]
@@ -33,11 +34,11 @@ class LayerNorm(Layer):
         self.gamma = self.add_variable(name='gamma',
                                        shape=shape,
                                        initializer=tf.keras.initializers.Ones(),
-                                       trainable=True)
+                                       trainable=self.trainable)
         self.beta = self.add_variable(name='beta',
                                       shape=shape,
                                       initializer=tf.keras.initializers.Zeros(),
-                                      trainable=True)
+                                      trainable=self.trainable)
         super().build(input_shape)
 
     def call(self, inputs):
