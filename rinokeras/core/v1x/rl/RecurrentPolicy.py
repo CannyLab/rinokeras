@@ -47,7 +47,9 @@ class RecurrentPolicy(StandardPolicy):
             features = self.conv_layer(features)
 
         features = add_time_dimension(features, seqlens)
+        self.features = features
         latent, *rnn_state = self.rnn(features, initial_state=initial_state)
+        self.latent = latent
         latent = tf.reshape(latent, [-1, latent.shape[-1]])
 
         state_out = list(rnn_state)
