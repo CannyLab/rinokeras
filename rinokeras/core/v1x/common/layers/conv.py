@@ -26,6 +26,14 @@ class NormedConvStack(Stack):
         self.add(conv_func[dimension - 1](
             filters=filters, kernel_size=kernel_size, strides=1, padding='same', use_bias=not layer_norm))
 
+    def call(self, inputs, mask=None, **kwargs):
+        if mask is not None:
+            mask = tf.cast(mask, inputs.dtype)
+            if mask.shape.ndims == 2:
+                mask = mask[:, :, None]
+            inputs = inputs * mask
+        return super().call(inputs, **kwargs)
+
 
 class ResidualBlock(Residual):
 
