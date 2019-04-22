@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
-from timeit import default_timer as timer
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -25,7 +24,6 @@ class RinokerasGraph(ABC):
 
         self.progress_bar = None
         self.descr_offset = 0
-        self.epoch_metrics = None
         self.instrument_idx = 0
         self.inputs = ()
 
@@ -53,7 +51,10 @@ class RinokerasGraph(ABC):
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, instrumented: bool = False) -> Any:
+    def _run_tensor(self,
+                    ops: Union[tf.Tensor, Sequence[tf.Tensor]],
+                    inputs: Optional[Inputs] = None,
+                    instrumented: bool = False) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -152,8 +153,16 @@ class RinokerasGraph(ABC):
     def run_epoch(self,
                   data_len: Optional[int] = None,
                   epoch_num: Optional[int] = None,
+                  steps_to_run: Optional[int] = None,
                   summary_writer: Optional[tf.summary.FileWriter] = None) -> MetricsAccumulator:
+        if steps_to_run:
+            assert data_len is None or data_len >= steps_to_run
+            data_len = steps_to_run
+
         with self.add_progress_bar(data_len, epoch_num).initialize():
             while True:
                 self.run('default')
+                if steps_to_run is not None and self.epoch_metrics.nupdates >= steps_to_run:
+                    break
+
         return self.epoch_metrics
