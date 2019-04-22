@@ -258,7 +258,7 @@ class ApplyAttentionMask(Layer):
             # any more efficient to do it this way operations wise)
             if self.hadamard:
                 # If we're not going through a softmax layer, apply the hadamard product between the mask and the similarity
-                return tf.cast(tf.cast(mask, tf.bool), similarity.dtype) * similarity 
+                return tf.cast(tf.cast(mask, tf.bool), similarity.dtype) * similarity
             bias = -1e9 * tf.cast(tf.logical_not(tf.cast(mask, tf.bool)), similarity.dtype)
             masked_similarity = similarity + bias
             return masked_similarity
@@ -383,7 +383,7 @@ class MultiHeadAttention(Model):
                  key_size: Optional[int] = None,
                  value_size: Optional[int] = None,
                  attention_function: Callable[[tf.Tensor], tf.Tensor] = tf.nn.softmax,
-                 project_value: bool = True, 
+                 project_value: bool = True,
                  kernel_initializer: Optional[tf.keras.initializers.Initializer] = 'glorot_uniform',
                  kernel_regularizer: Optional[tf.keras.regularizers.Regularizer]=None,
                  bias_regularizer: Optional[tf.keras.regularizers.Regularizer]=None,
@@ -448,13 +448,13 @@ class MultiHeadAttention(Model):
                 key_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
                 value_antecedent -> tensor w/ shape [batch_size, n_keyval, channels]
         """
-        assert isinstance(inputs, tuple) or isinstance(inputs, list) and len(inputs) == 2, \
-            'Must pass query and memory'
+        assert isinstance(inputs, (tuple, list)) and len(inputs) == 3, \
+            'Must pass query, key, and value antecedent'
         qa, ma, va = inputs
         qkv_projection = self.compute_qkv((qa, ma, va))
         attention_output, attention_weights = self.attention_layer(
             qkv_projection, mask=mask, return_attention_weights=True)
-        
+
         output = self.output_layer(attention_output)
         output = self.dropout(output)
         if return_attention_weights:
@@ -480,7 +480,7 @@ class MultiHeadAttention(Model):
             tf.keras.regularizers.serialize(self.activity_regularizer),
         }
         return config
-    
+
     def get_config(self):
         config = self.get_base_config()
         return config
@@ -514,7 +514,7 @@ class SelfAttention(Model):
         return config
         # base_config = super(SelfAttention, self).get_config()
         # return dict(list(base_config.items()) + list(config.items()))
-    
+
     @classmethod
     def from_config(cls, config):
         return cls(**config)
