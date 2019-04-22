@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
+import pickle as pkl
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -25,6 +26,7 @@ class RinokerasGraph(ABC):
         self.progress_bar = None
         self.descr_offset = 0
         self.instrument_idx = 0
+        self.epoch_metrics = None  # type: Optional[MetricsAccumulator]
         self.inputs = ()
 
     def _map_to_placeholders(self, placeholders, inputs, feed_dict):
@@ -139,7 +141,10 @@ class RinokerasGraph(ABC):
         return sess
 
     @abstractmethod
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def run(self,
+            ops: Union[str, Sequence[tf.Tensor]],
+            inputs: Optional[Inputs] = None,
+            return_outputs: bool = False) -> Any:
         return NotImplemented
 
     @property
@@ -154,15 +159,27 @@ class RinokerasGraph(ABC):
                   data_len: Optional[int] = None,
                   epoch_num: Optional[int] = None,
                   steps_to_run: Optional[int] = None,
-                  summary_writer: Optional[tf.summary.FileWriter] = None) -> MetricsAccumulator:
+                  summary_writer: Optional[tf.summary.FileWriter] = None,
+                  save_outputs: Optional[str] = None) -> MetricsAccumulator:
         if steps_to_run:
             assert data_len is None or data_len >= steps_to_run
             data_len = steps_to_run
 
+        all_outputs = []
+
         with self.add_progress_bar(data_len, epoch_num).initialize():
+            assert self.epoch_metrics is not None
             while True:
-                self.run('default')
+                if save_outputs is not None:
+                    loss, outputs = self.run('default', return_outputs=True)
+                    all_outputs.append(outputs)
+                else:
+                    self.run('default')
                 if steps_to_run is not None and self.epoch_metrics.nupdates >= steps_to_run:
                     break
+
+        if save_outputs is not None:
+            with open(save_outputs, 'wb') as f:
+                pkl.dump(all_outputs, f)
 
         return self.epoch_metrics
