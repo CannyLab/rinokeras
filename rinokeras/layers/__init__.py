@@ -11,7 +11,9 @@ if _RK_USE_TF_VERSION == 1:
     # Conv
     from rinokeras.core.v1x.common import NormedConvStack
     from rinokeras.core.v1x.common import ResidualBlock
+    from rinokeras.core.v1x.common import GatedResidualBlock
     from rinokeras.core.v1x.common import GroupedConvolution
+    from rinokeras.core.v1x.common import GLUActivation
 
     # Dropout
     from rinokeras.core.v1x.common import LayerDropout
