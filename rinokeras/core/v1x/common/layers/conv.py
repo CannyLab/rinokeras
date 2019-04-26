@@ -42,13 +42,16 @@ class PaddedConv(Stack):
                  dimension: int,
                  filters: int,
                  kernel_size: int,
-                 dilation_rate: int) -> None:
+                 dilation_rate: int,
+                 dropout: Optional[float] = None) -> None:
         super().__init__()
         assert 1 <= dimension <= 3
         conv_func = [Conv1D, Conv2D, Conv3D]
         self.add(conv_func[dimension - 1](
             filters=filters, kernel_size=kernel_size, strides=1, padding='same', use_bias=True,
             activation='linear', dilation_rate=dilation_rate))
+        if dropout is not None:
+            self.add(Dropout(dropout))
 
     def call(self, inputs, mask=None):
         if mask is not None:
@@ -63,10 +66,10 @@ class GLUActivation(Layer):
 
     def call(self, inputs):
         output, gate = tf.split(inputs, axis=-1, num_or_size_splits=2)
-        return tf.tanh(output) * tf.nn.sigmoid(gate)
+        return output * tf.nn.sigmoid(gate)
 
 
-class ResidualBlock(Model):
+class ResidualBlock(Residual):
 
     def __init__(self,
                  dimension: int,
@@ -76,52 +79,22 @@ class ResidualBlock(Model):
                  dilation_rate: int = 1,
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
-        super().__init__(**kwargs)
-
         def get_activation():
-            return Activation(activation)
+            if activation == 'glu':
+                return GLUActivation()
+            else:
+                return Activation(activation)
 
         layer = Stack()
-        layer.add(PaddedConv(1, filters // 4, 1, dilation_rate))
+        layer.add(PaddedConv(1, filters // 4, 1, dilation_rate, dropout))
         layer.add(get_activation())
-        layer.add(PaddedConv(1, filters // 4, kernel_size, dilation_rate))
+        layer.add(PaddedConv(1, filters // 4, kernel_size, dilation_rate, dropout))
         layer.add(get_activation())
-        layer.add(PaddedConv(1, filters, 1, dilation_rate))
-        self.conv_layers = layer
-
-        self.output_activation = Activation(activation)
-
-    def call(self, inputs, mask=None):
-        layer_out = self.conv_layers(inputs, mask=mask)
-        return self.output_activation(inputs + layer_out)
-
-
-class GatedResidualBlock(Model):
-
-    def __init__(self,
-                 dimension: int,
-                 filters: int,
-                 kernel_size: int,
-                 dilation_rate: int,
-                 dropout: Optional[float] = None,
-                 **kwargs) -> None:
-        super().__init__(**kwargs)
-
-        def get_activation():
-            return GLUActivation()
-
-        layer = Stack()
-        layer.add(PaddedConv(1, filters // 2, 1, dilation_rate))
-        layer.add(get_activation())
-        layer.add(PaddedConv(1, filters // 2, kernel_size, dilation_rate))
-        layer.add(get_activation())
-        layer.add(PaddedConv(1, filters * 2, 1, dilation_rate))
+        layer.add(PaddedConv(1, filters, 1, dilation_rate, dropout))
         layer.add(get_activation())
 
-        self.conv_layers = layer
+        super().__init__(layer, **kwargs)
 
-    def call(self, inputs, mask=None):
-        return inputs + self.conv_layers(inputs, mask=mask)
 
 
 class GroupedConvolution(tf.keras.Model):
