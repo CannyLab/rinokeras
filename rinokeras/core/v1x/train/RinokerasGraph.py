@@ -158,13 +158,8 @@ class RinokerasGraph(ABC):
     def run_epoch(self,
                   data_len: Optional[int] = None,
                   epoch_num: Optional[int] = None,
-                  steps_to_run: Optional[int] = None,
                   summary_writer: Optional[tf.summary.FileWriter] = None,
                   save_outputs: Optional[str] = None) -> MetricsAccumulator:
-        if steps_to_run:
-            assert data_len is None or data_len >= steps_to_run
-            data_len = steps_to_run
-
         all_outputs = []
 
         with self.add_progress_bar(data_len, epoch_num).initialize():
@@ -175,8 +170,30 @@ class RinokerasGraph(ABC):
                     all_outputs.append(outputs)
                 else:
                     self.run('default')
-                if steps_to_run is not None and self.epoch_metrics.nupdates >= steps_to_run:
-                    break
+
+        if save_outputs is not None:
+            with open(save_outputs, 'wb') as f:
+                pkl.dump(all_outputs, f)
+
+        return self.epoch_metrics
+
+    def run_for_n_steps(self,
+                        n_steps: int,
+                        epoch_num: Optional[int] = None,
+                        summary_writer: Optional[tf.summary.FileWriter] = None,
+                        save_outputs: Optional[str] = None) -> MetricsAccumulator:
+        if n_steps == -1:
+            return self.run_epoch(epoch_num=epoch_num, summary_writer=summary_writer, save_outputs=save_outputs)
+
+        all_outputs = []
+        with self.add_progress_bar(n_steps, epoch_num):
+            assert self.epoch_metrics is not None
+            for _ in range(n_steps):
+                if save_outputs is not None:
+                    loss, outputs = self.run('default', return_outputs=True)
+                    all_outputs.append(outputs)
+                else:
+                    self.run('default')
 
         if save_outputs is not None:
             with open(save_outputs, 'wb') as f:
