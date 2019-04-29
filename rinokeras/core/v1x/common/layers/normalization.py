@@ -69,5 +69,22 @@ class WeightNormDense(Dense):
             trainable=True)
 
     def call(self, inputs):
-        self.kernel = tf.nn.l2_normalize(self.kernel, dim=0) * self.scale
-        return super().call(inputs)
+        inputs = ops.convert_to_tensor(inputs, dtype=self.dtype)
+        rank = common_shapes.rank(inputs)
+        if rank > 2:
+            # Broadcasting is required for the inputs.
+            outputs = standard_ops.tensordot(inputs, self.kernel, [[rank - 1], [0]])
+            if not context.executing_eagerly():
+                shape = inputs.get_shape().as_list()
+                output_shape = shape[:-1] + [self.units]
+                outputs.set_shape(output_shape)
+        else:
+            outputs = gen_math_ops.mat_mul(inputs, self.kernel)
+
+        scale = self.scale / (tf.norm(self.kernel, 2, 0) + 1e-8)
+        outputs = outputs * scale
+        if self.use_bias:
+            outputs = nn.bias_add(outputs, self.bias)
+        if self.activation is not None:
+            return self.activation(outputs)
+        return outputs
