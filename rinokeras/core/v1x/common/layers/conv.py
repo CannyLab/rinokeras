@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Activation, Conv1D, Conv2D, Conv3D, Dropout, BatchNormalization, Layer
+from tensorflow.keras.layers import Activation, Conv1D, Conv2D, Conv3D, Dropout, BatchNormalization, Layer, LeakyReLU
 
 from rinokeras.core.v1x.common.layers.stack import Stack
 from rinokeras.core.v1x.common.layers.normalization import LayerNorm
@@ -43,13 +43,24 @@ class PaddedConv(Stack):
                  filters: int,
                  kernel_size: int,
                  dilation_rate: int,
+                 activation: str = 'relu',
                  dropout: Optional[float] = None) -> None:
         super().__init__()
         assert 1 <= dimension <= 3
         conv_func = [Conv1D, Conv2D, Conv3D]
+
+        def get_activation():
+            if activation == 'glu':
+                return GLUActivation()
+            elif activation == 'lrelu':
+                return LeakyReLU()
+            else:
+                return Activation(activation)
+
         self.add(conv_func[dimension - 1](
             filters=filters, kernel_size=kernel_size, strides=1, padding='same', use_bias=True,
             activation='linear', dilation_rate=dilation_rate))
+        self.add(get_activation())
         if dropout is not None:
             self.add(Dropout(dropout))
 
@@ -79,19 +90,10 @@ class ResidualBlock(Residual):
                  dilation_rate: int = 1,
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
-        def get_activation():
-            if activation == 'glu':
-                return GLUActivation()
-            else:
-                return Activation(activation)
-
         layer = Stack()
-        layer.add(PaddedConv(1, filters // 4, 1, dilation_rate, dropout))
-        layer.add(get_activation())
-        layer.add(PaddedConv(1, filters // 4, kernel_size, dilation_rate, dropout))
-        layer.add(get_activation())
-        layer.add(PaddedConv(1, filters, 1, dilation_rate, dropout))
-        layer.add(get_activation())
+        layer.add(PaddedConv(1, filters // 4, 1, 1, activation, dropout))
+        layer.add(PaddedConv(1, filters // 4, kernel_size, dilation_rate, activation, dropout))
+        layer.add(PaddedConv(1, filters, 1, 1, activation, dropout))
 
         super().__init__(layer, **kwargs)
 
