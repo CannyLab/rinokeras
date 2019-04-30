@@ -44,7 +44,7 @@ class Stack(Model):
 
     def get_config(self) -> Dict:
         config = {
-            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layers],
+            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layer_list],
         }
         return config
 

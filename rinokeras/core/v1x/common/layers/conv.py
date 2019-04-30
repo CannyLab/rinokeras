@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Activation, Conv1D, Conv2D, Conv3D, Dropout, BatchNormalization, Layer
+from tensorflow.keras.layers import Activation, Conv1D, Conv2D, Conv3D, Dropout, BatchNormalization, Layer, LeakyReLU
 
 from rinokeras.core.v1x.common.layers.stack import Stack
 from rinokeras.core.v1x.common.layers.normalization import LayerNorm
@@ -52,6 +52,8 @@ class PaddedConv(Stack):
         def get_activation():
             if activation == 'glu':
                 return GLUActivation()
+            elif activation == 'lrelu':
+                return LeakyReLU()
             else:
                 return Activation(activation)
 
@@ -86,17 +88,12 @@ class ResidualBlock(Residual):
                  kernel_size: int,
                  activation: str = 'relu',
                  dilation_rate: int = 1,
+                 layer_norm: bool = False,
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
-        def get_activation():
-            if activation == 'glu':
-                return GLUActivation()
-            else:
-                return Activation(activation)
-
         layer = Stack()
-        # layer.add(PaddedConv(dimension, filters // 4, 1, dilation_rate, activation, dropout))
-        # layer.add(LayerNorm())
+        if layer_norm:
+            layer.add(LayerNorm())
         layer.add(PaddedConv(dimension, filters, kernel_size, dilation_rate, activation, dropout))
         layer.add(PaddedConv(dimension, filters, kernel_size, dilation_rate, activation, dropout))
 
