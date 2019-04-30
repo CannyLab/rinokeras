@@ -16,4 +16,4 @@ codecov
 pytest-cov
 
 # Tensorflow
-tensorflow
+tensorflow>=1.12.1
