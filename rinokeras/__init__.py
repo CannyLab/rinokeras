@@ -22,7 +22,7 @@ try:
         import rinokeras.compat
         import rinokeras.layers
         import rinokeras.models
-except ModuleNotFoundError:
+except ImportError:
     TF_NOT_FOUND = True
     
 # Handle Torch imports
@@ -32,8 +32,8 @@ try:
     import rinokeras.torch.modules
     import rinokeras.torch.functional
     import rinokeras.torch.models
-    
-except ModuleNotFoundError:
+
+except ImportError:
     TORCH_NOT_FOUND = True
     
 
