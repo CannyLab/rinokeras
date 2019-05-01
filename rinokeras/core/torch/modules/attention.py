@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from rinokeras.core.torch.utils.tensor import get_variable
+from rinokeras.core.torch.utils.tensor import get_parameter
 
 from rinokeras.core.torch.functional.masking import apply_attention_mask
 from rinokeras.core.torch.functional.attention import multi_head_attention_map
@@ -22,7 +22,7 @@ class LuongAttention(nn.Module):
         self.target_dim = target_dim
         self.output_units = output_units
 
-        self.attention_weights = get_variable([self.source_dim + self.target_dim, self.output_units])
+        self.attention_weights = get_parameter([self.source_dim + self.target_dim, self.output_units])
 
     def forward(self,source_hidden_sequence: torch.Tensor, target_hidden: torch.Tensor) -> torch.Tensor:
         # Source Hidden Sequence -> Tensor [None, None, encoder_cell_size]
@@ -40,7 +40,7 @@ class LocalLuongAttention(nn.Module):
         self.target_dim = target_dim
         self.output_units = output_units
 
-        self.attention_weights = get_variable([self.source_dim + self.target_dim, self.output_units])
+        self.attention_weights = get_parameter([self.source_dim + self.target_dim, self.output_units])
 
     def forward(self,source_hidden_sequence: torch.Tensor, target_hidden: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         # Source Hidden Sequence -> Tensor [None, None, encoder_cell_size]
@@ -99,9 +99,9 @@ class TrilinearSimilarity(nn.Module):
                  context_input_dim: int,
                  dropout: Optional[float] = None) -> None:
         self.dropout = nn.Dropout(dropout) if dropout else None
-        self.query_weights = get_variable([query_input_dim, 1])
-        self.context_weights = get_variable([context_input_dim, 1])
-        self.dot_weights = get_variable([context_input_dim, query_input_dim])
+        self.query_weights = get_parameter([query_input_dim, 1])
+        self.context_weights = get_parameter([context_input_dim, 1])
+        self.dot_weights = get_parameter([context_input_dim, query_input_dim])
 
     def forward(self, context: torch.Tensor, query: torch.Tensor) -> torch.Tensor:
 

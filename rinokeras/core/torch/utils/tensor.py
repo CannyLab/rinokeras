@@ -24,3 +24,6 @@ def get_variable(*shapes,
                                                     device=device,
                                                     requires_grad=requires_grad,
                                                     pin_memory=pin_memory))
+
+def get_parameter(*args, **kwargs):
+    return torch.nn.Parameter(get_variable(*args, **kwargs))
