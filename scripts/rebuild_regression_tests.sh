@@ -1,6 +1,6 @@
 
 # For each version in the code
-declare -a TF_VERSIONS=("1.12" "1.13" "2.0.0a0")
+declare -a TF_VERSIONS=("1.12.2" "1.13.1" "2.0.0a0")
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 for ver in "${TF_VERSIONS[@]}"; do

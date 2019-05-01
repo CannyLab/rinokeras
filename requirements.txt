@@ -15,5 +15,9 @@ coverage
 codecov
 pytest-cov
 
-# Tensorflow
-tensorflow>=1.12.1
+# Also required:
+# tensorflow OR pytorch
+
+# For tests
+# nltk
+# tensorflow-datasets
