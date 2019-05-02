@@ -25,3 +25,18 @@ def apply_attention_mask(inputs: torch.Tensor, mask: torch.Tensor = None, hadama
 
     # Otherwise return the mask * a large number added to the inputs
     return -inf * (1-mask.byte().float()) + inputs
+
+def convert_sequence_mask_to_attention_mask(sequence: torch.Tensor, sequence_mask: torch.Tensor) -> torch.Tensor:
+    if sequence.shape[0] != sequence_mask.shape[0]:
+        raise AssertionError('Batch size mismatch between sequence and sequence_mask')
+    if len(sequence_mask.shape) != 2:
+        raise AssertionError('Can only convert 2D sequence maskes to 3D attention masks')
+    return sequence_mask.unsqueeze(1).expand(-1, sequence.shape[1], -1)
+
+def convert_sequence_length_to_sequence_mask(sequence: torch.Tensor, sequence_lengths: torch.Tensor) -> torch.Tensor:
+    if sequence.shape[0] != sequence_lengths.shape[0]:
+        raise AssertionError('Batch size mismatch between sequence and sequence_lengths')
+    if len(sequence_lengths.shape) != 1:
+        raise AssertionError('Can only convert 1D sequence lengths to 2D sequence masks')
+    seqs = torch.range(0, sequence.shape[1]).expand(sequence.shape[0], -1)
+    return torch.lt(seqs, sequence_lengths.view(-1, 1).expand(-1, seqs.shape[1])).float()
