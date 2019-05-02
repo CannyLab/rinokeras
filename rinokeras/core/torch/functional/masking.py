@@ -21,7 +21,7 @@ def apply_attention_mask(inputs: torch.Tensor, mask: torch.Tensor = None, hadama
     
     if hadamard:
         # Just directly multiply the mask and the inputs
-        return mask * inputs
+        return mask.byte().float() * inputs
 
     # Otherwise return the mask * a large number added to the inputs
-    return -inf * mask + inputs
+    return -inf * (1-mask.byte().float()) + inputs

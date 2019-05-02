@@ -1,3 +1,0 @@
-"""
-Position embedding modules
-"""
