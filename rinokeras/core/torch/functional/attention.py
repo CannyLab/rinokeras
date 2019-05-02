@@ -23,13 +23,13 @@ def attention_map(queries: torch.Tensor,
                   attention_function: str = 'softmax') -> torch.Tensor:
 
     similarity = ATTENTION_METHODS_MAP[similarity_metric](queries, keys)
+
     if attention_function == 'softmax':
         masked_similarity = apply_attention_mask(similarity, mask=mask)
-        weights = ATTENTION_FUNCTION_MAP[attention_function](masked_similarity - masked_similarity.max(dim=-1, keepdim=True))
     else:
         masked_similarity = apply_attention_mask(similarity, mask=mask, hadamard=True)
-        weights = ATTENTION_FUNCTION_MAP[attention_function](masked_similarity)
-    
+    weights = ATTENTION_FUNCTION_MAP[attention_function](masked_similarity, dim=-1)
+
     if dropout:
         weights = torch.nn.functional.dropout(weights, dropout)
     outputs = torch.matmul(weights, values)
@@ -48,9 +48,9 @@ def split_heads(input_tensor: torch.Tensor, n_heads:int) -> torch.Tensor:
     return output.permute(0,2,1,3)
 
 def combine_heads(input_tensor: torch.Tensor) -> torch.Tensor:
-    if len(input_tensor.shape) != 3:
+    if len(input_tensor.shape) != 4:
         raise AssertionError('Input to combine_heads must be rank 4')
-    output = input_tensor.transpose(0,2,1,3)
+    output = input_tensor.permute(0,2,1,3)
     return output.reshape(input_tensor.shape[0], input_tensor.shape[2], -1)
 
 def multi_head_attention_map(queries: torch.Tensor,

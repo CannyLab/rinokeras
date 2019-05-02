@@ -20,9 +20,6 @@ def test_position_embedding_concat_1d():
     pre_embed = torch.randn(2, 4, 8, dtype=torch.float32)
     post_embed = position_embed(pre_embed, start=1, concat=True)
 
-    pre_numpy = pre_embed.numpy()
-    post_numpy = post_embed.numpy()
-
     assert post_embed.shape == (2, 4, 16)
 
     
