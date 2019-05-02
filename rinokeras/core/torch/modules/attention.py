@@ -264,12 +264,6 @@ class StridedCachedLWSelfAttention(nn.Module):
     to do, and you have to make sure that you re-initialize the cache when you
     transition to a new document. Pre-warming the cache with some other values
     is potential future research.
-    
-    Arguments:
-        nn {[type]} -- [description]
-    
-    Raises:
-        AssertionError: [description]
     """
 
     def __init__(self, degree: int, stride: int, model_dim: int) -> None:
@@ -294,19 +288,19 @@ class StridedCachedLWSelfAttention(nn.Module):
     def cuda(self, *args, **kwargs):
         self.use_cuda = True
         self.cuda_args = [args, kwargs]
-        super().cuda(*args, **kwargs)
+        return super().cuda(*args, **kwargs)
 
     def batch_initialize(self, batch_size: int) -> None:
         self.cache_initialized = True
         self.cache = torch.zeros(self.stride, batch_size, self.degree, self.model_dim, requires_grad=False)
         if self.use_cuda:
-            self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
+            self.cache = self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
         self.last_batch_size = batch_size
 
     def reset_cache(self) -> None:
         self.cache = torch.zeros(self.stride, self.last_batch_size, self.degree - 1, self.model_dim, requires_grad=False)
         if self.use_cuda:
-            self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
+            self.cache = self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
 
     def get_causal_mask(self, sequence):
         ranges = torch.arange(0, sequence.shape[1]) # Get the ranges 1...seqlen
@@ -314,7 +308,7 @@ class StridedCachedLWSelfAttention(nn.Module):
         output = (output <= ranges.view(-1, 1).expand(-1, sequence.shape[1])).expand(sequence.shape[0], -1, -1)
         if self.use_cuda:
             output = output.float().cuda(*self.cuda_args[0], **self.cuda_args[1])
-        return output.squeeze()
+        return output.squeeze(-1)
 
     def forward(self, inputs: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
 
