@@ -81,5 +81,3 @@ def multi_head_attention_map(queries: torch.Tensor,
     if return_attention_weights:
         return outputs, attention_weights
     return outputs
-        
-

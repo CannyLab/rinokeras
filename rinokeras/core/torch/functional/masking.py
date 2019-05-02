@@ -14,7 +14,7 @@ def apply_attention_mask(inputs: torch.Tensor, mask: torch.Tensor = None, hadama
     
     # We need to expand the dimensions
     if len(mask.shape) != len(inputs.shape):
-        mask = mask.unsqueeze(-1)
+        mask = mask.unsqueeze(1).expand(-1, inputs.shape[1], -1, -1)
         if mask.shape != inputs.shape:
             raise AssertionError('Mask shape {} not compatible with input shape {}'.format(
                 mask.shape, inputs.shape))

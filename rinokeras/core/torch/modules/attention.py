@@ -252,3 +252,108 @@ class ContextQueryAttention(nn.Module):
         if self.dropout:
             outputs = self.dropout(outputs)
         return outputs
+
+
+class StridedCachedLWSelfAttention(nn.Module):
+    """
+    Limited window self-attention block which can be used for the implementation
+    of the transformer-XL architecture.
+
+    Note that this has to be called sequentially. It's going to have issues if 
+    you don't do this -> There's a bunch of clever data management that you have
+    to do, and you have to make sure that you re-initialize the cache when you
+    transition to a new document. Pre-warming the cache with some other values
+    is potential future research.
+    
+    Arguments:
+        nn {[type]} -- [description]
+    
+    Raises:
+        AssertionError: [description]
+    """
+
+    def __init__(self, degree: int, stride: int, model_dim: int) -> None:
+
+        super(StridedCachedLWSelfAttention, self).__init__()
+
+        # Initialize the update elements
+        self.degree = degree
+        self.stride = stride
+        self.model_dim = model_dim
+
+        # TODO: Make sure degree, stride, model_dim are valid
+        self.cache = None
+        self.last_batch_size = None
+        self.use_cuda = False
+        self.cuda_args = None
+        self.cache_initialized = False
+
+        # Attention
+        self.attention_layer = SelfAttention(model_dim, 4)
+
+    def cuda(self, *args, **kwargs):
+        self.use_cuda = True
+        self.cuda_args = [args, kwargs]
+        super().cuda(*args, **kwargs)
+
+    def batch_initialize(self, batch_size: int) -> None:
+        self.cache_initialized = True
+        self.cache = torch.zeros(self.stride, batch_size, self.degree, self.model_dim, requires_grad=False)
+        if self.use_cuda:
+            self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
+        self.last_batch_size = batch_size
+
+    def reset_cache(self) -> None:
+        self.cache = torch.zeros(self.stride, self.last_batch_size, self.degree - 1, self.model_dim, requires_grad=False)
+        if self.use_cuda:
+            self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
+
+    def get_causal_mask(self, sequence):
+        ranges = torch.arange(0, sequence.shape[1]) # Get the ranges 1...seqlen
+        output = ranges.view(1,-1).expand(sequence.shape[1], -1)
+        output = (output <= ranges.view(-1, 1).expand(-1, sequence.shape[1])).expand(sequence.shape[0], -1, -1)
+        if self.use_cuda:
+            output = output.float().cuda(*self.cuda_args[0], **self.cuda_args[1])
+        return output.squeeze()
+
+    def forward(self, inputs: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+
+        # if not self.cache_initialized:
+        #     raise AssertionError('You must call batch_initialize before calling forward')
+        # if inputs.shape[1] != self.degree*self.stride:
+        #     raise AssertionError('Inputs must be of shape [{},{},{}]'.format(self.last_batch_size, self.degree*self.stride, self.model_dim))
+
+        if self.stride != 1:
+
+            outputs = []
+            for s in range(self.stride):
+                s_inputs = inputs[:, s::self.stride, :]
+                # Cat the cache to the current inputs -> This should give
+                self_attention_inputs = torch.cat([self.cache[s], s_inputs], dim=1)
+                # Get the masking set up properly
+                self_attention_mask = self.get_causal_mask(self_attention_inputs)
+                if mask:
+                    self_attention_mask = mask.float() * self_attention_mask.float()
+
+                attn_out = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
+                attn_out_slices = attn_out[:, self.degree:, :]
+                outputs.append(attn_out_slices)
+                self.cache[s] = attn_out_slices
+            
+            sliced_out = torch.stack(outputs, dim=len(inputs.shape)).view(inputs.shape)
+        else:
+            # Cat the cache to the current inputs -> This should give
+            self_attention_inputs = torch.cat([self.cache[0], inputs], dim=1)
+
+            # Get the masking set up properly
+            self_attention_mask = self.get_causal_mask(self_attention_inputs)
+            if mask:
+                self_attention_mask = mask.float() * self_attention_mask.float()
+
+            attention_outputs = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
+
+            # Update the cache
+            sliced_out = attention_outputs[:, self.degree:, :]
+            self.cache[0] = sliced_out
+
+        return sliced_out
