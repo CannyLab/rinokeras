@@ -71,7 +71,8 @@ class TrainGraph(TestGraph):
             return_grad_summaries=experiment.return_grad_summaries,
             gradient_clip_type=experiment.gradient_clipping,
             gradient_clip_bounds=experiment.gradient_clipping_bounds,
-            distribution_strategy=experiment.distribution_strategy)
+            distribution_strategy=experiment.distribution_strategy,
+            use_memory_saving_gradients=experiment.use_memory_saving_gradients)
 
     def _distributed_fn(self):
         # self._distributed_global_step = tf.train.get_or_create_global_step()
