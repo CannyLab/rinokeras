@@ -10,6 +10,8 @@ from .train_utils import Inputs, Outputs, Losses
 from rinokeras.core.v1x.train import Experiment
 import rinokeras.compat.distributed as distlib
 
+from .memory_saving_gradients import gradients_collection
+
 
 class TrainGraph(TestGraph):
     """
@@ -41,11 +43,13 @@ class TrainGraph(TestGraph):
                  gradient_clip_type: str = 'none',
                  gradient_clip_bounds: Union[float, Tuple[float, float]] = 1.0,
                  distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
+                 use_memory_saving_gradients: bool = False,
                  **kwargs) -> None:
 
         self.optimizer = optimizer
         self.return_grad_summaries = return_grad_summaries
         self._learning_rate_func = learning_rate
+        self._use_memory_saving_gradients = use_memory_saving_gradients
 
         self._clip_gradients = self._get_gradient_clip_function(
             gradient_clip_type, gradient_clip_bounds)
@@ -88,7 +92,11 @@ class TrainGraph(TestGraph):
             else:
                 outputs, loss, losses = loss_fn(inputs)
                 with tf.control_dependencies(self.model.updates):
-                    grads = self.optimizer.compute_gradients(loss, self.model.variables)
+                    if self._use_memory_saving_gradients:
+                        grads = gradients_collection(loss, self.model.variables)
+                        grads = list(zip(grads, self.model.variables))
+                    else:
+                        grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
             grads = self._clip_gradients(grads)
             return grads, outputs, loss, losses
