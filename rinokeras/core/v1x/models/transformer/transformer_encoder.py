@@ -57,7 +57,7 @@ class TransformerEncoderBlock(Model):
             activity_regularizer=activity_regularizer)
         self.layer_drop_1 = LayerDropout(
             0 if layer_dropout is None else layer_dropout)
-        self.feed_forward = TransformerFeedForward(filter_size, hidden_size, 
+        self.feed_forward = TransformerFeedForward(filter_size, hidden_size,
                                                    dropout=dropout,
                                                    kernel_initializer=kernel_initializer,
                                                    kernel_regularizer=kernel_regularizer,
@@ -80,7 +80,7 @@ class TransformerEncoderBlock(Model):
                 conv_mask = None
         else:
             self_attention_mask = None
-            conv_mask = None 
+            conv_mask = None
 
         # Perform a multi-headed self-attention across the inputs.
         res_attn, attention_weights = self.self_attention(
@@ -89,6 +89,8 @@ class TransformerEncoderBlock(Model):
 
         output = self.feed_forward(res_attn, padding_mask=conv_mask)
         output = self.layer_drop_2(output, res_attn)
+
+        tf.add_to_collection('checkpoints', output)
 
         if return_attention_weights:
             return output, attention_weights
@@ -202,12 +204,12 @@ class TransformerEncoder(Model):
             inputs = self.embedding_layer(inputs)
             if conv_mask is not None:
                 inputs = inputs * tf.cast(conv_mask[:, :, None], tf.float32)
-        
+
         # Check the outputs
         inputs.shape.assert_has_rank(3)
         batch_size, seqlen, _ = get_shape(inputs, range(3))
         # We need to make sure that the input shapes are correct for the mask
-        assertions = []     
+        assertions = []
 
         # Masking assertions
         if encoder_mask is not None:

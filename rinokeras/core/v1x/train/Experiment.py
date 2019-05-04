@@ -18,7 +18,8 @@ class Experiment(ABC):
                  return_loss_summaries: bool = False,
                  return_variable_summaries: bool = False,
                  return_grad_summaries: bool = False,
-                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0')) -> None:
+                 distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
+                 use_memory_saving_gradients: bool = False) -> None:
         super().__init__()
         self.model = model
         self.optimizer = optimizer
@@ -29,6 +30,7 @@ class Experiment(ABC):
         self.return_variable_summaries = return_variable_summaries
         self.return_grad_summaries = return_grad_summaries
         self.distribution_strategy = distribution_strategy
+        self.use_memory_saving_gradients = use_memory_saving_gradients
 
     @abstractmethod
     def build_model(self, inputs: Inputs) -> Outputs:

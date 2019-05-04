@@ -88,15 +88,21 @@ class ResidualBlock(Residual):
                  kernel_size: int,
                  activation: str = 'relu',
                  dilation_rate: int = 1,
+                 layer_norm: bool = False,
                  dropout: Optional[float] = None,
                  **kwargs) -> None:
         layer = Stack()
-        layer.add(PaddedConv(1, filters // 4, 1, 1, activation, dropout))
-        layer.add(PaddedConv(1, filters // 4, kernel_size, dilation_rate, activation, dropout))
-        layer.add(PaddedConv(1, filters, 1, 1, activation, dropout))
+        if layer_norm:
+            layer.add(LayerNorm())
+        layer.add(PaddedConv(dimension, filters, kernel_size, dilation_rate, activation, dropout))
+        layer.add(PaddedConv(dimension, filters, kernel_size, dilation_rate, activation, dropout))
 
         super().__init__(layer, **kwargs)
 
+    def call(self, inputs, *args, **kwargs):
+        output = super().call(inputs, *args, **kwargs)
+        tf.add_to_collection('checkpoints', output)
+        return output
 
 
 class GroupedConvolution(tf.keras.Model):

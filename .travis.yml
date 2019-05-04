@@ -9,13 +9,13 @@ env:
   global:
   - CODECOV_TOKEN="1384d50e-aaea-4dc0-857c-23a0287ec68b"
   matrix:
-  - RK_TF_VERSION=tensorflow==1.12
+  - RK_TF_VERSION=tensorflow==1.12.2
   - RK_TF_VERSION=tensorflow==1.13.1
   - RK_TF_VERSION=tensorflow==2.0.0a0
 matrix:
   exclude:
   - python: 3.7-dev
-    env: RK_TF_VERSION=tensorflow==1.12
+    env: RK_TF_VERSION=tensorflow==1.12.2
 install:
   - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
   - pip install $RK_TF_VERSION
