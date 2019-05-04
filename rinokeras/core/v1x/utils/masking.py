@@ -1,6 +1,7 @@
 import tensorflow as tf
 from warnings import warn
 
+
 def convert_sequence_mask_to_attention_mask(sequence, sequence_mask):
     """Given a padded input tensor of sequences and a boolean mask for each position
     in the sequence, returns a 3D boolean mask for use in attention.
@@ -51,9 +52,13 @@ def convert_sequence_length_to_sequence_mask(sequence, sequence_lengths):
     rank_assert = tf.assert_equal(tf.rank(sequence_lengths), 1,
                                   message='Can only convert 1D sequence_lengths to 2D mask')
 
+    dtype = sequence_lengths.dtype
     with tf.control_dependencies([batch_assert, rank_assert]):
-        indices = tf.tile(tf.range(tf.shape(sequence)[1])[
-                          None, :], (tf.shape(sequence_lengths)[0], 1))
+        array_shape = tf.shape(sequence, out_type=dtype)
+        batch_size = array_shape[0]
+        seqlen = array_shape[1]
+
+        indices = tf.tile(tf.range(seqlen, dtype=dtype)[None, :], (batch_size, 1))
         mask = indices < sequence_lengths[:, None]
 
         return mask
