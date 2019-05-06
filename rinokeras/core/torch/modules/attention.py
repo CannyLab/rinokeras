@@ -266,7 +266,7 @@ class StridedCachedLWSelfAttention(nn.Module):
     is potential future research.
     """
 
-    def __init__(self, degree: int, stride: int, model_dim: int) -> None:
+    def __init__(self, degree: int, stride: int, model_dim: int, n_heads: int = 4) -> None:
 
         super(StridedCachedLWSelfAttention, self).__init__()
 
@@ -274,6 +274,7 @@ class StridedCachedLWSelfAttention(nn.Module):
         self.degree = degree
         self.stride = stride
         self.model_dim = model_dim
+        self.n_heads = n_heads
 
         # TODO: Make sure degree, stride, model_dim are valid
         self.cache = None
@@ -283,7 +284,7 @@ class StridedCachedLWSelfAttention(nn.Module):
         self.cache_initialized = False
 
         # Attention
-        self.attention_layer = SelfAttention(model_dim, 4)
+        self.attention_layer = SelfAttention(model_dim, self.n_heads)
 
     def cuda(self, *args, **kwargs):
         self.use_cuda = True
@@ -292,13 +293,13 @@ class StridedCachedLWSelfAttention(nn.Module):
 
     def batch_initialize(self, batch_size: int) -> None:
         self.cache_initialized = True
-        self.cache = torch.zeros(self.stride, batch_size, self.degree, self.model_dim, requires_grad=False)
+        self.cache = torch.zeros(self.stride, batch_size, self.degree, self.model_dim)
         if self.use_cuda:
             self.cache = self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
         self.last_batch_size = batch_size
 
     def reset_cache(self) -> None:
-        self.cache = torch.zeros(self.stride, self.last_batch_size, self.degree - 1, self.model_dim, requires_grad=False)
+        self.cache = torch.zeros(self.stride, self.last_batch_size, self.degree - 1, self.model_dim)
         if self.use_cuda:
             self.cache = self.cache.cuda(*self.cuda_args[0], **self.cuda_args[1])
 
@@ -323,16 +324,16 @@ class StridedCachedLWSelfAttention(nn.Module):
             for s in range(self.stride):
                 s_inputs = inputs[:, s::self.stride, :]
                 # Cat the cache to the current inputs -> This should give
-                self_attention_inputs = torch.cat([self.cache[s], s_inputs], dim=1)
+                self_attention_inputs = torch.cat([self.cache[s].detach(), s_inputs], dim=1)
                 # Get the masking set up properly
-                self_attention_mask = self.get_causal_mask(self_attention_inputs)
+                self_attention_mask = self.get_causal_mask(self_attention_inputs).detach()
                 if mask:
-                    self_attention_mask = mask.float() * self_attention_mask.float()
+                    self_attention_mask = mask.float().detach() * self_attention_mask.float().detach()
 
                 attn_out = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
                 attn_out_slices = attn_out[:, self.degree:, :]
                 outputs.append(attn_out_slices)
-                self.cache[s] = attn_out_slices
+                self.cache[s] = attn_out_slices.detach()
             
             sliced_out = torch.stack(outputs, dim=len(inputs.shape)).view(inputs.shape)
         else:
