@@ -43,4 +43,4 @@ def convert_sequence_length_to_sequence_mask(sequence: torch.Tensor, sequence_le
         seqs = torch.arange(0, sequence.shape[1]-1).expand(sequence.shape[0], -1).cuda()
     else:
         seqs = torch.arange(0, sequence.shape[1]-1).expand(sequence.shape[0], -1)
-    return torch.lt(seqs, sequence_lengths.view(-1, 1).expand(-1, seqs.shape[1])).float()
+    return torch.lt(seqs.float(), sequence_lengths.view(-1, 1).expand(-1, seqs.shape[1]).float()).float()
