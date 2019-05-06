@@ -12,11 +12,16 @@ def position_embed(inputs: torch.Tensor, start: int = 1, concat: bool = False, b
     elif hidden_size % 2 != 0:
         hidden_size += 1
 
-    power = torch.arange(0, hidden_size, 2).float() / hidden_size
+    if inputs.is_cuda:
+        power = torch.arange(0, hidden_size, 2).float().cuda() / hidden_size
+        seqpos = torch.arange(start, inputs.shape[1]+1).unsqueeze(0).float().cuda()
+    else:
+        power = torch.arange(0, hidden_size, 2).float() / hidden_size
+        seqpos = torch.arange(start, inputs.shape[1]+1).unsqueeze(0).float()
+
     divisor = base ** power
 
     # Compute the sequence positions
-    seqpos = torch.arange(start, inputs.shape[1]+1).unsqueeze(0).float()
     index = seqpos.unsqueeze(-1) / divisor
     
     sin_embedding = torch.sin(index)
