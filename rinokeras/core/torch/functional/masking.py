@@ -38,5 +38,9 @@ def convert_sequence_length_to_sequence_mask(sequence: torch.Tensor, sequence_le
         raise AssertionError('Batch size mismatch between sequence and sequence_lengths')
     if len(sequence_lengths.shape) != 1:
         raise AssertionError('Can only convert 1D sequence lengths to 2D sequence masks')
-    seqs = torch.range(0, sequence.shape[1]).expand(sequence.shape[0], -1)
-    return torch.lt(seqs, sequence_lengths.view(-1, 1).expand(-1, seqs.shape[1])).float()
+    
+    if sequence.is_cuda:
+        seqs = torch.arange(0, sequence.shape[1]-1).expand(sequence.shape[0], -1).cuda()
+    else:
+        seqs = torch.arange(0, sequence.shape[1]-1).expand(sequence.shape[0], -1)
+    return torch.lt(seqs.float(), sequence_lengths.view(-1, 1).expand(-1, seqs.shape[1]).float()).float()

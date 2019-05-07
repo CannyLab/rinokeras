@@ -57,10 +57,11 @@ class PaddedConv(Stack):
             else:
                 return Activation(activation)
 
+        self.add(BatchNormalization())
+        self.add(get_activation())
         self.add(conv_func[dimension - 1](
             filters=filters, kernel_size=kernel_size, strides=1, padding='same', use_bias=True,
-            activation='linear', dilation_rate=dilation_rate))
-        self.add(get_activation())
+            activation='linear', dilation_rate=dilation_rate, kernel_initializer='he_normal'))
         if dropout is not None:
             self.add(Dropout(dropout))
 
@@ -70,7 +71,7 @@ class PaddedConv(Stack):
             if mask.shape.ndims == 2:
                 mask = mask[:, :, None]
             inputs = inputs * mask
-        return super().call(inputs)
+        return super().call(inputs, mask=mask)
 
 
 class GLUActivation(Layer):
