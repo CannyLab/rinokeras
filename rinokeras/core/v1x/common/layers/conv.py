@@ -100,6 +100,11 @@ class ResidualBlock(Residual):
 
         super().__init__(layer, **kwargs)
 
+    def call(self, inputs, *args, **kwargs):
+        output = super().call(inputs, *args, **kwargs)
+        tf.add_to_collection('checkpoints', output)
+        return output
+
 
 class GroupedConvolution(tf.keras.Model):
     def __init__(self, cardinality: int = 1, n_filters: int = 64, kernel_size: Tuple[int, int] = (3, 3), stride: Tuple[int, int] = (1,1)) -> None:

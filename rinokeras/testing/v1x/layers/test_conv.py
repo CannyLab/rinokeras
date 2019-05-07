@@ -142,7 +142,7 @@ def test_residual_block():
     reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.layers.conv import ResidualBlock
-    rb_layer = ResidualBlock(dimension=2, filters=16, kernel_size=4, n_layers=2)
+    rb_layer = ResidualBlock(dimension=2, filters=16, kernel_size=4)
 
     # Make sure that the layer is not None
     assert rb_layer is not None

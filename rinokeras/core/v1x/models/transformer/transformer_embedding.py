@@ -99,6 +99,8 @@ class TransformerInputEmbedding(Model):
         if self.use_position_encoding:
             embedding = self.position_encoding(embedding, start=start)
 
+        tf.add_to_collection('checkpoints', embedding)
+
         return embedding
 
     def get_config(self):

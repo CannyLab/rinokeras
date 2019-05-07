@@ -5,6 +5,7 @@ pytest>=3.7.3
 tqdm>=4.26.0
 h5py
 packaging
+toposort
 
 # Compatability
 deprecation
@@ -15,5 +16,9 @@ coverage
 codecov
 pytest-cov
 
-# Tensorflow
-tensorflow>=1.12.1
+# Also required:
+# tensorflow OR pytorch
+
+# For tests
+# nltk
+# tensorflow-datasets
