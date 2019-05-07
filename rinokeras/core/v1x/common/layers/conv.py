@@ -42,7 +42,7 @@ class PaddedConv(Stack):
                  dimension: int,
                  filters: int,
                  kernel_size: int,
-                 dilation_rate: int,
+                 dilation_rate: int = 1,
                  activation: str = 'relu',
                  dropout: Optional[float] = None) -> None:
         super().__init__()
