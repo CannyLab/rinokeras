@@ -68,8 +68,8 @@ class PaddedConv(Stack):
     def call(self, inputs, mask=None):
         if mask is not None:
             mask = tf.cast(mask, inputs.dtype)
-            if mask.shape.ndims == 2:
-                mask = mask[:, :, None]
+            if mask.shape.ndims == inputs.shape.ndims - 1:
+                mask = tf.expand_dims(mask, -1)
             inputs = inputs * mask
         return super().call(inputs, mask=mask)
 
