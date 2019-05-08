@@ -1,6 +1,3 @@
-
-
-
 TF_NOT_FOUND = False
 TORCH_NOT_FOUND = False
 
@@ -22,9 +19,12 @@ try:
         import rinokeras.compat
         import rinokeras.layers
         import rinokeras.models
-except ImportError:
+except ModuleNotFoundError as e:
+    if e.name != 'tensorflow':
+        raise
+
     TF_NOT_FOUND = True
-    
+
 # Handle Torch imports
 try:
     import torch
@@ -33,10 +33,12 @@ try:
     import rinokeras.torch.functional
     import rinokeras.torch.models
 
-except ImportError:
+except ModuleNotFoundError as e:
+    if e.name != 'torch':
+        raise
+
     TORCH_NOT_FOUND = True
-    
+
 
 if TORCH_NOT_FOUND and TF_NOT_FOUND:
     raise ModuleNotFoundError('Rinokeras needs PyTorch or Tensorflow to operate')
-
