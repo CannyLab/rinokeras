@@ -276,77 +276,67 @@ class StridedCachedLWSelfAttention(nn.Module):
         self.stride = stride
         self.model_dim = model_dim
         self.n_heads = n_heads
-
-        # TODO: Make sure degree, stride, model_dim are valid
-        self.cache = None  # type: Optional[torch.Tensor]
-        self.use_cuda = False
-        self.cuda_args = None
-        self.cache_initialized = False
-
+        
         # Attention
         self.attention_layer = SelfAttention(model_dim, self.n_heads)
-
-    def cuda(self, device=None):
-        self.use_cuda = True
-        self.device = device
-        return super().cuda(device)
-
-    def batch_initialize(self, batch_size: int) -> None:
-        self.cache_initialized = True
-        self.cache = torch.zeros(self.stride, batch_size, self.degree, self.model_dim)
-        if self.use_cuda:
-            self.cache = self.cache.cuda(device=self.device)
 
     def get_causal_mask(self, sequence):
         ranges = torch.arange(0, sequence.shape[1]) # Get the ranges 1...seqlen
         output = ranges.view(1,-1).expand(sequence.shape[1], -1)
-        output = (output <= ranges.view(-1, 1).expand(-1, sequence.shape[1])).expand(sequence.shape[0], -1, -1)
-        if self.use_cuda:
-            output = output.float().cuda(device=self.device)
+        output = (output <= ranges.view(-1, 1).expand(-1, sequence.shape[1])).expand(sequence.shape[0], -1, -1).cuda()
         return output.squeeze(-1)
 
-    def forward(self, inputs: torch.Tensor, sequence_mask: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor, sequence_mask: torch.Tensor = None, cache: torch.Tensor = None) -> torch.Tensor:
 
-        # if not self.cache_initialized:
-        #     raise AssertionError('You must call batch_initialize before calling forward')
-        # if inputs.shape[1] != self.degree*self.stride:
-        #     raise AssertionError('Inputs must be of shape [{},{},{}]'.format(self.last_batch_size, self.degree*self.stride, self.model_dim))
+        if inputs.shape[1] != self.degree*self.stride:
+            raise AssertionError('Inputs must be of shape [{},{},{}]'.format(self.last_batch_size, self.degree*self.stride, self.model_dim))
+
+        # Setup the cache
+        if cache is None:
+            cache = torch.zeros(self.stride, inputs.shape[0], self.degree, self.model_dim, requires_grad=False)
+            cache = cache.to(inputs.device) # Move the cache to the correct device
+
         if self.stride != 1:
 
             outputs = []
             for s in range(self.stride):
                 s_inputs = inputs[:, s::self.stride, :]
+                
+
                 # Cat the cache to the current inputs -> This should give
-                self_attention_inputs = torch.cat([self.cache[s].detach(), s_inputs], dim=1)
+                self_attention_inputs = torch.cat([cache[s].detach(), s_inputs], dim=1)
                 # Get the masking set up properly
-                self_attention_mask = self.get_causal_mask(self_attention_inputs).detach()
+                self_attention_mask = self.get_causal_mask(self_attention_inputs)
+
                 if sequence_mask is not None:
+                    s_mask = sequence_mask[:,s::self.stride]
                     # Expand the sequence mask for the cache
-                    sequence_mask = torch.nn.functional.pad(sequence_mask, (self.cache.shape[2], 0),value=1)
-                    sa_mask = convert_sequence_mask_to_attention_mask(self_attention_inputs, sequence_mask)
-                    self_attention_mask = sa_mask.float().detach() * self_attention_mask.float().detach()
+                    s_mask = torch.nn.functional.pad(s_mask, (cache.shape[2], 0), value=1)
+                    sa_mask = convert_sequence_mask_to_attention_mask(self_attention_inputs, s_mask)
+
+                    self_attention_mask = sa_mask.float() * self_attention_mask.float()
 
                 attn_out = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
                 attn_out_slices = attn_out[:, self.degree:, :]
                 outputs.append(attn_out_slices)
-                self.cache[s] = attn_out_slices.detach()
+                cache[s] = attn_out_slices
             
             sliced_out = torch.stack(outputs, dim=len(inputs.shape)).view(inputs.shape)
         else:
             # Cat the cache to the current inputs -> This should give
-            self_attention_inputs = torch.cat([self.cache[0].detach(), inputs], dim=1)
+            self_attention_inputs = torch.cat([cache[0].detach(), inputs], dim=1)
 
             # Get the masking set up properly
-            self_attention_mask = self.get_causal_mask(self_attention_inputs).detach()
+            self_attention_mask = self.get_causal_mask(self_attention_inputs)
             if sequence_mask is not None:
-                sequence_mask = torch.nn.functional.pad(sequence_mask, (self.cache.shape[2], 0),value=1)
+                sequence_mask = torch.nn.functional.pad(sequence_mask, (cache.shape[2], 0),value=1)
                 sa_mask = convert_sequence_mask_to_attention_mask(self_attention_inputs, sequence_mask)
-                self_attention_mask = sa_mask.float().detach() * self_attention_mask.float().detach()
+                self_attention_mask = sa_mask.float() * self_attention_mask.float()
 
             attention_outputs = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
 
             # Update the cache
             sliced_out = attention_outputs[:, self.degree:, :]
-            self.cache[0] = sliced_out.detach()
+            cache[0] = sliced_out
 
-        return sliced_out
+        return sliced_out, cache
