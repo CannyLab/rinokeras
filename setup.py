@@ -25,6 +25,7 @@ setup(
         'pytest',
         'tqdm',
         'h5py',
+        'toposort',
         'packaging',
         'typing',
         'deprecation',
