@@ -14,7 +14,7 @@ env:
   - RK_TF_VERSION=tensorflow==2.0.0a0
 matrix:
   exclude:
-  - python: 3.7-dev
+  - python: 3.7
     env: RK_TF_VERSION=tensorflow==1.12.2
 install:
   - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
