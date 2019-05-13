@@ -91,7 +91,10 @@ class ResidualBlock(Residual):
                  dilation_rate: int = 1,
                  layer_norm: bool = False,
                  dropout: Optional[float] = None,
+                 add_checkpoint: bool = False,  # used with memory saving gradients
                  **kwargs) -> None:
+
+        self._add_checkpoint = add_checkpoint
         layer = Stack()
         if layer_norm:
             layer.add(LayerNorm())
@@ -102,7 +105,10 @@ class ResidualBlock(Residual):
 
     def call(self, inputs, *args, **kwargs):
         output = super().call(inputs, *args, **kwargs)
-        tf.add_to_collection('checkpoints', output)
+
+        if self._add_checkpoint:
+            tf.add_to_collection('checkpoints', output)
+
         return output
 
 
