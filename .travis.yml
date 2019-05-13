@@ -4,7 +4,7 @@ python:
   - '3.4'
   - '3.5'
   - '3.6'
-  - 3.7-dev
+  - 3.7
 env:
   global:
   - CODECOV_TOKEN="1384d50e-aaea-4dc0-857c-23a0287ec68b"
@@ -14,7 +14,7 @@ env:
   - RK_TF_VERSION=tensorflow==2.0.0a0
 matrix:
   exclude:
-  - python: 3.7-dev
+  - python: 3.7
     env: RK_TF_VERSION=tensorflow==1.12.2
 install:
   - echo "1.0.$(git rev-list --all --count)" > VERSION.txt

@@ -19,8 +19,8 @@ try:
         import rinokeras.compat
         import rinokeras.layers
         import rinokeras.models
-except ModuleNotFoundError as e:
-    if e.name != 'tensorflow':
+except ImportError as e:
+    if 'tensorflow' not in str(e):
         raise
 
     TF_NOT_FOUND = True
@@ -33,8 +33,8 @@ try:
     import rinokeras.torch.functional
     import rinokeras.torch.models
 
-except ModuleNotFoundError as e:
-    if e.name != 'torch':
+except ImportError as e:
+    if 'torch' not in str(e):
         raise
 
     TORCH_NOT_FOUND = True
