@@ -92,11 +92,16 @@ class TrainGraph(TestGraph):
                 grads = zip(grads, self.model.variables)
             else:
                 outputs, loss, losses = loss_fn(inputs)
-                # with tf.control_dependencies(self.model.updates):
-                # print(self.model.updates)
                 if self._use_memory_saving_gradients:
-                    grads = gradients_collection(loss, self.model.variables)
-                    grads = list(zip(grads, self.model.variables))
+                    embedding_model = self.model.layers[0]
+                    task_model = self.model.layers[1]
+                    task_grads = gradients_collection(loss, task_model.variables + [task_model.pairwise_z])
+                    pairwise_z_grad = task_grads[-1]
+                    task_grads = list(zip(task_grads[:-1], task_model.variables))
+                    embedding_grads = tf.gradients([task_model.pairwise_z], embedding_model.variables, grad_ys=[pairwise_z_grad])
+                    embedding_grads = list(zip(embedding_grads, embedding_model.variables))
+                    # grads = list(zip(grads, self.model.variables))
+                    grads = embedding_grads + task_grads
                 else:
                     grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
