@@ -188,7 +188,7 @@ class TestGraph(RinokerasGraph):
         if self.return_loss_summaries:
             ops.append(self.summaries)
         result = self._run_tensor(ops, inputs)
-        self.update_progress_bar(result[0])
+        self.update_progress_bar(result[0], scroll=False)
         if len(result) == 1:
             result = result[0]
         return result

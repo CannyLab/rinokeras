@@ -239,7 +239,7 @@ class TrainGraph(TestGraph):
         if self.return_loss_summaries or self.return_grad_summaries:
             ops.append(self.summaries)
         _, _, *result = self._run_tensor(ops, inputs)
-        self.update_progress_bar(result[0])
+        self.update_progress_bar(result[0], scroll=False)
         if len(result) == 1:
             result = result[0]
         return result
