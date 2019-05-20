@@ -167,6 +167,7 @@ class RinokerasGraph(ABC):
             while True:
                 if save_outputs is not None:
                     loss, outputs = self.run('default', return_outputs=True)
+                    del outputs[0]['encoder_output']
                     all_outputs.append(outputs)
                 else:
                     self.run('default')
