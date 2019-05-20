@@ -92,12 +92,13 @@ class TrainGraph(TestGraph):
                 grads = zip(grads, self.model.variables)
             else:
                 outputs, loss, losses = loss_fn(inputs)
-                with tf.control_dependencies(self.model.updates):
-                    if self._use_memory_saving_gradients:
-                        grads = gradients_collection(loss, self.model.variables)
-                        grads = list(zip(grads, self.model.variables))
-                    else:
-                        grads = self.optimizer.compute_gradients(loss, self.model.variables)
+                # with tf.control_dependencies(self.model.updates):
+                # print(self.model.updates)
+                if self._use_memory_saving_gradients:
+                    grads = gradients_collection(loss, self.model.variables)
+                    grads = list(zip(grads, self.model.variables))
+                else:
+                    grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
             grads = self._clip_gradients(grads)
             return grads, outputs, loss, losses
@@ -105,19 +106,20 @@ class TrainGraph(TestGraph):
         self._distributed_grads, self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
             distlib.call_for_each_device(self.distribution_strategy, grads_fn, self.inputs)
 
-        self.update_op = self.optimizer._distributed_apply(
+        update_op = self.optimizer._distributed_apply(
             self.distribution_strategy, self._distributed_grads)
+        self.update_op = tf.group([update_op] + self.model.updates)
             # global_step=self._distributed_global_step)
 
     def _reduce_distributed_ops(self):
         super()._reduce_distributed_ops()
-        central_device = self.distribution_strategy.parameter_devices[0]
+        # central_device = self.distribution_strategy.parameter_devices[0]
 
-        to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
-        reduced_grads = self.distribution_strategy.batch_reduce(
-            tf.VariableAggregation.SUM, to_reduce)
+        # to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
+        # reduced_grads = self.distribution_strategy.batch_reduce(
+            # tf.VariableAggregation.SUM, to_reduce)
 
-        self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
+        # self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
 
     def _initialize_graph(self):
         self._global_step = tf.train.get_or_create_global_step()
@@ -143,10 +145,10 @@ class TrainGraph(TestGraph):
 
     def _create_summaries(self):
         super()._create_summaries()
-        if self.return_grad_summaries:
-            for grad, var in self.grads:
-                name = var.name.replace(':', '_')
-                tf.summary.histogram(name, grad, collections=[self.summary_collection])
+        # if self.return_grad_summaries:
+            # for grad, var in self.grads:
+                # name = var.name.replace(':', '_')
+                # tf.summary.histogram(name, grad, collections=[self.summary_collection])
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
