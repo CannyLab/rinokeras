@@ -5,7 +5,7 @@ https://arxiv.org/pdf/1706.03762.pdf
 
 import torch
 
-def position_embed(inputs: torch.Tensor, start: int = 1, concat: bool = False, base: int = 10) -> torch.Tensor:
+def position_embed(inputs: torch.Tensor, start: int = 1, concat: bool = False, base: int = 10000) -> torch.Tensor:
     hidden_size = inputs.shape[-1]
     if concat and hidden_size % 2 != 0:
         raise AssertionError('Model hidden size must be even for sinusoidal embedding')

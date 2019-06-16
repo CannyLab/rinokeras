@@ -297,8 +297,7 @@ class StridedCachedLWSelfAttention(nn.Module):
             cache = cache.to(inputs.device) # Move the cache to the correct device
 
         if self.stride != 1:
-
-            outputs = []
+            return_tensor = torch.zeros_like(inputs)
             for s in range(self.stride):
                 s_inputs = inputs[:, s::self.stride, :]
                 
@@ -318,10 +317,10 @@ class StridedCachedLWSelfAttention(nn.Module):
 
                 attn_out = self.attention_layer(self_attention_inputs, self_attention_mask, return_attention_weights=False)
                 attn_out_slices = attn_out[:, self.degree:, :]
-                outputs.append(attn_out_slices)
                 cache[s] = attn_out_slices
+                return_tensor[:, s::self.stride, :] = attn_out_slices
             
-            sliced_out = torch.stack(outputs, dim=len(inputs.shape)).view(inputs.shape)
+            sliced_out = return_tensor
         else:
             # Cat the cache to the current inputs -> This should give
             self_attention_inputs = torch.cat([cache[0].detach(), inputs], dim=1)

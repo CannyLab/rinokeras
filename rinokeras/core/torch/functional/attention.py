@@ -26,9 +26,10 @@ def attention_map(queries: torch.Tensor,
 
     if attention_function == 'softmax':
         masked_similarity = apply_attention_mask(similarity, mask=mask)
+        weights = torch.nn.functional.softmax(masked_similarity - torch.max(masked_similarity, dim=-1, keepdim=True)[0], dim=-1)
     else:
         masked_similarity = apply_attention_mask(similarity, mask=mask, hadamard=True)
-    weights = ATTENTION_FUNCTION_MAP[attention_function](masked_similarity, dim=-1)
+        weights = ATTENTION_FUNCTION_MAP[attention_function](masked_similarity, dim=-1)
 
     if dropout:
         weights = torch.nn.functional.dropout(weights, dropout)
