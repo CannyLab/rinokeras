@@ -33,6 +33,10 @@ setup(
         'codecov',
         'pytest-cov',
     ],
+    include_package_data=True,
+    setup_requires=[
+          'setuptools>=41.0.1',
+          'wheel>=0.33.4'],
     long_description_content_type='text/markdown',
     packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )
