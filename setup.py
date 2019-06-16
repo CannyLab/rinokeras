@@ -33,5 +33,6 @@ setup(
         'codecov',
         'pytest-cov',
     ],
+    long_description_content_type='markdown',
     packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )
