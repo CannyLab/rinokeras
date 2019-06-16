@@ -4,9 +4,6 @@ from setuptools import setup, find_packages
 with open('README.md', 'r') as rf:
     README = rf.read()
 
-with open('LICENSE', 'r') as lf:
-    LICENSE = lf.read()
-
 with open('VERSION.txt', 'r') as vf:
     VERSION = vf.read()
 
@@ -14,10 +11,12 @@ setup(
     name='rinokeras-nightly',
     version=VERSION,
     description='CannyLab Algorithms Repository',
+    long_description=README,
+    long_description_content_type='text/markdown',
     author='Roshan Rao, David Chan',
     author_email='roshan_rao@berkeley.edu, davidchan@berkeley.edu',
     url='https://github.com/CannyLab/rinokeras',
-    license=LICENSE,
+    license='GPL-v3',
     install_requires=[
         'numpy',
         'scipy',
