@@ -14,7 +14,7 @@ setup(
     name='rinokeras-nightly',
     version=VERSION,
     description='CannyLab Algorithms Repository',
-    long_description=README,
+    long_description='Read our docs: https://rinokeras.readthedocs.io/en/latest/index.html',
     author='Roshan Rao, David Chan',
     author_email='roshan_rao@berkeley.edu, davidchan@berkeley.edu',
     url='https://github.com/CannyLab/rinokeras',
