@@ -17,7 +17,7 @@ matrix:
   - python: 3.7
     env: RK_TF_VERSION=tensorflow==1.12.2
 install:
-  - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
+  - echo "1.1.$(git rev-list --all --count)" > VERSION.txt
   - pip install $RK_TF_VERSION
   - pip install -r requirements.txt
   - pip install tensorflow_datasets
