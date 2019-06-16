@@ -14,7 +14,6 @@ setup(
     name='rinokeras-nightly',
     version=VERSION,
     description='CannyLab Algorithms Repository',
-    long_description='Read our docs: https://rinokeras.readthedocs.io/en/latest/index.html',
     author='Roshan Rao, David Chan',
     author_email='roshan_rao@berkeley.edu, davidchan@berkeley.edu',
     url='https://github.com/CannyLab/rinokeras',
@@ -33,10 +32,5 @@ setup(
         'codecov',
         'pytest-cov',
     ],
-    include_package_data=True,
-    setup_requires=[
-          'setuptools>=41.0.1',
-          'wheel>=0.33.4'],
-    long_description_content_type='text/markdown',
     packages=find_packages(exclude='example')  # exclude=('tests', 'docs')
 )
