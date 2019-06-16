@@ -8,7 +8,7 @@ with open('VERSION.txt', 'r') as vf:
     VERSION = vf.read()
 
 setup(
-    name='rinokeras-nightly',
+    name='rinokeras',
     version=VERSION,
     description='CannyLab Algorithms Repository',
     long_description=README,
