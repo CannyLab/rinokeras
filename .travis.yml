@@ -35,7 +35,7 @@ jobs:
         depth: false
       env: RK_TF_VERSION=tensorflow==1.13.1
       before_deploy:
-      - echo "1.0.$(git rev-list --all --count)" > VERSION.txt
+      - echo "1.1.$(git rev-list --all --count)" > VERSION.txt
       deploy:
       - provider: pypi
         skip_cleanup: true
