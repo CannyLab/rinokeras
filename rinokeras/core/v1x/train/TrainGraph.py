@@ -10,6 +10,8 @@ from .train_utils import Inputs, Outputs, Losses
 from rinokeras.core.v1x.train import Experiment
 import rinokeras.compat.distributed as distlib
 
+from .memory_saving_gradients import gradients_collection
+
 
 class TrainGraph(TestGraph):
     """
@@ -41,11 +43,13 @@ class TrainGraph(TestGraph):
                  gradient_clip_type: str = 'none',
                  gradient_clip_bounds: Union[float, Tuple[float, float]] = 1.0,
                  distribution_strategy: DistributionStrategy = OneDeviceStrategy('/gpu:0'),
+                 use_memory_saving_gradients: bool = False,
                  **kwargs) -> None:
 
         self.optimizer = optimizer
         self.return_grad_summaries = return_grad_summaries
         self._learning_rate_func = learning_rate
+        self._use_memory_saving_gradients = use_memory_saving_gradients
 
         self._clip_gradients = self._get_gradient_clip_function(
             gradient_clip_type, gradient_clip_bounds)
@@ -67,7 +71,8 @@ class TrainGraph(TestGraph):
             return_grad_summaries=experiment.return_grad_summaries,
             gradient_clip_type=experiment.gradient_clipping,
             gradient_clip_bounds=experiment.gradient_clipping_bounds,
-            distribution_strategy=experiment.distribution_strategy)
+            distribution_strategy=experiment.distribution_strategy,
+            use_memory_saving_gradients=experiment.use_memory_saving_gradients)
 
     def _distributed_fn(self):
         # self._distributed_global_step = tf.train.get_or_create_global_step()
@@ -87,7 +92,12 @@ class TrainGraph(TestGraph):
                 grads = zip(grads, self.model.variables)
             else:
                 outputs, loss, losses = loss_fn(inputs)
-                with tf.control_dependencies(self.model.updates):
+                # with tf.control_dependencies(self.model.updates):
+                # print(self.model.updates)
+                if self._use_memory_saving_gradients:
+                    grads = gradients_collection(loss, self.model.variables)
+                    grads = list(zip(grads, self.model.variables))
+                else:
                     grads = self.optimizer.compute_gradients(loss, self.model.variables)
 
             grads = self._clip_gradients(grads)
@@ -96,19 +106,20 @@ class TrainGraph(TestGraph):
         self._distributed_grads, self._distributed_outputs, self._distributed_total_loss, self._distributed_losses = \
             distlib.call_for_each_device(self.distribution_strategy, grads_fn, self.inputs)
 
-        self.update_op = self.optimizer._distributed_apply(
+        update_op = self.optimizer._distributed_apply(
             self.distribution_strategy, self._distributed_grads)
+        self.update_op = tf.group([update_op] + self.model.updates)
             # global_step=self._distributed_global_step)
 
     def _reduce_distributed_ops(self):
         super()._reduce_distributed_ops()
-        central_device = self.distribution_strategy.parameter_devices[0]
+        # central_device = self.distribution_strategy.parameter_devices[0]
 
-        to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
-        reduced_grads = self.distribution_strategy.batch_reduce(
-            tf.VariableAggregation.SUM, to_reduce)
+        # to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
+        # reduced_grads = self.distribution_strategy.batch_reduce(
+            # tf.VariableAggregation.SUM, to_reduce)
 
-        self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
+        # self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
 
     def _initialize_graph(self):
         self._global_step = tf.train.get_or_create_global_step()
@@ -134,10 +145,10 @@ class TrainGraph(TestGraph):
 
     def _create_summaries(self):
         super()._create_summaries()
-        if self.return_grad_summaries:
-            for grad, var in self.grads:
-                name = var.name.replace(':', '_')
-                tf.summary.histogram(name, grad, collections=[self.summary_collection])
+        # if self.return_grad_summaries:
+            # for grad, var in self.grads:
+                # name = var.name.replace(':', '_')
+                # tf.summary.histogram(name, grad, collections=[self.summary_collection])
 
     def _get_gradient_clip_function(self, clip_type: str, clip_bounds: Union[float, Tuple[float, ...]]) -> \
             Callable[[Sequence], List]:
@@ -230,7 +241,7 @@ class TrainGraph(TestGraph):
         if self.return_loss_summaries or self.return_grad_summaries:
             ops.append(self.summaries)
         _, _, *result = self._run_tensor(ops, inputs)
-        self.update_progress_bar(result[0])
+        self.update_progress_bar(result[0], scroll=False)
         if len(result) == 1:
             result = result[0]
         return result

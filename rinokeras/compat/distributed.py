@@ -29,7 +29,7 @@ class _reduce_op_112:
     @property
     def SUM(self,):
         return tf.VariableAggregation.SUM
-    
+
 class _reduce_op_113:
     @property
     def MEAN(self,):
@@ -38,12 +38,19 @@ class _reduce_op_113:
     def SUM(self,):
         return tf.distribute.ReduceOp.SUM
 
+def _num_devices_v112(strategy):
+    return strategy.num_towers
+def _num_devices_v113(strategy):
+    return strategy.num_replicas_in_sync
+
 
 if version.parse(tf.__version__) < version.parse("1.13"):
     call_for_each_device = _call_for_each_device_v112
     reduce = _reduce_v112
     ReduceOp = _reduce_op_112()
+    num_devices = _num_devices_v112
 else:
     call_for_each_device = _call_for_each_device_v113
     reduce = _reduce_v113
     ReduceOp = _reduce_op_113()
+    num_devices = _num_devices_v113

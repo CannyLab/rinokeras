@@ -147,4 +147,5 @@ def test_invertible_dense():
 
     # Do regression testing
     check_regression('invertible_dense_layer_expected_output',
-                     output, __file__, 'regression_outputs/test_inversion_outputs.json', tol=1e-1)
+                     output, __file__, 'regression_outputs/test_inversion_outputs.json', tol=1e-1,
+                     debug=_RK_REBUILD_REGRESSION)

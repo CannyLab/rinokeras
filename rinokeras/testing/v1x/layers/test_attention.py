@@ -6,16 +6,14 @@ import os
 import warnings
 
 from rinokeras.testing import RK_REBUILD_REGRESSION_TESTS as _RK_REBUILD_REGRESSION
-from rinokeras.testing.utils import check_regression
+from rinokeras.testing.utils import check_regression, reset_session, run_simple_session
 
 def check_from_config(__class, __obj):
     assert __class.from_config(__obj.get_config()) is not None
 
 
 def test_luongAttention():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import LuongAttention
     luong_attention_layer = LuongAttention(local=False, stddev=1.0,
@@ -23,8 +21,8 @@ def test_luongAttention():
     assert luong_attention_layer is not None
 
     # Encoded values
-    encoded_values = np.random.sample((16, 10, 128))
-    query_values = np.random.sample((16, 128))
+    encoded_values = np.random.sample((2, 10, 64))
+    query_values = np.random.sample((2, 64))
 
     # Get some sample input tensors
     encoder_tensor = tf.constant(encoded_values)  # BS x SEQLEN x ENC_CELL_SIZE
@@ -33,15 +31,10 @@ def test_luongAttention():
     value = luong_attention_layer((query_tensor, encoder_tensor))
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is not none
-    assert output.shape == (16, 128)  # Make sure the output shape is correct
+    assert output.shape == (2, 64)  # Make sure the output shape is correct
 
     # Do regression testing
     check_regression('luong_attention_expected_output', output, __file__,
@@ -49,9 +42,7 @@ def test_luongAttention():
 
 
 def test_luongAttention_local():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import LuongAttention
     luong_attention_layer = LuongAttention(local=True, stddev=1.0,
@@ -59,9 +50,9 @@ def test_luongAttention_local():
     assert luong_attention_layer is not None
 
     # Encoded values
-    encoded_values = np.random.sample((16, 10, 128))
-    query_values = np.random.sample((16, 128))
-    position_values = np.random.randint(0, 10, (16,))
+    encoded_values = np.random.sample((2, 10, 64))
+    query_values = np.random.sample((2, 64))
+    position_values = np.random.randint(0, 10, (2,))
 
     # Get some sample input tensors
     encoder_tensor = tf.constant(encoded_values)  # BS x SEQLEN x ENC_CELL_SIZE
@@ -72,15 +63,10 @@ def test_luongAttention_local():
                                    position_tensor))
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is correct
-    assert output.shape == (16, 128)  # Make sure the output shape is correct
+    assert output.shape == (2, 64)  # Make sure the output shape is correct
 
     # Do regression testing
     check_regression('luong_attention_local_expected_output', output, __file__,
@@ -88,9 +74,7 @@ def test_luongAttention_local():
 
 
 def test_attentionQKVProjection():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import AttentionQKVProjection
     attention_qkv_projection = AttentionQKVProjection(key_depth=8,
@@ -98,9 +82,9 @@ def test_attentionQKVProjection():
     assert attention_qkv_projection is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 10, 128))
-    key_values = np.random.sample((16, 5, 128))
-    value_values = np.random.sample((16, 5, 128))
+    query_values = np.random.sample((2, 10, 64))
+    key_values = np.random.sample((2, 5, 64))
+    value_values = np.random.sample((2, 5, 64))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -110,20 +94,15 @@ def test_attentionQKVProjection():
     value = attention_qkv_projection((query_tensor, key_tensor, value_tensor))
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is correct
     # Make sure the output shape is correct
-    assert output[0].shape == (16, 10, 8)
+    assert output[0].shape == (2, 10, 8)
     # Make sure the output shape is correct
-    assert output[1].shape == (16, 5, 8)
+    assert output[1].shape == (2, 5, 8)
     # Make sure the output shape is correct
-    assert output[2].shape == (16, 5, 12)
+    assert output[2].shape == (2, 5, 12)
 
     # Do regression testing
     check_regression('attentionqkv_projection_expected_output', output, __file__,
@@ -131,17 +110,15 @@ def test_attentionQKVProjection():
 
 
 def test_trilinearSimilarity():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import TrilinearSimilarity
     trilinear_similarity_layer = TrilinearSimilarity()
     assert trilinear_similarity_layer is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 10, 128))
-    context_values = np.random.sample((16, 5, 128))
+    query_values = np.random.sample((2, 10, 64))
+    context_values = np.random.sample((2, 5, 64))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -150,15 +127,10 @@ def test_trilinearSimilarity():
     value = trilinear_similarity_layer((context_tensor, query_tensor))
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is correct
-    assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
+    assert output.shape == (2, 5, 10)  # Make sure the output shape is correct
 
     # Do regression testing
     check_regression('trilinear_similarity_expected_output', output, __file__,
@@ -166,17 +138,15 @@ def test_trilinearSimilarity():
 
 
 def test_scaledDotProductSimilarity():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
     sdp_layer = ScaledDotProductSimilarity()
     assert sdp_layer is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 10, 128))
-    context_values = np.random.sample((16, 5, 128))
+    query_values = np.random.sample((2, 10, 64))
+    context_values = np.random.sample((2, 5, 64))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -185,15 +155,10 @@ def test_scaledDotProductSimilarity():
     value = sdp_layer((context_tensor, query_tensor))
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is correct
-    assert output.shape == (16, 5, 10)  # Make sure the output shape is correct
+    assert output.shape == (2, 5, 10)  # Make sure the output shape is correct
 
     # Do regression testing
     check_regression('scaled_dot_product_similarity_expected_output', 
@@ -201,19 +166,17 @@ def test_scaledDotProductSimilarity():
 
 
 def test_applyAttentionMask():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import ApplyAttentionMask
     aam_layer = ApplyAttentionMask()
     assert aam_layer is not None
 
     # Encoded values
-    similarity_values = np.ones((16, 10, 10))
-    similarity_values_heads = np.ones((16, 4, 10, 10))
-    mask_values = np.random.choice([0, 1], size=(16, 10, 10))
-    mask_values_heads = np.random.choice([0, 1], size=(16, 10, 10))
+    similarity_values = np.ones((2, 10, 10))
+    similarity_values_heads = np.ones((2, 4, 10, 10))
+    mask_values = np.random.choice([0, 1], size=(2, 10, 10))
+    mask_values_heads = np.random.choice([0, 1], size=(2, 10, 10))
 
     # Get some sample input tensors
     similarity_tensor = tf.constant(similarity_values)
@@ -235,18 +198,16 @@ def test_applyAttentionMask():
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 10, 10)  # Make sure the value is not none
+    assert output[0].shape == (2, 10, 10)  # Make sure the value is not none
     # Make sure the value is not none
-    assert output[1].shape == (16, 4, 10, 10)
+    assert output[1].shape == (2, 4, 10, 10)
 
     check_regression('apply_attention_mask_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_attentionMap():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import AttentionMap
     from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
@@ -257,10 +218,10 @@ def test_attentionMap():
     assert sdp is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 8, 12))
-    key_values = np.random.sample((16, 20, 12))
-    value_values = np.random.sample((16, 20, 12))
-    mask_values = np.random.choice([0, 1], size=(16, 8, 20))
+    query_values = np.random.sample((2, 8, 12))
+    key_values = np.random.sample((2, 20, 12))
+    value_values = np.random.sample((2, 20, 12))
+    mask_values = np.random.choice([0, 1], size=(2, 8, 20))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -272,26 +233,19 @@ def test_attentionMap():
                           mask=mask_tensor)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 8, 12)
-    assert output[1].shape == (16, 8, 20)
+    assert output[0].shape == (2, 8, 12)
+    assert output[1].shape == (2, 8, 20)
 
     check_regression('attention_map_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)
 
 
 def test_multiHeadAttentionMap():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import MultiHeadAttentionMap
     from rinokeras.core.v1x.common.attention import ScaledDotProductSimilarity
@@ -303,10 +257,10 @@ def test_multiHeadAttentionMap():
     assert sdp is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 8, 12))
-    key_values = np.random.sample((16, 20, 12))
-    value_values = np.random.sample((16, 20, 12))
-    mask_values = np.random.choice([0, 1], size=(16, 8, 20))
+    query_values = np.random.sample((2, 8, 12))
+    key_values = np.random.sample((2, 20, 12))
+    value_values = np.random.sample((2, 20, 12))
+    mask_values = np.random.choice([0, 1], size=(2, 8, 20))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -319,17 +273,12 @@ def test_multiHeadAttentionMap():
                           return_attention_weights=True)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 8, 12)
-    assert output[1].shape == (16, 4, 8, 20)
+    assert output[0].shape == (2, 8, 12)
+    assert output[1].shape == (2, 4, 8, 20)
 
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
     assert np.isclose(masked_vals, np.zeros_like(masked_vals)).all()
@@ -339,9 +288,7 @@ def test_multiHeadAttentionMap():
 
 
 def test_multiHeadAttention():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import MultiHeadAttention
     attention_map = MultiHeadAttention(similarity_metric='scaled_dot',
@@ -349,10 +296,10 @@ def test_multiHeadAttention():
     assert attention_map is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 8, 12))
-    key_values = np.random.sample((16, 20, 12))
-    value_values = np.random.sample((16, 20, 12))
-    mask_values = np.random.choice([0, 1], size=(16, 8, 20))
+    query_values = np.random.sample((2, 8, 12))
+    key_values = np.random.sample((2, 20, 12))
+    value_values = np.random.sample((2, 20, 12))
+    mask_values = np.random.choice([0, 1], size=(2, 8, 20))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -365,17 +312,12 @@ def test_multiHeadAttention():
                           return_attention_weights=True)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 8, 12)
-    assert output[1].shape == (16, 4, 8, 20)
+    assert output[0].shape == (2, 8, 12)
+    assert output[1].shape == (2, 4, 8, 20)
 
     # Check the masking
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
@@ -388,9 +330,7 @@ def test_multiHeadAttention():
 
 
 def test_multiHeadAttention_trilinear():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import MultiHeadAttention
     attention_map = MultiHeadAttention(similarity_metric='trilinear',
@@ -398,10 +338,10 @@ def test_multiHeadAttention_trilinear():
     assert attention_map is not None
 
     # Encoded values
-    query_values = np.random.sample((16, 8, 12))
-    key_values = np.random.sample((16, 20, 12))
-    value_values = np.random.sample((16, 20, 12))
-    mask_values = np.random.choice([0, 1], size=(16, 8, 20))
+    query_values = np.random.sample((2, 8, 12))
+    key_values = np.random.sample((2, 20, 12))
+    value_values = np.random.sample((2, 20, 12))
+    mask_values = np.random.choice([0, 1], size=(2, 8, 20))
 
     # Get some sample input tensors
     query_tensor = tf.constant(query_values)
@@ -414,17 +354,12 @@ def test_multiHeadAttention_trilinear():
                           return_attention_weights=True)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (16, 8, 12)
-    assert output[1].shape == (16, 4, 8, 20)
+    assert output[0].shape == (2, 8, 12)
+    assert output[1].shape == (2, 4, 8, 20)
 
     # Check the masking
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
@@ -435,17 +370,15 @@ def test_multiHeadAttention_trilinear():
 
 
 def test_selfAttention():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import SelfAttention
     attention_map = SelfAttention(similarity_metric='scaled_dot', n_heads=4)
     assert attention_map is not None
 
     # Encoded values
-    sa_values = np.random.sample((4, 128, 12))
-    mask_values = np.random.choice([0, 1], size=(4, 128, 128))
+    sa_values = np.random.sample((4, 64, 12))
+    mask_values = np.random.choice([0, 1], size=(4, 64, 64))
 
     # Get some sample input tensors
     sa_tensor = tf.constant(sa_values)
@@ -456,17 +389,12 @@ def test_selfAttention():
                           return_attention_weights=True)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output[0] is not None  # Make sure the value is not none
     assert output[1] is not None  # Make sure the value is not none
-    assert output[0].shape == (4, 128, 12)
-    assert output[1].shape == (4, 4, 128, 128)
+    assert output[0].shape == (4, 64, 12)
+    assert output[1].shape == (4, 4, 64, 64)
 
     # WARNING: This might fail because probability
     masked_vals = np.squeeze(output[1][:, 0, :, :])[np.where(mask_values == 0)]
@@ -480,18 +408,16 @@ def test_selfAttention():
 
 
 def test_contextQueryAttention():
-    tf.reset_default_graph()
-    np.random.seed(256)
-    tf.random.set_random_seed(256)
+    reset_session()
     # Construct the layer
     from rinokeras.core.v1x.common.attention import ContextQueryAttention
     attention_map = ContextQueryAttention(similarity_metric='trilinear')
     assert attention_map is not None
 
     # Encoded values
-    context_values = np.random.sample((16, 8, 12))
-    query_values = np.random.sample((16, 10, 12))
-    mask_values = np.random.choice([0, 1], size=(16, 8, 10))
+    context_values = np.random.sample((2, 8, 12))
+    query_values = np.random.sample((2, 10, 12))
+    mask_values = np.random.choice([0, 1], size=(2, 8, 10))
 
     # Get some sample input tensors
     context_tensor = tf.constant(context_values)
@@ -502,15 +428,10 @@ def test_contextQueryAttention():
                           mask=mask_tensor)
 
     # Construct the session
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        output = sess.run(value)
+    output = run_simple_session(value, None)
 
     assert output is not None  # Make sure the value is not none
-    assert output.shape == (16, 8, 4*12)
+    assert output.shape == (2, 8, 4*12)
 
     check_regression('context_query_attention_expected_output', output, __file__,
                      'regression_outputs/test_attention_outputs.json', debug=_RK_REBUILD_REGRESSION)

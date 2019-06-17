@@ -1,7 +1,7 @@
 
 import tensorflow as tf
 import warnings
-from rinokeras.core.v2x.train import BaseExperimentRunner
+from .BaseExperimentRunner import BaseExperimentRunner
 
 class MINEEstimator(tf.keras.Model):
     def __init__(self, ):
@@ -10,7 +10,7 @@ class MINEEstimator(tf.keras.Model):
         self._dense_2 = tf.keras.layers.Dense(self.hidden_size)
         self._predict_MI = tf.keras.layers.Dense(1)
 
-    def __call__(self, inputs, mask=None, **kwargs):
+    def call(self, inputs, mask=None, **kwargs):
         x_values, y_values = inputs
         x_compressed = self._dense_1(x_values)
         y_compressed = self._dense_2(y_values)

@@ -73,11 +73,14 @@ class TestGraph(RinokerasGraph):
     def _reduce_distributed_ops(self):
         # central_device = self.distribution_strategy.parameter_devices[0]
         central_device = '/cpu:0'
-        reduced_total = distlib.reduce(self.distribution_strategy, 
-            distlib.ReduceOp.MEAN, self._distributed_total_loss, destinations=central_device)
+        reduce_op = distlib.ReduceOp.MEAN if 'batch_size' not in self._distributed_losses else \
+            distlib.ReduceOp.SUM
+        reduced_total = distlib.reduce(
+            self.distribution_strategy,
+            reduce_op, self._distributed_total_loss, destinations=central_device)
         to_reduce = [(metric, central_device) for name, metric in self._distributed_losses.items()]
         reduced_losses = self.distribution_strategy.batch_reduce(
-            distlib.ReduceOp.MEAN, to_reduce)
+            reduce_op, to_reduce)
 
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
         self.losses = {name: self.distribution_strategy.unwrap(metric)[0]
@@ -185,7 +188,7 @@ class TestGraph(RinokerasGraph):
         if self.return_loss_summaries:
             ops.append(self.summaries)
         result = self._run_tensor(ops, inputs)
-        self.update_progress_bar(result[0])
+        self.update_progress_bar(result[0], scroll=False)
         if len(result) == 1:
             result = result[0]
         return result

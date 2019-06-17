@@ -2,9 +2,12 @@ from typing import Optional, Sequence, Type, Dict, Any
 
 import tensorflow as tf
 from ray.rllib.models.lstm import add_time_dimension
+from ray.rllib.models.misc import linear, normc_initializer
+
+from rinokeras.layers import WeightNormDense as Dense
 
 from .StandardPolicy import StandardPolicy, ConvLayerSpec
-
+import logging
 
 class RecurrentPolicy(StandardPolicy):
 
@@ -33,6 +36,10 @@ class RecurrentPolicy(StandardPolicy):
 
         self.rnn = rnn_type(lstm_cell_size, return_state=True, return_sequences=True, **recurrent_args)
 
+        self.output_layer = Dense(
+            num_outputs,
+            kernel_initializer=normc_initializer(0.01))
+
     def call(self, inputs, seqlens=None, initial_state=None):
         features = inputs['obs']
 
@@ -40,7 +47,9 @@ class RecurrentPolicy(StandardPolicy):
             features = self.conv_layer(features)
 
         features = add_time_dimension(features, seqlens)
+        self.features = features
         latent, *rnn_state = self.rnn(features, initial_state=initial_state)
+        self.latent = latent
         latent = tf.reshape(latent, [-1, latent.shape[-1]])
 
         state_out = list(rnn_state)

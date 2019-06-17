@@ -5,6 +5,7 @@ Stack-type layers
 """
 
 import collections
+import inspect
 from typing import Optional, Dict, Sequence, Any, Union, List
 
 from tensorflow.keras import Model  # pylint: disable=F0401
@@ -32,12 +33,18 @@ class Stack(Model):
     def call(self, inputs, **kwargs):
         output = inputs
         for layer in self._layer_list:
-            output = layer(output, **kwargs)
+            argspec = inspect.getfullargspec(layer.call)
+            layer_args = {}
+            if argspec.varkw is not None:
+                layer_args.update(kwargs)
+            else:
+                layer_args = {arg: kwargs[arg] for arg in argspec.args[2:] if arg in kwargs}
+            output = layer(output, **layer_args)
         return output
 
     def get_config(self) -> Dict:
         config = {
-            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layers],
+            'layers': [layer.__class__.from_config(layer.get_config()) for layer in self._layer_list],
         }
         return config
 
@@ -47,15 +54,15 @@ class Stack(Model):
 
 
 class LayerDropoutStack(Stack):
+
     def __init__(self, layers: Optional[Sequence[Any]] = None, layer_dropout: Optional[float] = 0, **kwargs) -> None:
         super().__init__(**kwargs)
         self._layer_list = []  # type: List[Layer]
-        self._layer_dropout_list = []
+        self._layer_dropout_list = []  # type: List[Layer]
         self.layer_dropout = layer_dropout
         if layers is not None:
             for layer in layers:
                 self.add(layer)
-
 
     def add(self, layer):
         self._layer_list.append(layer)
@@ -65,7 +72,7 @@ class LayerDropoutStack(Stack):
         output = inputs
         for idx, layer in enumerate(self._layer_list):
             output_ld = layer(output, **kwargs)
-            output = self._layer_dropout_list[idx](output_ld,output)
+            output = self._layer_dropout_list[idx](output_ld, output)
         return output
 
     def get_config(self) -> Dict:

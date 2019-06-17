@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import numpy.ma as ma
 from .pyrouge import Rouge
 
@@ -15,7 +16,7 @@ def masked_rouge(reference, hypothesis, reference_mask, hypothesis_mask):
 
     rouge_computer = Rouge()
     precision, recall, F_score = rouge_computer.rouge_l(ll_hyp, ll_ref)
-    return F_score
+    return np.array(F_score).astype(np.float32)
 
 def rouge_l(reference, hypothesis, reference_mask=None, hypothesis_mask=None):
     if reference_mask is None:

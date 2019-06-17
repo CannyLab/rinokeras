@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Sequence, Union, Any, Optional, Dict
-from timeit import default_timer as timer
+import pickle as pkl
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -25,8 +25,8 @@ class RinokerasGraph(ABC):
 
         self.progress_bar = None
         self.descr_offset = 0
-        self.epoch_metrics = None
         self.instrument_idx = 0
+        self.epoch_metrics = None  # type: Optional[MetricsAccumulator]
         self.inputs = ()
 
     def _map_to_placeholders(self, placeholders, inputs, feed_dict):
@@ -53,7 +53,10 @@ class RinokerasGraph(ABC):
         self._map_to_placeholders(self.inputs, inputs, feed_dict)
         return feed_dict
 
-    def _run_tensor(self, ops: Union[tf.Tensor, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None, instrumented: bool = False) -> Any:
+    def _run_tensor(self,
+                    ops: Union[tf.Tensor, Sequence[tf.Tensor]],
+                    inputs: Optional[Inputs] = None,
+                    instrumented: bool = False) -> Any:
         """Runs the network for a specific tensor
 
         Args:
@@ -138,7 +141,10 @@ class RinokerasGraph(ABC):
         return sess
 
     @abstractmethod
-    def run(self, ops: Union[str, Sequence[tf.Tensor]], inputs: Optional[Inputs] = None) -> Any:
+    def run(self,
+            ops: Union[str, Sequence[tf.Tensor]],
+            inputs: Optional[Inputs] = None,
+            return_outputs: bool = False) -> Any:
         return NotImplemented
 
     @property
@@ -152,8 +158,45 @@ class RinokerasGraph(ABC):
     def run_epoch(self,
                   data_len: Optional[int] = None,
                   epoch_num: Optional[int] = None,
-                  summary_writer: Optional[tf.summary.FileWriter] = None) -> MetricsAccumulator:
+                  summary_writer: Optional[tf.summary.FileWriter] = None,
+                  save_outputs: Optional[str] = None) -> MetricsAccumulator:
+        all_outputs = []
+
         with self.add_progress_bar(data_len, epoch_num).initialize():
+            assert self.epoch_metrics is not None
             while True:
-                self.run('default')
+                if save_outputs is not None:
+                    loss, outputs = self.run('default', return_outputs=True)
+                    all_outputs.append(outputs)
+                else:
+                    self.run('default')
+
+        if save_outputs is not None:
+            with open(save_outputs, 'wb') as f:
+                pkl.dump(all_outputs, f)
+
+        return self.epoch_metrics
+
+    def run_for_n_steps(self,
+                        n_steps: int,
+                        epoch_num: Optional[int] = None,
+                        summary_writer: Optional[tf.summary.FileWriter] = None,
+                        save_outputs: Optional[str] = None) -> MetricsAccumulator:
+        if n_steps == -1:
+            return self.run_epoch(epoch_num=epoch_num, summary_writer=summary_writer, save_outputs=save_outputs)
+
+        all_outputs = []
+        with self.add_progress_bar(n_steps, epoch_num):
+            assert self.epoch_metrics is not None
+            for _ in range(n_steps):
+                if save_outputs is not None:
+                    loss, outputs = self.run('default', return_outputs=True)
+                    all_outputs.append(outputs)
+                else:
+                    self.run('default')
+
+        if save_outputs is not None:
+            with open(save_outputs, 'wb') as f:
+                pkl.dump(all_outputs, f)
+
         return self.epoch_metrics
