@@ -221,6 +221,7 @@ class TransformerDecoder(Model):
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
+#        bounds_op = tf.cast(context['bounds'], tf.float32)
     def call(self, inputs, mask=None, mask_future=False, shift_target_sequence_right=False, seqpos=1, cache=None):
         """
             Args:
@@ -296,7 +297,10 @@ class TransformerDecoder(Model):
                     preembed_hook=None, stopping_criterion=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
-        batch_size = tf.shape(encoder_output)[0]
+        if encoder_output is not None:
+            batch_size = tf.shape(encoder_output)[0]
+        else:
+            batch_size = tf.shape(initial_input)[0]
 
         if initial_input is None:
             if discrete:
@@ -332,6 +336,9 @@ class TransformerDecoder(Model):
 
             if discrete:
                 output = tf.argmax(output, axis=-1, output_type=output_dtype)
+
+            output = output[:, -1:, :]
+            output = tf.pad(output, [[0, 0], [0, 0], [0, 300]])
             target_input = output
             output = tf.squeeze(output, 1)
 
