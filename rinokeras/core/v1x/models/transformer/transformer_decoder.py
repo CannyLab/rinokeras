@@ -204,6 +204,9 @@ class TransformerDecoder(Model):
         self.activity_regularizer = tf.keras.regularizers.get(activity_regularizer)
 
         self.embedding_layer = embedding_layer
+        print(type(self.embedding_layer))
+        print(TransformerInputEmbedding)
+    
         if not isinstance(self.embedding_layer, TransformerInputEmbedding):
             raise AssertionError('Must have TransformerInputEmbedding layer as embedding layer')
 
@@ -294,7 +297,7 @@ class TransformerDecoder(Model):
 
     def fast_decode(self, encoder_output, max_seq_len, output_size=None,
                     output_dtype=tf.float32, encoder_mask=None, initial_input=None,
-                    preembed_hook=None, stopping_criterion=None):
+                    preembed_hook=None, stopping_criterion=None, post_output_fn=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
         if encoder_output is not None:
@@ -338,7 +341,8 @@ class TransformerDecoder(Model):
                 output = tf.argmax(output, axis=-1, output_type=output_dtype)
 
             output = output[:, -1:, :]
-            output = tf.pad(output, [[0, 0], [0, 0], [0, 300]])
+            if post_output_fn != None:
+                output = post_output_fn(output)
             target_input = output
             output = tf.squeeze(output, 1)
 
