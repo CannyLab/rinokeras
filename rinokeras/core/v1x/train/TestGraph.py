@@ -36,7 +36,7 @@ class TestGraph(RinokerasGraph):
                  **kwargs) -> None:
         super().__init__(**kwargs)
         if isinstance(inputs, tf.data.Dataset):
-            inputs = distribution_strategy.distribute_dataset(lambda: inputs)
+            inputs = distlib.distribute_dataset(distribution_strategy, lambda: inputs)
             self.iterator = inputs.make_initializable_iterator()
             inputs = self.iterator.get_next()
         else:

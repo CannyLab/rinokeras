@@ -44,13 +44,27 @@ def _num_devices_v113(strategy):
     return strategy.num_replicas_in_sync
 
 
+def _distribute_dataset_v112_v113(strategy, inputs):
+    return strategy.distribute_dataset(inputs)
+def _distribute_dataset_v114(strategy, inputs):
+    return strategy.experimental_distribute_dataset(inputs)
+
+
 if version.parse(tf.__version__) < version.parse("1.13"):
     call_for_each_device = _call_for_each_device_v112
     reduce = _reduce_v112
     ReduceOp = _reduce_op_112()
     num_devices = _num_devices_v112
-else:
+    distribute_dataset = _distribute_dataset_v112_v113
+elif version.parse("1.13") <= version.parse(tf.__version__) < version.parse("1.14"):
     call_for_each_device = _call_for_each_device_v113
     reduce = _reduce_v113
     ReduceOp = _reduce_op_113()
     num_devices = _num_devices_v113
+    distribute_dataset = _distribute_dataset_v112_v113
+elif version.parse("1.14") <= version.parse(tf.__version__):
+    call_for_each_device = _call_for_each_device_v113
+    reduce = _reduce_v113
+    ReduceOp = _reduce_op_113()
+    num_devices = _num_devices_v113
+    distribute_dataset = _distribute_dataset_v114
