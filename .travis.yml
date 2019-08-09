@@ -12,7 +12,7 @@ env:
   - RK_TF_VERSION=tensorflow==1.12.2
   - RK_TF_VERSION=tensorflow==1.13.1
   - RK_TF_VERSION=tensorflow==1.14
-  - RK_TF_VERSION=tensorflow==tensorflow==2.0.0-beta1 
+  - RK_TF_VERSION=tensorflow==tensorflow==2.0.0b1 
 matrix:
   exclude:
   - python: 3.7
@@ -22,9 +22,9 @@ matrix:
   - python: '3.4'
     env: RK_TF_VERSION=tensorflow==1.14
   - python: '3.4'
-    env: RK_TF_VERSION=tensorflow==tensorflow==2.0.0-beta1 
+    env: RK_TF_VERSION=tensorflow==tensorflow==2.0.0b1 
   - python: '3.5'
-    env: RK_TF_VERSION=tensorflow==tensorflow==2.0.0-beta1
+    env: RK_TF_VERSION=tensorflow==tensorflow==2.0.0b1
   - python: '3.5'
     env: RK_TF_VERSION=tensorflow==1.14
   - python: '3.6'
