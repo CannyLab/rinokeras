@@ -79,8 +79,7 @@ class TestGraph(RinokerasGraph):
             self.distribution_strategy,
             reduce_op, self._distributed_total_loss, destinations=central_device)
         to_reduce = [(metric, central_device) for name, metric in self._distributed_losses.items()]
-        reduced_losses = self.distribution_strategy.batch_reduce(
-            reduce_op, to_reduce)
+        reduced_losses = distlib.batch_reduce(self.distribution_strategy, reduce_op, to_reduce)
 
         self.total_loss = self.distribution_strategy.unwrap(reduced_total)[0]
         self.losses = {name: self.distribution_strategy.unwrap(metric)[0]
