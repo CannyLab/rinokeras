@@ -69,9 +69,9 @@ class BaseExperimentRunner:
                 # Reduce the metrics
                 reduced_metrics = {}
                 for metric_key, value in metrics.items():
-                    reduced_metrics[metric_key] = strategy.reduce(tf.distribute.ReduceOp.MEAN, value)
+                    reduced_metrics[metric_key] = strategy.reduce(tf.distribute.ReduceOp.MEAN, value, axis=0)
                 # Reduce the loss
-                reduced_loss = strategy.reduce(tf.distribute.ReduceOp.MEAN, loss)
+                reduced_loss = strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=0)
                 return reduced_loss, reduced_metrics
 
         @tf.function
@@ -81,9 +81,9 @@ class BaseExperimentRunner:
                 # Reduce the metrics
                 reduced_metrics = {}
                 for metric_key, value in metrics.items():
-                    reduced_metrics[metric_key] = strategy.reduce(tf.distribute.ReduceOp.MEAN, value)
+                    reduced_metrics[metric_key] = strategy.reduce(tf.distribute.ReduceOp.MEAN, value, axis=0)
                 # Reduce the loss
-                reduced_loss = strategy.reduce(tf.distribute.ReduceOp.MEAN, loss)
+                reduced_loss = strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=0)
                 return reduced_loss, reduced_metrics
 
         self.len_train_dataset = n_iterations_per_epoch_train
@@ -123,7 +123,7 @@ class BaseExperimentRunner:
             print('[Epoch {}] Train Loss: {}, Eval Loss: {}'.format(epoch, np.mean(train_losses), np.mean(eval_losses)))
             print('[Epoch {}] Train Metrics: {}'.format(epoch, train_metrics))
             print('[Epoch {}] Eval Metrics: {}'.format(epoch, eval_metrics))
-        
+
     # Run a forward pass on the network with a set of inputs
     def forward(self, inputs):
         return self._built_forward_pass(inputs, return_outputs=True)

@@ -6,7 +6,7 @@ import numpy as np
 import os
 import warnings
 warnings.simplefilter('error', tf.errors.OutOfRangeError)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from rinokeras.core.v2x.train import Experiment
 
@@ -26,9 +26,8 @@ class TestExperiment(Experiment):
         return model
 
     def get_loss_function(self, ):
-        loss = tf.losses.SparseCategoricalCrossentropy()
         def loss_function(model_outputs, inputs):
-            c_loss = loss(y_true=inputs[1], y_pred=model_outputs)
+            c_loss = tf.keras.losses.sparse_categorical_crossentropy(y_true=inputs[1], y_pred=model_outputs, axis=-1)
             return c_loss, {'loss': c_loss}
         return loss_function
 
@@ -37,7 +36,7 @@ class TestExperiment(Experiment):
 
     def forward(self, model, inputs):
         return model(inputs[0])
-    
+
 
 def test_ExperimentRunner_sequential():
 
@@ -61,6 +60,6 @@ def test_ExperimentRunner_sequential():
     runner = exp.runner()
     # Train the model
     runner.train(train_dataset, eval_dataset, 1, n_iterations_per_epoch_train=30, n_iterations_per_epoch_eval=30)
-        
+
 if __name__ == '__main__':
     test_ExperimentRunner_sequential()
