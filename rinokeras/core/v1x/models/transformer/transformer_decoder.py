@@ -327,7 +327,7 @@ class TransformerDecoder(Model):
         def decoding_step(seqpos, inputs, cache, output_sequence, is_finished):
             if preembed_hook is not None:
                 inputs = preembed_hook(inputs)
-
+            inputs = tf.cond(tf.less(seqpos, tf.shape(initial_input)[1]), lambda: initial_input[:, seqpos:seqpos + 1], lambda: inputs)
             output = self(inputs=(encoder_output, inputs),
                           mask=(encoder_mask, None),
                           shift_target_sequence_right=False,
