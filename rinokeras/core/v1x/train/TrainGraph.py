@@ -145,7 +145,9 @@ class TrainGraph(TestGraph):
 
     def _create_summaries(self):
         super()._create_summaries()
-        # if self.return_grad_summaries:
+        if self.return_grad_summaries:
+            grad_norm = tf.global_norm([grad for grad, _ in self.grads])
+            tf.summary.histogram('loss_grad_norm', grad_nom, colleections=[self.summary_collection])
             # for grad, var in self.grads:
                 # name = var.name.replace(':', '_')
                 # tf.summary.histogram(name, grad, collections=[self.summary_collection])
