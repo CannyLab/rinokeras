@@ -296,7 +296,11 @@ class TransformerDecoder(Model):
                     preembed_hook=None, stopping_criterion=None):
         output_sequence = tf.TensorArray(output_dtype, size=max_seq_len)
         discrete = output_dtype in [tf.int32, tf.int64]
-        batch_size = tf.shape(encoder_output)[0]
+
+        if encoder_output is None:
+            batch_size = 1
+        else:
+            batch_size = tf.shape(encoder_output)[0]
 
         if initial_input is None:
             if discrete:
