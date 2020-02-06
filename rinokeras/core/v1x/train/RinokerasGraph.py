@@ -129,7 +129,7 @@ class RinokerasGraph(ABC):
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if self.progress_bar is not None:
-            self.progress_bar.__exit__()
+            self.progress_bar.__exit__(exc_type, exc_value, exc_traceback)
         self.progress_bar = None
         self.epoch_metrics.end_timer()
         return exc_type is None or exc_type == tf.errors.OutOfRangeError

@@ -11,11 +11,25 @@ env:
   matrix:
   - RK_TF_VERSION=tensorflow==1.12.2
   - RK_TF_VERSION=tensorflow==1.13.1
-  - RK_TF_VERSION=tensorflow==2.0.0a0
+  - RK_TF_VERSION=tensorflow==1.14
+  - RK_TF_VERSION=tensorflow==2.0.0b1 
 matrix:
   exclude:
   - python: 3.7
     env: RK_TF_VERSION=tensorflow==1.12.2
+  - python: '3.4'
+    env: RK_TF_VERSION=tensorflow==1.13.1 
+  - python: '3.4'
+    env: RK_TF_VERSION=tensorflow==1.14
+  - python: '3.4'
+    env: RK_TF_VERSION=tensorflow==2.0.0b1 
+  - python: '3.5'
+    env: RK_TF_VERSION=tensorflow==2.0.0b1
+  - python: '3.5'
+    env: RK_TF_VERSION=tensorflow==1.14
+  - python: '3.6'
+    env: RK_TF_VERSION=tensorflow==1.12.2
+
 install:
   - echo "1.1.$(git rev-list --all --count)" > VERSION.txt
   - pip install $RK_TF_VERSION
@@ -33,9 +47,9 @@ jobs:
       script: skip
       git:
         depth: false
-      env: RK_TF_VERSION=tensorflow==1.13.1
+      env: RK_TF_VERSION=tensorflow==1.14
       before_deploy:
-      - echo "1.1.$(git rev-list --all --count)" > VERSION.txt
+      - echo "1.2.$(git rev-list --all --count)" > VERSION.txt
       deploy:
       - provider: pypi
         skip_cleanup: true

@@ -113,13 +113,13 @@ class TrainGraph(TestGraph):
 
     def _reduce_distributed_ops(self):
         super()._reduce_distributed_ops()
-        # central_device = self.distribution_strategy.parameter_devices[0]
+        central_device = self.distribution_strategy.parameter_devices[0]
 
-        # to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
-        # reduced_grads = self.distribution_strategy.batch_reduce(
-            # tf.VariableAggregation.SUM, to_reduce)
+        to_reduce = [(grad, central_device) for grad, _ in self._distributed_grads]
+        reduced_grads = self.distribution_strategy.batch_reduce(
+         tf.VariableAggregation.SUM, to_reduce)
 
-        # self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
+        self.grads = [(grad, var) for grad, var in zip(reduced_grads, self.model.variables)]
 
     def _initialize_graph(self):
         self._global_step = tf.train.get_or_create_global_step()
@@ -145,7 +145,9 @@ class TrainGraph(TestGraph):
 
     def _create_summaries(self):
         super()._create_summaries()
-        # if self.return_grad_summaries:
+        if self.return_grad_summaries:
+            grad_norm = tf.global_norm([grad for grad, _ in self.grads])
+            tf.summary.scalar('loss_grad_norm', grad_norm, collections=[self.summary_collection])
             # for grad, var in self.grads:
                 # name = var.name.replace(':', '_')
                 # tf.summary.histogram(name, grad, collections=[self.summary_collection])
