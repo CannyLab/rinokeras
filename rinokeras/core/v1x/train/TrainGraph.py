@@ -145,9 +145,12 @@ class TrainGraph(TestGraph):
 
     def _create_summaries(self):
         super()._create_summaries()
+        tf.summary.scalar('lr', self._learning_rate, collections=[self.summary_collection])
         if self.return_grad_summaries:
             grad_norm = tf.global_norm([grad for grad, _ in self.grads])
             tf.summary.scalar('loss_grad_norm', grad_norm, collections=[self.summary_collection])
+            weight_norm = tf.global_norm([var.value() for _, var in self.grads])
+            tf.summary.scalar('weight_norm', weight_norm, collections=[self.summary_collection])
             # for grad, var in self.grads:
                 # name = var.name.replace(':', '_')
                 # tf.summary.histogram(name, grad, collections=[self.summary_collection])
@@ -170,13 +173,18 @@ class TrainGraph(TestGraph):
                     g = tf.clip_by_value(g, clip_bounds[0], clip_bounds[1])
                 elif clip_type == 'norm':
                     g = tf.clip_by_norm(g, clip_bounds)
-                elif clip_type == 'global_norm':
-                    g = tf.clip_by_global_norm(g, clip_bounds)
+               
                 elif clip_type == 'average_norm':
                     g = tf.clip_by_average_norm(g, clip_bounds)
+                elif clip_type == 'global_norm':
+                    pass
                 else:
-                    raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))
+                    raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))   
                 clipped_grads.append((g, v))
+            if clip_type == 'global_norm':
+                gs, vs = zip(*grads)
+                gs = tf.clip_by_global_norm(gs, clip_bounds)
+                clipped_grads = zip(gs, vs)
             return clipped_grads
         return clip_func
 
