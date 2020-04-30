@@ -179,7 +179,7 @@ class TrainGraph(TestGraph):
                 elif clip_type == 'average_norm':
                     g = tf.clip_by_average_norm(g, clip_bounds)
                 elif clip_type == 'global_norm':
-                    continue
+                    pass
                 else:
                     raise ValueError("Unrecognized gradient clipping method: {}.".format(clip_type))   
                 clipped_grads.append((g, v))
