@@ -118,8 +118,8 @@ class TransformerDecoderBlock(Model):
             return_attention_weights=True)
         target_selfattn = self.layer_drop_1(target_selfattn, decoder_inputs)
 
-        if cache is not None:
-            cache[self.name + '_self_aw'] = cache[self.name + '_self_aw'].write(cache['seqpos'], self_attention_weights)
+        # if cache is not None:
+        #    cache[self.name + '_self_aw'] = cache[self.name + '_self_aw'].write(cache['seqpos'], self_attention_weights)
         # Compute the attention using the keys/values from the encoder, and the query from the
         # decoder. This takes the encoder output of size [batch_size x source_len x d_model] and the
         # target self-attention layer of size [batch_size x target_len x d_model] and then computes
@@ -207,8 +207,6 @@ class TransformerDecoder(Model):
         self.activity_regularizer = tf.keras.regularizers.get(activity_regularizer)
 
         self.embedding_layer = embedding_layer
-        print(type(self.embedding_layer))
-        print(TransformerInputEmbedding)
     
         if not isinstance(self.embedding_layer, TransformerInputEmbedding):
             raise AssertionError('Must have TransformerInputEmbedding layer as embedding layer')
@@ -227,7 +225,6 @@ class TransformerDecoder(Model):
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
-#        bounds_op = tf.cast(context['bounds'], tf.float32)
     def call(self, inputs, mask=None, mask_future=False, shift_target_sequence_right=False, seqpos=1, cache=None):
         """
             Args:
@@ -562,9 +559,9 @@ class TransformerDecoder(Model):
         initial_cache = {}
         initial_cache = {layer.name: tf.zeros((batch_size, 1, self.d_model), dtype=tf.float32) for layer in self.decoding_stack.layers} # [0]
         initial_cache_shapes = {layer.name: tf.TensorShape([None, None, self.d_model]) for layer in self.decoding_stack.layers} # [0]
-        for layer in self.decoding_stack.layers:
-            initial_cache[layer.name + '_self_aw'] = tf.TensorArray(output_dtype, size=size, infer_shape=False)
-            initial_cache_shapes[layer.name + '_self_aw'] = tf.TensorShape(None)
+        #for layer in self.decoding_stack.layers:
+        #    initial_cache[layer.name + '_self_aw'] = tf.TensorArray(output_dtype, size=size, infer_shape=False)
+        #    initial_cache_shapes[layer.name + '_self_aw'] = tf.TensorShape(None)
         initial_cache['seqpos'] = tf.constant(0, dtype=tf.int32)
         initial_cache_shapes['seqpos'] = tf.TensorShape(None)
         initial_cache['new_classes'] = tf.TensorArray(output_dtype, size=size, infer_shape=False)
